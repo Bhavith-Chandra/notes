@@ -425,6 +425,50 @@ recontextualises DDIM from "a clever trick" to "the natural deterministic member
 of the family", and it opens the door to using any off-the-shelf ODE solver, which
 is where the fast samplers (DPM-Solver and relatives) come from.
 
+<Figure
+  lead="Curvature is what costs you sampling steps."
+  caption="Both paths connect noise to data and both are integrated numerically at sampling time. Diffusion's implied trajectory is curved, so a coarse solver overshoots at every step and you need many small ones to stay on it. A straight path can in principle be integrated exactly in a single Euler step, because the velocity never changes. This is the whole argument for flow matching, and rectified flow makes it operational: iteratively re-pair samples to straighten the paths, and each round of straightening buys fewer required steps."
+>
+<svg viewBox="0 0 760 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Curved diffusion trajectory versus straight flow matching path">
+  <text class="lb" x="190" y="20" text-anchor="middle">Diffusion — curved path</text>
+  <circle class="f-pink" cx="60" cy="180" r="16"/>
+  <text class="xs" x="60" y="216" text-anchor="middle">noise</text>
+  <circle class="f-green" cx="320" cy="70" r="16"/>
+  <text class="xs" x="320" y="46" text-anchor="middle">data</text>
+
+  <path class="thick" d="M74,174 C110,120 120,70 180,60 C240,50 270,60 306,66"/>
+  <circle class="f-blue" cx="104" cy="128" r="4"/>
+  <circle class="f-blue" cx="130" cy="90" r="4"/>
+  <circle class="f-blue" cx="168" cy="62" r="4"/>
+  <circle class="f-blue" cx="212" cy="54" r="4"/>
+  <circle class="f-blue" cx="258" cy="57" r="4"/>
+  <text class="xs" x="190" y="240" text-anchor="middle">a coarse step leaves the path —</text>
+  <text class="xs" x="190" y="256" text-anchor="middle">so you need many small ones</text>
+
+  <path class="dash" d="M74,174 L190,96" opacity="0.6"/>
+  <text class="xs" x="150" y="152">one big step</text>
+  <text class="xs" x="152" y="168">lands off-path</text>
+
+  <line class="bx" x1="400" y1="14" x2="400" y2="248" opacity="0.3"/>
+
+  <text class="lb" x="580" y="20" text-anchor="middle">Flow matching — straight path</text>
+  <circle class="f-pink" cx="450" cy="180" r="16"/>
+  <text class="xs" x="450" y="216" text-anchor="middle">noise</text>
+  <circle class="f-green" cx="710" cy="70" r="16"/>
+  <text class="xs" x="710" y="46" text-anchor="middle">data</text>
+
+  <path class="thick" d="M464,174 L696,76"/>
+  <circle class="f-blue" cx="522" cy="150" r="4"/>
+  <circle class="f-blue" cx="580" cy="125" r="4"/>
+  <circle class="f-blue" cx="638" cy="101" r="4"/>
+  <text class="xs" x="580" y="240" text-anchor="middle">velocity is constant along the path,</text>
+  <text class="xs" x="580" y="256" text-anchor="middle">so one step can be exact</text>
+
+  <text class="xs" x="600" y="180">xₜ = (1−t)x₀ + t x₁</text>
+  <text class="xs" x="600" y="196">uₜ = x₁ − x₀</text>
+</svg>
+</Figure>
+
 ## Flow matching
 
 The framing that is displacing diffusion notation. Instead of a noising process,

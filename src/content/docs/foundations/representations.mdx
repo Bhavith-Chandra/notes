@@ -143,6 +143,42 @@ nationality while never *using* it. A feature can be used without being
 structured as a single direction. Papers frequently establish the first and claim
 the third.
 
+<Figure
+  lead="A probe measures accessibility, and accessibility is not information."
+  caption="Both panels show a representation that fully encodes the label — no information is missing in either. On the left the classes are linearly separable and a linear probe reports high accuracy. On the right the same information is present but arranged so no straight line separates the classes; the probe reports chance. High probe accuracy is therefore informative and low probe accuracy is nearly meaningless, which is the asymmetry people routinely read backwards."
+>
+<svg viewBox="0 0 760 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Linearly separable versus XOR-arranged representations under a linear probe">
+  <text class="lb" x="190" y="18" text-anchor="middle">Linearly accessible</text>
+  <rect class="bx" x="80" y="30" width="220" height="150" rx="4" opacity="0.45"/>
+  <circle class="f-blue" cx="120" cy="60" r="5"/><circle class="f-blue" cx="146" cy="80" r="5"/>
+  <circle class="f-blue" cx="110" cy="96" r="5"/><circle class="f-blue" cx="160" cy="58" r="5"/>
+  <circle class="f-blue" cx="134" cy="112" r="5"/>
+  <circle class="f-pink" cx="240" cy="112" r="5"/><circle class="f-pink" cx="262" cy="140" r="5"/>
+  <circle class="f-pink" cx="222" cy="146" r="5"/><circle class="f-pink" cx="270" cy="110" r="5"/>
+  <circle class="f-pink" cx="248" cy="160" r="5"/>
+  <path class="thick" d="M96,168 L288,44"/>
+  <text class="xs" x="190" y="202" text-anchor="middle">probe accuracy: high  ✓</text>
+  <text class="xs" x="190" y="220" text-anchor="middle">conclusion: the info is there — valid</text>
+
+  <line class="bx" x1="380" y1="14" x2="380" y2="232" opacity="0.3"/>
+
+  <text class="lb" x="570" y="18" text-anchor="middle">Present but not linear (XOR)</text>
+  <rect class="bx" x="460" y="30" width="220" height="150" rx="4" opacity="0.45"/>
+  <circle class="f-blue" cx="500" cy="60" r="5"/><circle class="f-blue" cx="524" cy="78" r="5"/>
+  <circle class="f-blue" cx="508" cy="92" r="5"/>
+  <circle class="f-blue" cx="630" cy="130" r="5"/><circle class="f-blue" cx="652" cy="152" r="5"/>
+  <circle class="f-blue" cx="640" cy="160" r="5"/>
+  <circle class="f-pink" cx="628" cy="60" r="5"/><circle class="f-pink" cx="650" cy="80" r="5"/>
+  <circle class="f-pink" cx="638" cy="92" r="5"/>
+  <circle class="f-pink" cx="500" cy="132" r="5"/><circle class="f-pink" cx="520" cy="152" r="5"/>
+  <circle class="f-pink" cx="506" cy="162" r="5"/>
+  <path class="dash" d="M470,110 L672,110" opacity="0.5"/>
+  <path class="dash" d="M570,40 L570,172" opacity="0.5"/>
+  <text class="xs" x="570" y="202" text-anchor="middle">probe accuracy: chance  ✗</text>
+  <text class="xs" x="570" y="220" text-anchor="middle">conclusion: nothing — the info IS there</text>
+</svg>
+</Figure>
+
 ## Probing, and how to read it
 
 Freeze the network, take activations from some layer, train a small classifier for

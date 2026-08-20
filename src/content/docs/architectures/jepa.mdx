@@ -231,6 +231,60 @@ look at the decay. If a small number of components carry nearly all the energy,
 you have dimensional collapse regardless of what the loss curve says.
 </Aside>
 
+<Figure
+  lead="Five collapses, and only one of them is obvious."
+  caption="Each panel shows a batch of embeddings in a two-dimensional slice. Complete collapse is unmistakable and rare in practice. Dimensional and informational collapse are the ones that actually bite: total variance looks healthy, the loss curve looks fine, and the representation is living on a fraction of the space you allocated. The diagnostic is the singular value spectrum of a batch of embeddings — if a handful of components carry nearly all the energy, you have a problem the loss will not tell you about."
+>
+<svg viewBox="0 0 760 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Five modes of representation collapse shown as embedding scatter plots">
+  <text class="lb" x="80" y="18" text-anchor="middle">Healthy</text>
+  <rect class="bx" x="20" y="28" width="120" height="120" rx="4" opacity="0.45"/>
+  <circle class="f-green" cx="46" cy="54" r="4"/><circle class="f-green" cx="98" cy="44" r="4"/>
+  <circle class="f-green" cx="70" cy="86" r="4"/><circle class="f-green" cx="120" cy="76" r="4"/>
+  <circle class="f-green" cx="38" cy="112" r="4"/><circle class="f-green" cx="90" cy="126" r="4"/>
+  <circle class="f-green" cx="124" cy="118" r="4"/><circle class="f-green" cx="62" cy="132" r="4"/>
+  <circle class="f-green" cx="110" cy="96" r="4"/><circle class="f-green" cx="52" cy="70" r="4"/>
+  <text class="xs" x="80" y="168" text-anchor="middle">spread, full rank</text>
+
+  <text class="lb" x="222" y="18" text-anchor="middle">Complete</text>
+  <rect class="bx" x="162" y="28" width="120" height="120" rx="4" opacity="0.45"/>
+  <circle class="f-pink" cx="222" cy="88" r="7"/>
+  <text class="xs" x="222" y="168" text-anchor="middle">one point</text>
+  <text class="xs" x="222" y="184" text-anchor="middle">loss ≈ 0, obvious</text>
+
+  <text class="lb" x="364" y="18" text-anchor="middle">Dimensional</text>
+  <rect class="bx" x="304" y="28" width="120" height="120" rx="4" opacity="0.45"/>
+  <circle class="f-amber" cx="322" cy="126" r="4"/><circle class="f-amber" cx="340" cy="114" r="4"/>
+  <circle class="f-amber" cx="358" cy="100" r="4"/><circle class="f-amber" cx="376" cy="86" r="4"/>
+  <circle class="f-amber" cx="394" cy="72" r="4"/><circle class="f-amber" cx="412" cy="58" r="4"/>
+  <circle class="f-amber" cx="331" cy="120" r="4"/><circle class="f-amber" cx="385" cy="79" r="4"/>
+  <text class="xs" x="364" y="168" text-anchor="middle">collapsed onto a line</text>
+  <text class="xs" x="364" y="184" text-anchor="middle">variance looks FINE</text>
+
+  <text class="lb" x="506" y="18" text-anchor="middle">Cluster</text>
+  <rect class="bx" x="446" y="28" width="120" height="120" rx="4" opacity="0.45"/>
+  <circle class="f-purple" cx="478" cy="62" r="4"/><circle class="f-purple" cx="484" cy="68" r="4"/>
+  <circle class="f-purple" cx="472" cy="70" r="4"/>
+  <circle class="f-purple" cx="534" cy="114" r="4"/><circle class="f-purple" cx="528" cy="120" r="4"/>
+  <circle class="f-purple" cx="540" cy="108" r="4"/>
+  <text class="xs" x="506" y="168" text-anchor="middle">few tight clumps</text>
+  <text class="xs" x="506" y="184" text-anchor="middle">within-class structure gone</text>
+
+  <text class="lb" x="648" y="18" text-anchor="middle">Informational</text>
+  <rect class="bx" x="588" y="28" width="120" height="120" rx="4" opacity="0.45"/>
+  <circle class="f-blue" cx="608" cy="120" r="4"/><circle class="f-blue" cx="624" cy="110" r="4"/>
+  <circle class="f-blue" cx="632" cy="100" r="4"/><circle class="f-blue" cx="648" cy="92" r="4"/>
+  <circle class="f-blue" cx="660" cy="80" r="4"/><circle class="f-blue" cx="676" cy="68" r="4"/>
+  <circle class="f-blue" cx="618" cy="106" r="4"/><circle class="f-blue" cx="668" cy="82" r="4"/>
+  <path class="dash" d="M602,126 L692,58" opacity="0.6"/>
+  <text class="xs" x="648" y="168" text-anchor="middle">dims vary but correlate</text>
+  <text class="xs" x="648" y="184" text-anchor="middle">effective rank ≪ nominal</text>
+
+  <line class="bx" x1="20" y1="204" x2="708" y2="204" opacity="0.3"/>
+  <text class="xs" x="20" y="226">Fifth mode — SHORTCUT collapse: embeddings look perfectly healthy by every measure above,</text>
+  <text class="xs" x="20" y="244">but encode a spurious cue (colour histogram, JPEG artefacts, border pixels). No geometric test detects it.</text>
+</svg>
+</Figure>
+
 ## The four anti-collapse mechanisms
 
 Every method in this space uses one of four strategies. This table is the most

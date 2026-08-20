@@ -181,6 +181,57 @@ the encoder only processes the visible 25%.
 position is a training example, which makes it the most sample-efficient objective
 per pass, and it is the reason decoder-only models scaled so well.
 
+<Figure
+  lead="The right mask ratio depends on how redundant the modality is."
+  caption="Text is information-dense: hide 15% and the surrounding words barely determine the answer, so the task is already hard. Images are spatially redundant: hide 15% and local interpolation solves it without understanding anything, which is why MAE masks 75% and only then forces the model to reason about content. The numbers differ by modality for a principled reason, and neither transfers — this is one of the clearest cases where a recipe that works in one domain actively misleads in another."
+>
+<svg viewBox="0 0 760 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Mask ratio for text versus images">
+  <text class="lb" x="180" y="18" text-anchor="middle">Text — mask 15%</text>
+  <rect class="f-blue" x="24" y="34" width="52" height="26" rx="3"/>
+  <rect class="f-blue" x="80" y="34" width="52" height="26" rx="3"/>
+  <rect class="f-pink" x="136" y="34" width="52" height="26" rx="3"/>
+  <text class="xs" x="162" y="52" text-anchor="middle">?</text>
+  <rect class="f-blue" x="192" y="34" width="52" height="26" rx="3"/>
+  <rect class="f-blue" x="248" y="34" width="52" height="26" rx="3"/>
+  <rect class="f-blue" x="24" y="64" width="52" height="26" rx="3"/>
+  <rect class="f-blue" x="80" y="64" width="52" height="26" rx="3"/>
+  <rect class="f-blue" x="136" y="64" width="52" height="26" rx="3"/>
+  <rect class="f-blue" x="192" y="64" width="52" height="26" rx="3"/>
+  <rect class="f-blue" x="248" y="64" width="52" height="26" rx="3"/>
+  <text class="xs" x="162" y="116" text-anchor="middle">low redundancy — neighbours do not</text>
+  <text class="xs" x="162" y="132" text-anchor="middle">determine the missing word</text>
+
+  <line class="bx" x1="360" y1="14" x2="360" y2="238" opacity="0.3"/>
+
+  <text class="lb" x="560" y="18" text-anchor="middle">Images — mask 75%</text>
+  <g>
+    <rect class="f-pink" x="440" y="30" width="26" height="26" rx="2"/>
+    <rect class="f-green" x="468" y="30" width="26" height="26" rx="2"/>
+    <rect class="f-pink" x="496" y="30" width="26" height="26" rx="2"/>
+    <rect class="f-pink" x="524" y="30" width="26" height="26" rx="2"/>
+    <rect class="f-pink" x="440" y="58" width="26" height="26" rx="2"/>
+    <rect class="f-pink" x="468" y="58" width="26" height="26" rx="2"/>
+    <rect class="f-pink" x="496" y="58" width="26" height="26" rx="2"/>
+    <rect class="f-green" x="524" y="58" width="26" height="26" rx="2"/>
+    <rect class="f-green" x="440" y="86" width="26" height="26" rx="2"/>
+    <rect class="f-pink" x="468" y="86" width="26" height="26" rx="2"/>
+    <rect class="f-pink" x="496" y="86" width="26" height="26" rx="2"/>
+    <rect class="f-pink" x="524" y="86" width="26" height="26" rx="2"/>
+    <rect class="f-pink" x="440" y="114" width="26" height="26" rx="2"/>
+    <rect class="f-pink" x="468" y="114" width="26" height="26" rx="2"/>
+    <rect class="f-green" x="496" y="114" width="26" height="26" rx="2"/>
+    <rect class="f-pink" x="524" y="114" width="26" height="26" rx="2"/>
+  </g>
+  <text class="xs" x="600" y="48">green = visible</text>
+  <text class="xs" x="600" y="66">pink = masked</text>
+  <text class="xs" x="560" y="166" text-anchor="middle">high redundancy — at 15% masking,</text>
+  <text class="xs" x="560" y="182" text-anchor="middle">interpolation solves it and teaches nothing</text>
+
+  <line class="bx" x1="24" y1="204" x2="716" y2="204" opacity="0.3"/>
+  <text class="xs" x="24" y="226">Pick the ratio so the task cannot be solved by a local shortcut. That, not the number itself, is the transferable rule.</text>
+</svg>
+</Figure>
+
 ## Contrastive: predict which sample
 
 Take two augmented views of the same image. Pull their embeddings together. Push

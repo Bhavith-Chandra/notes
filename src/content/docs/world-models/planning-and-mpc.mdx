@@ -206,6 +206,44 @@ not straight". Faced with a bimodal optimum it fits a mean between the two modes
 and produces a plan that is worse than either. This is the characteristic CEM
 failure and it shows up whenever there is an obstacle to go around.
 
+<Figure
+  lead="CEM cannot represent 'left or right, but not straight'."
+  caption="A diagonal Gaussian has one mode. Faced with two equally good routes around an obstacle, refitting to the elites places the mean between them — producing a plan worse than either option, aimed directly at the thing you were avoiding. This is the characteristic CEM failure and it appears whenever the solution space is multimodal, which for anything involving obstacles is most of the time. MPPI's soft weighting mitigates it slightly; nothing in the standard sampler fixes it."
+>
+<svg viewBox="0 0 760 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Cross-entropy method fitting a unimodal Gaussian to a bimodal solution space">
+  <text class="lb" x="180" y="18" text-anchor="middle">Two good plans exist</text>
+  <circle class="f-grey" cx="80" cy="130" r="12"/>
+  <text class="xs" x="80" y="164" text-anchor="middle">start</text>
+  <rect class="f-pink" x="160" y="106" width="44" height="48" rx="4"/>
+  <text class="xs" x="182" y="176" text-anchor="middle">obstacle</text>
+  <circle class="f-green" cx="290" cy="130" r="12"/>
+  <text class="xs" x="290" y="164" text-anchor="middle">goal</text>
+
+  <path class="thick" d="M92,124 C130,72 230,72 278,124" opacity="0.85"/>
+  <path class="thick" d="M92,136 C130,190 230,190 278,136" opacity="0.85"/>
+  <text class="xs" x="182" y="66" text-anchor="middle">route A — elite</text>
+  <text class="xs" x="182" y="204" text-anchor="middle">route B — elite</text>
+
+  <line class="bx" x1="360" y1="14" x2="360" y2="230" opacity="0.3"/>
+
+  <text class="lb" x="560" y="18" text-anchor="middle">CEM refits a single Gaussian to both</text>
+  <circle class="f-grey" cx="440" cy="130" r="12"/>
+  <rect class="f-pink" x="520" y="106" width="44" height="48" rx="4"/>
+  <circle class="f-green" cx="650" cy="130" r="12"/>
+
+  <path class="dash" d="M452,124 C490,72 590,72 638,124" opacity="0.35"/>
+  <path class="dash" d="M452,136 C490,190 590,190 638,136" opacity="0.35"/>
+
+  <ellipse class="f-amber" cx="542" cy="130" rx="86" ry="26" opacity="0.55"/>
+  <path class="thick" d="M452,130 L638,130"/>
+  <text class="xs" x="542" y="94" text-anchor="middle">fitted mean</text>
+
+  <path class="ar" d="M542,178 L542,152"/>
+  <text class="xs" x="542" y="196" text-anchor="middle">straight into the obstacle —</text>
+  <text class="xs" x="542" y="212" text-anchor="middle">worse than either elite</text>
+</svg>
+</Figure>
+
 ## MPPI
 
 Same loop, different update. Instead of a hard top-$K$ cut, MPPI weights *every*

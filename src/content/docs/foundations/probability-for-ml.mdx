@@ -224,6 +224,42 @@ $$
 log of an expectation you cannot compute, pushing the log inside gives a
 tractable lower bound.
 
+<Figure
+  lead="The bound, and the gap you can name."
+  caption="Jensen's inequality pushes the log inside the expectation, which loses something — and the amount lost is not a mystery term but exactly the KL divergence between your approximate posterior and the true one. That is unusually useful: it tells you the bound is tight precisely when the encoder recovers the true posterior, which turns 'make the encoder more expressive' from a hunch into a directed improvement with a measurable target."
+>
+<svg viewBox="0 0 760 230" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The ELBO as a lower bound on log likelihood with the gap equal to a KL divergence">
+  <defs>
+    <marker id="pb1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <line class="bx" x1="120" y1="200" x2="640" y2="200"/>
+  <text class="xs" x="380" y="222" text-anchor="middle">encoder parameters θ  →</text>
+
+  <path class="dash" d="M120,50 L640,50" opacity="0.7"/>
+  <text class="sm" x="648" y="54">log p(x)</text>
+  <text class="xs" x="648" y="70">fixed, intractable</text>
+
+  <path class="thick" d="M124,164 C200,150 280,124 360,102 C450,80 540,66 636,58"/>
+  <text class="sm" x="648" y="100">ELBO</text>
+  <text class="xs" x="648" y="116">what you optimise</text>
+
+  <path class="ar" d="M240,56 L240,132" marker-end="url(#pb1)"/>
+  <path class="ar" d="M240,126 L240,58" marker-end="url(#pb1)"/>
+  <rect class="f-pink" x="252" y="80" width="200" height="34" rx="5"/>
+  <text class="on-fill-sm" x="352" y="102" text-anchor="middle">gap = KL(q(z|x) ‖ p(z|x))</text>
+
+  <path class="ar" d="M560,56 L560,64" marker-end="url(#pb1)"/>
+  <text class="xs" x="572" y="66">gap → 0 as q approaches</text>
+  <text class="xs" x="572" y="82">the true posterior</text>
+
+  <rect class="f-green" x="120" y="172" width="240" height="22" rx="4" opacity="0.5"/>
+  <text class="on-fill-sm" x="240" y="188" text-anchor="middle">raising the ELBO raises log p(x)</text>
+</svg>
+</Figure>
+
 ## Deriving the ELBO
 
 The canonical application. You want $\log p_\psi(x)$ but it requires marginalising

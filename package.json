@@ -8,7 +8,8 @@
     "build": "astro build",
     "preview": "astro preview",
     "check": "astro check",
-    "deploy": "bash scripts/deploy.sh"
+    "deploy": "bash scripts/deploy.sh",
+    "check:contrast": "node scripts/check-contrast.mjs"
   },
   "dependencies": {
     "@astrojs/starlight": "^0.41.7",

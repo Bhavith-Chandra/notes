@@ -291,6 +291,34 @@ Practical consequence: **$\alpha$ and the learning rate are redundant knobs.** F
 $\alpha = 2r$ and tune the learning rate only. Tuning both is a common waste of a
 sweep.
 
+<Figure
+  lead="Required rank is a measure of how far your task sits from pretraining."
+  caption="For tasks near the pretraining distribution — instruction following, tone, output format — LoRA matches full fine-tuning at rank 8 to 16 and adding rank buys nothing. For genuinely new capability, quality keeps climbing with rank and only converges where LoRA's parameter advantage has evaporated. This makes required rank a useful diagnostic rather than just a hyperparameter: if you find yourself needing r = 512, the low-rank assumption is telling you it does not hold for your task, and full fine-tuning is the honest answer."
+>
+<svg viewBox="0 0 760 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Quality versus LoRA rank for near and far tasks">
+  <line class="bx" x1="80" y1="196" x2="700" y2="196"/>
+  <line class="bx" x1="80" y1="26" x2="80" y2="196"/>
+  <text class="xs" x="390" y="222" text-anchor="middle">LoRA rank r  →   (4, 8, 16, 32, 64, 128, 256, 512)</text>
+  <text class="xs" x="46" y="110" text-anchor="middle">quality</text>
+
+  <path class="dash" x1="80" y1="52" x2="700" y2="52" d="M80,52 L700,52" opacity="0.55"/>
+  <text class="xs" x="700" y="46" text-anchor="end">full fine-tuning</text>
+
+  <path class="thick" d="M92,150 C120,92 150,60 200,55 C300,50 480,50 690,50"/>
+  <circle class="f-green" cx="200" cy="55" r="6"/>
+  <text class="sm" x="212" y="78">style, format, instructions</text>
+  <text class="xs" x="212" y="94">saturates at r ≈ 16</text>
+
+  <path class="thick" d="M92,180 C160,168 220,150 300,130 C400,105 500,80 690,58" opacity="0.85"/>
+  <circle class="f-pink" cx="500" cy="80" r="6"/>
+  <text class="sm" x="380" y="164">new language / new capability</text>
+  <text class="xs" x="380" y="180">still climbing at r = 128</text>
+
+  <line class="bx" x1="200" y1="26" x2="200" y2="196" stroke-dasharray="4 4" opacity="0.4"/>
+  <text class="xs" x="200" y="20" text-anchor="middle">r = 16</text>
+</svg>
+</Figure>
+
 ## The intrinsic dimension argument
 
 LoRA's justification is the *intrinsic dimensionality* hypothesis: the minimum

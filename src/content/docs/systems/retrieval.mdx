@@ -1,0 +1,483 @@
+---
+title: Retrieval and RAG
+description: "Chunking, embeddings, hybrid search and reranking — plus the failure modes that make RAG systems quietly wrong rather than loudly broken."
+sidebar:
+  order: 2
+depth: frontier
+readingTime: 35
+prereqs:
+  - label: "Neural Encoders"
+    slug: "encoders/neural-encoders"
+papers:
+  - title: "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks"
+    authors: "Lewis, Perez, Piktus, … Kiela"
+    year: 2020
+    url: "https://arxiv.org/abs/2005.11401"
+  - title: "Dense Passage Retrieval for Open-Domain Question Answering (DPR)"
+    authors: "Karpukhin, Oğuz, Min, … Yih"
+    year: 2020
+    url: "https://arxiv.org/abs/2004.04906"
+  - title: "ColBERT: Efficient and Effective Passage Search via Contextualized Late Interaction over BERT"
+    authors: "Omar Khattab, Matei Zaharia"
+    year: 2020
+    url: "https://arxiv.org/abs/2004.12832"
+  - title: "Efficient and robust approximate nearest neighbor search using Hierarchical Navigable Small World graphs (HNSW)"
+    authors: "Yu. A. Malkov, D. A. Yashunin"
+    year: 2016
+    url: "https://arxiv.org/abs/1603.09320"
+  - title: "The Probabilistic Relevance Framework: BM25 and Beyond"
+    authors: "Stephen Robertson, Hugo Zaragoza"
+    year: 2009
+    url: "https://doi.org/10.1561/1500000019"
+  - title: "Lost in the Middle: How Language Models Use Long Contexts"
+    authors: "Liu, Lin, Hewitt, … Liang"
+    year: 2023
+    url: "https://arxiv.org/abs/2307.03172"
+  - title: "Unsupervised Dense Information Retrieval with Contrastive Learning (Contriever)"
+    authors: "Izacard, Caron, Hosseini, … Grave"
+    year: 2021
+    url: "https://arxiv.org/abs/2112.09118"
+  - title: "Self-RAG: Learning to Retrieve, Generate, and Critique through Self-Reflection"
+    authors: "Asai, Wu, Wang, Sil, Hajishirzi"
+    year: 2023
+    url: "https://arxiv.org/abs/2310.11511"
+  - title: "MTEB: Massive Text Embedding Benchmark"
+    authors: "Muennighoff, Tazi, Magne, Reimers"
+    year: 2022
+    url: "https://arxiv.org/abs/2210.07316"
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+<Abstract>
+Retrieval-augmented generation looks like a solved problem — embed documents,
+search by cosine similarity, paste the results into the prompt. In practice most
+RAG systems fail quietly: they retrieve plausible-looking passages that do not
+contain the answer, and the model produces a fluent response anyway. Almost every
+real improvement comes from fixing retrieval, not from a better generator.
+</Abstract>
+
+<KeyPoints>
+
+- **Chunking is the highest-leverage decision and gets the least attention.** If the answer spans a chunk boundary, no retriever can find it, and no amount of reranking or prompting recovers it.
+- **Dense and sparse retrieval fail on different queries.** Embeddings handle paraphrase and miss exact identifiers; BM25 does the reverse. Hybrid search is not a hedge — it covers two genuinely disjoint failure sets.
+- **Retrieve broadly, then rerank.** A bi-encoder scores query and document independently, which is fast and lossy. A cross-encoder reads them together, which is accurate and slow. Use the first for recall, the second for precision.
+- **Position in the prompt changes whether the model uses a passage.** Models attend most to the beginning and end of their context and reliably under-use the middle — so retrieval order is part of the system, not a cosmetic detail.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## Why not just fine-tune it in
+
+The instinct when a model does not know your documents is to train it on them.
+This is usually the wrong tool, for three reasons worth stating plainly.
+
+**Knowledge does not stick reliably.** Fine-tuning is excellent at changing
+behaviour and unreliable at installing facts — the model may reproduce a fact in
+the training format and fail to use it in conversation.
+
+**Updates are expensive.** A changed document means retraining. Retrieval means
+replacing a row.
+
+**There is no citation.** A fine-tuned model cannot tell you where an answer came
+from. A retrieval system hands you the passage, which for most real applications
+is the entire point.
+
+So: **if you want the model to know something, retrieve it. If you want the model
+to behave differently, fine-tune it.**
+
+## The pipeline in one paragraph
+
+Split your documents into chunks. Convert each chunk into a vector that captures
+its meaning. When a question arrives, convert it into a vector too, find the
+chunks whose vectors are closest, paste them into the prompt, and ask the model to
+answer using them.
+
+Every step in that sentence is a place where the system can silently fail, and
+the rest of this page is about which failures matter.
+
+## The failure that defines the field
+
+A user asks a question. The system retrieves three passages that are *topically
+related* but do not contain the answer. The model, given three relevant-looking
+passages and a question, writes a confident answer anyway — synthesising something
+plausible from adjacent facts.
+
+The output looks good. It has citations. It is wrong.
+
+<Aside type="danger" title="Why this is worse than a plain hallucination">
+An unaided model that does not know something often hedges. A RAG system supplies
+context that *looks* authoritative, which both suppresses the hedging and gives
+the user documents to point at. **Retrieval failures produce more confident wrong
+answers than no retrieval at all**, which is why measuring retrieval quality
+separately from answer quality is not optional.
+</Aside>
+
+<Tier level="mechanics" />
+
+## The pipeline, and where each stage fails
+
+<Figure
+  lead="Five stages, five distinct failure modes."
+  caption="Indexing happens once, offline; querying happens per request. The critical property is that failures cascade downward and cannot be repaired upward: if chunking split the answer, no retriever finds it; if retrieval missed the passage, no reranker recovers it; if the passage sits in the middle of a long context, the model may not use it even when it is right there. Debug this pipeline from the top, not from the output."
+>
+<svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="RAG pipeline stages with the failure mode at each">
+  <defs>
+    <marker id="rg1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <text class="lb" x="14" y="20">INDEXING — offline, once</text>
+
+  <rect class="f-grey" x="14" y="32" width="96" height="40" rx="5"/>
+  <text class="on-fill-sm" x="62" y="56" text-anchor="middle">documents</text>
+  <path class="ar" d="M114,52 L150,52" marker-end="url(#rg1)"/>
+  <rect class="f-amber" x="156" y="32" width="104" height="40" rx="5"/>
+  <text class="on-fill-sm" x="208" y="56" text-anchor="middle">chunk</text>
+  <path class="ar" d="M264,52 L300,52" marker-end="url(#rg1)"/>
+  <rect class="f-blue" x="306" y="32" width="104" height="40" rx="5"/>
+  <text class="on-fill-sm" x="358" y="56" text-anchor="middle">embed</text>
+  <path class="ar" d="M414,52 L450,52" marker-end="url(#rg1)"/>
+  <rect class="f-purple" x="456" y="32" width="118" height="40" rx="5"/>
+  <text class="on-fill-sm" x="515" y="56" text-anchor="middle">vector index</text>
+
+  <text class="xs" x="208" y="88" text-anchor="middle">✗ answer split across a boundary</text>
+  <text class="xs" x="358" y="88" text-anchor="middle">✗ wrong embedding model</text>
+
+  <line class="bx" x1="14" y1="106" x2="746" y2="106" opacity="0.3"/>
+
+  <text class="lb" x="14" y="132">QUERYING — per request</text>
+
+  <rect class="f-grey" x="14" y="144" width="86" height="40" rx="5"/>
+  <text class="on-fill-sm" x="57" y="168" text-anchor="middle">query</text>
+  <path class="ar" d="M104,164 L140,164" marker-end="url(#rg1)"/>
+
+  <rect class="f-blue" x="146" y="144" width="104" height="40" rx="5"/>
+  <text class="on-fill-sm" x="198" y="163" text-anchor="middle">retrieve top-50</text>
+  <text class="xs" x="198" y="178" text-anchor="middle">dense + sparse</text>
+  <path class="ar" d="M254,164 L290,164" marker-end="url(#rg1)"/>
+
+  <rect class="f-green" x="296" y="144" width="104" height="40" rx="5"/>
+  <text class="on-fill-sm" x="348" y="163" text-anchor="middle">rerank → top-5</text>
+  <text class="xs" x="348" y="178" text-anchor="middle">cross-encoder</text>
+  <path class="ar" d="M404,164 L440,164" marker-end="url(#rg1)"/>
+
+  <rect class="f-amber" x="446" y="144" width="104" height="40" rx="5"/>
+  <text class="on-fill-sm" x="498" y="163" text-anchor="middle">order + pack</text>
+  <text class="xs" x="498" y="178" text-anchor="middle">best at the ends</text>
+  <path class="ar" d="M554,164 L590,164" marker-end="url(#rg1)"/>
+
+  <rect class="f-pink" x="596" y="144" width="104" height="40" rx="5"/>
+  <text class="on-fill-sm" x="648" y="168" text-anchor="middle">generate</text>
+
+  <text class="xs" x="198" y="202" text-anchor="middle">✗ missed the passage</text>
+  <text class="xs" x="348" y="202" text-anchor="middle">✗ ranked it below the cut</text>
+  <text class="xs" x="498" y="202" text-anchor="middle">✗ buried mid-context</text>
+  <text class="xs" x="648" y="202" text-anchor="middle">✗ ignored the evidence</text>
+
+  <line class="bx" x1="14" y1="222" x2="746" y2="222" opacity="0.3"/>
+  <rect class="f-pink" x="14" y="238" width="702" height="46" rx="5" opacity="0.5"/>
+  <text class="on-fill-sm" x="30" y="258">Failures cascade downward and cannot be repaired upward.</text>
+  <text class="xs" x="30" y="276">Measure recall@k at the retrieval stage separately. An end-to-end answer score cannot tell you which stage broke.</text>
+</svg>
+</Figure>
+
+## Chunking
+
+The decision that determines the ceiling on everything downstream.
+
+<Steps>
+
+1. **Fixed-size** — split every N tokens with overlap. Simple, and it cuts
+   sentences and tables in half.
+
+2. **Recursive structural** — split on paragraph, then sentence, then word, taking
+   the largest unit that fits. The sane default.
+
+3. **Semantic** — embed sentences and split where consecutive similarity drops.
+   Better boundaries, more expensive, and it needs tuning.
+
+4. **Document-aware** — split on the document's own structure: markdown headings,
+   HTML sections, function definitions in code. **Usually the best option when the
+   structure exists**, and routinely skipped because it needs per-format work.
+
+</Steps>
+
+Two adjustments that pay for themselves:
+
+- **Overlap** (10–20%) so a boundary does not orphan a sentence.
+- **Contextual headers** — prepend the document title and section path to each
+  chunk before embedding. A chunk reading "The limit is 40 hours" is useless; the
+  same chunk prefixed with "Employment Policy › Overtime" is retrievable.
+
+## Dense versus sparse
+
+| | Dense (embeddings) | Sparse (BM25) |
+|---|---|---|
+| Matches | meaning, paraphrase | exact terms |
+| "car" finds "automobile" | yes | no |
+| Product code `XR-4471` | **often fails** | reliable |
+| Rare domain jargon | weak unless in-domain | strong |
+| Needs training | yes | no |
+| Explains itself | no | yes — you see the matched terms |
+
+**They fail on disjoint sets of queries**, which is why hybrid retrieval is
+standard rather than a compromise. Dense embeddings map a rare identifier to
+whatever region of the space its subword pieces suggest — which is nowhere useful.
+BM25 finds it because it is a literal string match.
+
+Fusion is usually **Reciprocal Rank Fusion**, which combines rankings rather than
+scores and so needs no score normalisation between two systems whose scores are not
+comparable.
+
+<Figure
+  lead="Dense and sparse cover different queries, not the same queries better."
+  caption="The overlap is large and the exclusive regions are the point. Embeddings resolve paraphrase and conceptual similarity but map a rare product code to wherever its subword pieces happen to land, which is nowhere useful. BM25 finds that code by literal match and cannot connect 'car' to 'automobile'. Hybrid retrieval is not risk-hedging — it is the union of two genuinely disjoint capabilities, which is why fusing them beats tuning either."
+>
+<svg viewBox="0 0 760 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Venn diagram of queries answered by dense versus sparse retrieval">
+  <circle class="f-blue" cx="300" cy="120" r="92" opacity="0.5"/>
+  <circle class="f-amber" cx="420" cy="120" r="92" opacity="0.5"/>
+
+  <text class="lb" x="212" y="42" text-anchor="middle">Dense</text>
+  <text class="lb" x="512" y="42" text-anchor="middle">Sparse (BM25)</text>
+
+  <text class="xs" x="238" y="100" text-anchor="middle">paraphrase</text>
+  <text class="xs" x="238" y="118" text-anchor="middle">synonyms</text>
+  <text class="xs" x="238" y="136" text-anchor="middle">"how do I cancel?"</text>
+  <text class="xs" x="238" y="158" text-anchor="middle">→ "termination policy"</text>
+
+  <text class="xs" x="360" y="108" text-anchor="middle">ordinary</text>
+  <text class="xs" x="360" y="126" text-anchor="middle">keyword</text>
+  <text class="xs" x="360" y="144" text-anchor="middle">queries</text>
+
+  <text class="xs" x="484" y="100" text-anchor="middle">exact identifiers</text>
+  <text class="xs" x="484" y="118" text-anchor="middle">rare jargon</text>
+  <text class="xs" x="484" y="136" text-anchor="middle">"XR-4471"</text>
+  <text class="xs" x="484" y="158" text-anchor="middle">"§ 14.2(b)"</text>
+
+  <path class="ar" d="M238,182 C238,204 300,208 340,208"/>
+  <path class="ar" d="M484,182 C484,204 420,208 384,208"/>
+  <rect class="f-green" x="286" y="196" width="150" height="26" rx="5"/>
+  <text class="on-fill-sm" x="361" y="214" text-anchor="middle">hybrid = the union</text>
+
+  <text class="xs" x="620" y="196">fuse with Reciprocal Rank Fusion —</text>
+  <text class="xs" x="620" y="212">combines RANKS, so the two systems'</text>
+  <text class="xs" x="620" y="228">incomparable scores never need normalising</text>
+</svg>
+</Figure>
+
+## Reranking
+
+Retrieval and reranking use fundamentally different architectures, and the
+difference is the whole reason for the two-stage design.
+
+**Bi-encoder (retrieval).** Query and document are embedded *separately*. Document
+vectors can be computed offline and indexed, so search is an approximate
+nearest-neighbour lookup over millions of items in milliseconds. The cost is that
+the model never sees query and document together, so it cannot reason about their
+interaction.
+
+**Cross-encoder (reranking).** Query and document are concatenated and run through
+a transformer together, with full attention between them. Far more accurate, and
+it requires one forward pass *per pair* — impossible over a whole corpus, fine
+over 50 candidates.
+
+**ColBERT** sits between them: encode separately into per-token vectors, then score
+by summing each query token's maximum similarity over document tokens. Late
+interaction retains some cross-attention benefit while keeping documents
+pre-computable. More accurate than a bi-encoder, more storage-hungry.
+
+<Aside type="tip" title="The retrieve-wide-then-rerank rule">
+Retrieve 50–100 candidates cheaply, rerank to 3–5 accurately. This is almost
+always better than retrieving 5 directly, and the reason is asymmetric: the
+reranker can only fix ordering *within* what retrieval returned. Recall at stage
+one is a hard ceiling on the whole system.
+</Aside>
+
+## Lost in the middle
+
+Models do not attend uniformly across their context. Liu et al. found a pronounced
+U-shape: information at the *start* or *end* of the context is used reliably;
+information in the *middle* is often ignored, even when it is exactly the answer
+and the context window is nowhere near full.
+
+Two direct consequences for system design:
+
+- **Order retrieved passages so the highest-scoring ones sit at the edges** — best
+  first, second-best last, weakest buried in the middle.
+- **More context is not better.** Stuffing 20 passages in because the window allows
+  it measurably degrades accuracy relative to 5 well-chosen ones.
+
+<Tier level="formal" />
+
+## Dense retrieval
+
+A bi-encoder learns $E_q$ and $E_d$ scoring by inner product:
+
+$$
+s(q, d) = E_q(q)^{\top} E_d(d),
+$$
+
+trained contrastively with in-batch negatives:
+
+$$
+\mathcal{L} = -\log \frac{\exp\big(s(q, d^{+})/\tau\big)}{\exp\big(s(q,d^{+})/\tau\big) + \sum_{j=1}^{n}\exp\big(s(q, d_j^{-})/\tau\big)}.
+$$
+
+This is [InfoNCE](/training/self-supervision/) with documents as the contrastive
+set. Two practical points that determine whether a retriever is good:
+
+**Hard negatives dominate quality.** Random negatives are trivially separable and
+teach almost nothing. DPR's central finding was that mining negatives from BM25's
+top results — documents that *look* relevant and are not — improves retrieval far
+more than architectural changes.
+
+**In-batch negatives make batch size a quality parameter.** Each batch supplies
+$n-1$ free negatives, so larger batches mean a harder and more informative
+contrastive task.
+
+## Sparse retrieval: BM25
+
+$$
+\text{BM25}(q, d) = \sum_{t \in q} \operatorname{IDF}(t)\cdot \frac{f(t,d)\,(k_1+1)}{f(t,d) + k_1\left(1 - b + b\,\dfrac{|d|}{\operatorname{avgdl}}\right)},
+$$
+
+$$
+\operatorname{IDF}(t) = \ln\left(\frac{N - n(t) + 0.5}{n(t) + 0.5} + 1\right).
+$$
+
+Three ideas are encoded here and each is worth reading off:
+
+- **Term saturation** ($k_1 \approx 1.2$–2.0). Term frequency enters through
+  $f/(f+k_1)$, which saturates — the tenth occurrence of a word adds far less than
+  the second. Raw counts would let keyword-stuffed documents win.
+- **Length normalisation** ($b \approx 0.75$). Long documents contain more of
+  everything; dividing by $|d|/\operatorname{avgdl}$ prevents length alone from
+  driving the score.
+- **Rarity weighting.** IDF makes a match on a rare term worth far more than a
+  match on a common one.
+
+BM25 has no learned parameters, needs no training data, and remains a
+hard-to-beat baseline. Any dense retriever that does not beat it on your data is
+not earning its complexity.
+
+## Reciprocal Rank Fusion
+
+$$
+\text{RRF}(d) = \sum_{r \in R} \frac{1}{k + \text{rank}_r(d)}, \qquad k \approx 60.
+$$
+
+The key property is that RRF uses only **ranks**, never scores. BM25 scores are
+unbounded sums; cosine similarities live in $[-1,1]$. Combining them numerically
+requires a normalisation nobody can justify. Ranks are directly comparable.
+
+The constant $k$ damps the influence of the very top positions — without it, a
+single system's first result would dominate any consensus among the others.
+
+## Approximate nearest neighbours
+
+Exact search over $N$ vectors is $O(Nd)$ per query — unusable at scale. HNSW
+builds a multi-layer proximity graph: upper layers are sparse, giving long-range
+hops; lower layers are dense, giving local refinement. Search descends greedily
+from the top.
+
+Expected complexity is $O(\log N)$, with a recall/latency knob (`efSearch`).
+
+**The trade you are making is silent.** ANN returns *approximate* neighbours —
+recall of 95–99% is typical and considered fine. That means 1–5% of the time the
+true best passage is simply not in your candidate set, and nothing downstream can
+tell. When debugging a retrieval failure, check exact search on the failing query
+before blaming the embedding model.
+
+## Why cross-encoders win
+
+A bi-encoder computes $s(q,d) = \langle E_q(q), E_d(d)\rangle$. The document
+representation is fixed **before the query is known**, so it must compress the
+document into a single vector adequate for *every* possible query.
+
+A cross-encoder computes $s(q,d) = f([q; d])$ with full attention across the pair,
+so it can condition the document's representation on the query. That is strictly
+more expressive: the bi-encoder's scoring function is a bilinear form in fixed
+embeddings, and the cross-encoder's is an arbitrary function of the pair.
+
+The cost is combinatorial. Bi-encoder: $N$ document encodings offline, one query
+encoding online. Cross-encoder: $N$ forward passes online. Hence the split.
+
+ColBERT's late interaction:
+
+$$
+s(q,d) = \sum_{i \in q} \max_{j \in d}\ E_q(q)_i^{\top} E_d(d)_j,
+$$
+
+with per-token embeddings. The $\max$ over document tokens is a soft term-matching
+operation, and because document tokens are still encoded independently they can be
+indexed offline. Storage grows by roughly the token count per document, which is
+the price.
+
+<Tier level="frontier" />
+
+## Where this stands, as of 2026
+
+**Long context did not kill RAG, and the reason is cost, not capability.** Models
+with million-token windows can in principle hold your corpus. In practice
+attention cost, KV-cache memory, and the lost-in-the-middle effect all mean that
+retrieving 5 relevant chunks beats stuffing 500 — and it is orders of magnitude
+cheaper per query. The two are complements: better retrieval feeds better
+long-context reasoning.
+
+**Hybrid retrieval with reranking is the settled default.** Dense-only systems
+underperform on exact identifiers and rare terminology often enough that pure
+vector search is now considered a beginner's configuration.
+
+**Embedding model choice matters less than people think, above a threshold.** MTEB
+leaderboard differences of a point or two rarely survive contact with a specific
+domain. Chunking strategy and reranking produce larger gains than swapping a
+top-20 embedding model for a top-5 one.
+
+**Agentic retrieval is the active direction.** Rather than one retrieval pass, the
+model decides *whether* to retrieve, issues multiple reformulated queries, reads
+results, and retrieves again. Self-RAG formalised the "should I retrieve, and is
+this passage actually relevant" decision as learned reflection tokens. It costs
+more per query and handles multi-hop questions that single-pass RAG cannot.
+
+## Open problems
+
+- **Evaluation is genuinely hard.** End-to-end answer quality conflates retrieval
+  and generation failures. Measuring retrieval alone needs relevance labels, which
+  are expensive and subjective. Most deployed systems are not measured properly.
+
+- **Multi-hop questions defeat single-pass retrieval.** "Which of our vendors in
+  the EU has a contract expiring before the new regulation takes effect" requires
+  chaining. One embedding lookup cannot do it.
+
+- **Negation and temporal qualifiers are poorly handled.** Embeddings of "contracts
+  that include an indemnity clause" and "contracts that exclude an indemnity
+  clause" are close together. This is a known and unsolved weakness of the
+  bi-encoder formulation.
+
+- **No principled chunking method.** It remains hand-tuned per corpus, and it is
+  the highest-leverage parameter in the system.
+
+- **Freshness and invalidation.** When a document changes, its chunks, embeddings,
+  and any cached answers all go stale. Most systems handle this by re-indexing
+  everything on a schedule and hoping.
+
+## What to read next, in order
+
+1. **Karpukhin et al. (2020), DPR** — read the hard-negative ablations, which are
+   the transferable finding.
+2. **Liu et al. (2023), Lost in the Middle** — short, and it will change how you
+   order your prompts.
+3. **Khattab & Zaharia (2020), ColBERT** — for late interaction as the middle
+   ground between the two architectures.
+4. **Robertson & Zaragoza (2009)** — for why a 2009 lexical method is still hard to
+   beat.
+
+<Papers papers={frontmatter.papers} />

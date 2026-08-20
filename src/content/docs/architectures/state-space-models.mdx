@@ -239,6 +239,59 @@ everything. **This is an information-capacity argument, not an optimisation
 one** — which is why it does not go away with better training.
 </Aside>
 
+<Figure
+  lead="Fixed state versus growing cache — the capacity bound, drawn."
+  caption="Attention retains every token, so retrieval is exact at any distance and memory grows linearly with context. An SSM compresses history into a fixed number of state dimensions, so cost per token never changes and information beyond the state's capacity is simply gone. This is an information-capacity argument rather than an optimisation one, which is why better training does not close the recall gap — and why the fix that works is inserting a few attention layers rather than improving the SSM."
+>
+<svg viewBox="0 0 760 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Attention KV cache growth versus fixed SSM state">
+  <text class="lb" x="190" y="20" text-anchor="middle">Attention — keeps everything</text>
+  <rect class="f-blue" x="40" y="34" width="20" height="22" rx="3"/>
+  <rect class="f-blue" x="64" y="34" width="20" height="22" rx="3"/>
+  <rect class="f-blue" x="88" y="34" width="20" height="22" rx="3"/>
+  <text class="xs" x="120" y="50">t = 3</text>
+  <rect class="f-blue" x="40" y="62" width="20" height="22" rx="3"/>
+  <rect class="f-blue" x="64" y="62" width="20" height="22" rx="3"/>
+  <rect class="f-blue" x="88" y="62" width="20" height="22" rx="3"/>
+  <rect class="f-blue" x="112" y="62" width="20" height="22" rx="3"/>
+  <rect class="f-blue" x="136" y="62" width="20" height="22" rx="3"/>
+  <rect class="f-blue" x="160" y="62" width="20" height="22" rx="3"/>
+  <text class="xs" x="192" y="78">t = 6</text>
+  <rect class="f-blue" x="40" y="90" width="20" height="22" rx="3"/>
+  <rect class="f-blue" x="64" y="90" width="20" height="22" rx="3"/>
+  <rect class="f-blue" x="88" y="90" width="20" height="22" rx="3"/>
+  <rect class="f-blue" x="112" y="90" width="20" height="22" rx="3"/>
+  <rect class="f-blue" x="136" y="90" width="20" height="22" rx="3"/>
+  <rect class="f-blue" x="160" y="90" width="20" height="22" rx="3"/>
+  <rect class="f-blue" x="184" y="90" width="20" height="22" rx="3"/>
+  <rect class="f-blue" x="208" y="90" width="20" height="22" rx="3"/>
+  <rect class="f-blue" x="232" y="90" width="20" height="22" rx="3"/>
+  <text class="xs" x="264" y="106">t = 9</text>
+
+  <text class="xs" x="40" y="140">memory grows linearly · retrieval exact</text>
+  <text class="xs" x="40" y="158">KV cache can exceed the model weights</text>
+
+  <line class="bx" x1="360" y1="14" x2="360" y2="248" opacity="0.3"/>
+
+  <text class="lb" x="560" y="20" text-anchor="middle">SSM — fixed-size state</text>
+  <rect class="f-purple" x="420" y="34" width="120" height="22" rx="3"/>
+  <text class="xs" x="560" y="50">t = 3</text>
+  <rect class="f-purple" x="420" y="62" width="120" height="22" rx="3"/>
+  <text class="xs" x="560" y="78">t = 6</text>
+  <rect class="f-purple" x="420" y="90" width="120" height="22" rx="3"/>
+  <text class="xs" x="560" y="106">t = 9</text>
+  <text class="xs" x="620" y="78">identical size</text>
+  <text class="xs" x="620" y="94">at every t</text>
+
+  <text class="xs" x="420" y="140">memory constant · cost per token constant</text>
+  <text class="xs" x="420" y="158">but capacity is bounded at ~O(N) stored items</text>
+
+  <line class="bx" x1="40" y1="180" x2="716" y2="180" opacity="0.3"/>
+  <rect class="f-green" x="40" y="196" width="676" height="46" rx="5"/>
+  <text class="on-fill-sm" x="56" y="216">Hybrids interleave ~1 attention layer in 8 among Mamba layers.</text>
+  <text class="xs" x="56" y="234">The attention layers supply exact recall; the SSM layers supply cheap bulk processing. This beats both pure architectures.</text>
+</svg>
+</Figure>
+
 ## The comparison
 
 | | Attention | SSM (Mamba) |

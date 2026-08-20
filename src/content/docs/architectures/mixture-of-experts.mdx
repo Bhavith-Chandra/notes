@@ -200,6 +200,46 @@ behaviour. Every MoE system carries machinery whose only job is to prevent it.
 
 </Steps>
 
+<Figure
+  lead="The runaway that load balancing exists to break."
+  caption="Unselected experts receive no gradient at all from a token, which is the mathematical origin of the problem: an expert that stops being chosen stops learning and cannot recover on its own. A marginal early advantage compounds through four steps into a model where most parameters are dead weight — resident in memory, never used. This is the default trajectory, not a rare failure, which is why every MoE system ships an explicit countermeasure."
+>
+<svg viewBox="0 0 760 270" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The routing collapse feedback loop and its two countermeasures">
+  <defs>
+    <marker id="mo2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <rect class="f-amber" x="250" y="26" width="230" height="34" rx="5"/>
+  <text class="on-fill-sm" x="365" y="48" text-anchor="middle">expert 3 is marginally better by chance</text>
+
+  <path class="ar" d="M480,44 C580,50 610,72 610,96" marker-end="url(#mo2)"/>
+  <rect class="f-pink" x="516" y="98" width="188" height="34" rx="5"/>
+  <text class="on-fill-sm" x="610" y="120" text-anchor="middle">router sends it more tokens</text>
+
+  <path class="ar" d="M610,134 C610,164 560,182 490,186" marker-end="url(#mo2)"/>
+  <rect class="f-pink" x="262" y="170" width="226" height="34" rx="5"/>
+  <text class="on-fill-sm" x="375" y="192" text-anchor="middle">more gradient → it improves faster</text>
+
+  <path class="ar" d="M260,186 C180,182 130,162 130,132" marker-end="url(#mo2)"/>
+  <rect class="f-pink" x="40" y="98" width="180" height="34" rx="5"/>
+  <text class="on-fill-sm" x="130" y="120" text-anchor="middle">gap widens further</text>
+
+  <path class="ar" d="M130,96 C130,66 180,46 246,42" marker-end="url(#mo2)"/>
+
+  <text class="lb" x="365" y="118" text-anchor="middle">ROUTING</text>
+  <text class="lb" x="365" y="138" text-anchor="middle">COLLAPSE</text>
+
+  <line class="bx" x1="40" y1="222" x2="716" y2="222" opacity="0.3"/>
+  <text class="xs" x="40" y="244">Break the loop with:</text>
+  <rect class="f-green" x="176" y="230" width="242" height="28" rx="5"/>
+  <text class="on-fill-sm" x="297" y="249" text-anchor="middle">auxiliary loss  α·N·Σ fᵢPᵢ</text>
+  <rect class="f-green" x="430" y="230" width="286" height="28" rx="5"/>
+  <text class="on-fill-sm" x="573" y="249" text-anchor="middle">or a learned per-expert routing bias (no competing gradient)</text>
+</svg>
+</Figure>
+
 ## Load balancing
 
 The auxiliary loss that stops routing collapse. For $N$ experts and a batch of $T$

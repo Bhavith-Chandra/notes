@@ -1,0 +1,422 @@
+---
+title: Evaluation
+description: "Benchmarks, contamination, LLM judges and the statistics nobody runs — why most reported model comparisons do not support their conclusions."
+sidebar:
+  order: 4
+depth: frontier
+readingTime: 30
+papers:
+  - title: "Measuring Massive Multitask Language Understanding (MMLU)"
+    authors: "Hendrycks, Burns, Basart, … Steinhardt"
+    year: 2020
+    url: "https://arxiv.org/abs/2009.03300"
+  - title: "Beyond the Imitation Game: Quantifying and extrapolating the capabilities of language models (BIG-bench)"
+    authors: "Srivastava et al."
+    year: 2022
+    url: "https://arxiv.org/abs/2206.04615"
+  - title: "Holistic Evaluation of Language Models (HELM)"
+    authors: "Liang, Bommasani, Lee, et al."
+    year: 2022
+    url: "https://arxiv.org/abs/2211.09110"
+  - title: "Emergent Abilities of Large Language Models"
+    authors: "Wei, Tay, Bommasani, … Fedus"
+    year: 2022
+    url: "https://arxiv.org/abs/2206.07682"
+  - title: "Are Emergent Abilities of Large Language Models a Mirage?"
+    authors: "Schaeffer, Miranda, Koyejo"
+    year: 2023
+    url: "https://arxiv.org/abs/2304.15004"
+  - title: "Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena"
+    authors: "Zheng, Chiang, Sheng, … Stoica"
+    year: 2023
+    url: "https://arxiv.org/abs/2306.05685"
+  - title: "Chatbot Arena: An Open Platform for Evaluating LLMs by Human Preference"
+    authors: "Chiang, Zheng, Sheng, et al."
+    year: 2024
+    url: "https://arxiv.org/abs/2403.04132"
+  - title: "Benchmark Data Contamination of Large Language Models: A Survey"
+    authors: "Xu, Guan, Greene, Kechadi"
+    year: 2024
+    url: "https://arxiv.org/abs/2406.04244"
+  - title: "SWE-bench: Can Language Models Resolve Real-World GitHub Issues?"
+    authors: "Jimenez, Yang, Wettig, … Narasimhan"
+    year: 2023
+    url: "https://arxiv.org/abs/2310.06770"
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+<Abstract>
+Every claim in machine learning rests on a measurement, and the measurements are
+in worse shape than the models. Benchmarks leak into training data, the standard
+comparison is reported without error bars, and the metric you choose can
+manufacture a discontinuity that is not in the underlying model. None of this
+means evaluation is hopeless — it means reading a number requires knowing how it
+was produced.
+</Abstract>
+
+<KeyPoints>
+
+- **Contamination is the default assumption, not the exception.** If a benchmark predates a model's training cutoff and exists on the public internet, assume some of it was seen. The burden of proof is on the claim of cleanliness.
+- **A 1-point difference on a 1,000-item benchmark is noise.** The standard error is around 1.5 points. Most reported model comparisons do not clear their own error bars, and almost none report them.
+- **Emergence may be a property of your metric.** Exact-match accuracy is discontinuous by construction; swap to a continuous metric and many "sudden" capability jumps become smooth curves. The models may not be doing anything abrupt.
+- **LLM judges are cheap, correlate well with humans, and share their biases.** They prefer longer answers, favour the first option presented, and rate their own family's outputs higher. Optimising against a judge is reward hacking one level up.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## The exam you accidentally published
+
+You write an exam to test students. You post it online with the answer key so
+others can use it. Next year's students study from the internet.
+
+They ace your exam. Did they learn the subject, or did they memorise your paper?
+
+**This is the situation every public benchmark is in.** MMLU, HumanEval, GSM8K —
+all published, all scraped, all plausibly inside the training corpus of any model
+released afterwards. Their scores are some mixture of capability and recall, and
+the mixture is not measurable from the outside.
+
+## Why one number is not enough
+
+"Model A scores 87.3, model B scores 86.9."
+
+Before treating that as A winning, three questions:
+
+**How many items?** On a 1,000-question benchmark, the standard error on a score
+near 87% is about 1.1 points. A 0.4-point gap is well inside the noise.
+
+**How was it prompted?** Few-shot examples, their order, the answer format, and
+whether chain-of-thought was allowed can move scores by several points — more than
+most reported differences between models.
+
+**Was it contaminated?** If A's training data included the test set and B's did
+not, you have measured data curation, not capability.
+
+<Aside type="caution" title="The reasonable default">
+Treat differences under about two points on a standard benchmark as
+indistinguishable unless the paper reports confidence intervals and a matched
+prompting protocol. Most do not. This is not cynicism — it is what the sample size
+supports.
+</Aside>
+
+## The emergence argument
+
+A widely-cited observation: some capabilities appear *suddenly* at scale. Below
+some model size, near-zero performance; above it, the ability appears.
+
+Schaeffer et al. proposed a deflationary explanation worth taking seriously.
+Consider a task scored by **exact match** on a five-digit answer. If per-digit
+accuracy improves smoothly from 0.70 to 0.95, exact-match accuracy goes
+
+$$
+0.70^5 = 0.17 \quad\longrightarrow\quad 0.95^5 = 0.77,
+$$
+
+but the curve in between is sharply non-linear — it looks like a phase transition
+because the *metric* is a product of five smooth terms, not because anything
+discontinuous happened inside the model.
+
+Swap to per-digit accuracy or log-likelihood and the sharpness vanishes.
+
+**This does not prove emergence is never real.** It shows that a discontinuous
+metric can manufacture the appearance of one, so the burden falls on the claimant
+to show the discontinuity survives a continuous measure.
+
+<Tier level="mechanics" />
+
+## The failure modes
+
+<Figure
+  lead="Four ways an evaluation misleads."
+  caption="These are independent and they compound. A contaminated benchmark reported without error bars, scored by a discontinuous metric, and judged by a model with a length bias can produce a confident ranking with essentially no evidential content. The remedies on the right are each cheap; the reason they are skipped is that they usually make the headline number smaller and the story less clean."
+>
+<svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Four evaluation failure modes and their remedies">
+  <rect class="f-pink" x="14" y="26" width="330" height="56" rx="5"/>
+  <text class="on-fill-sm" x="30" y="48">1 · Contamination</text>
+  <text class="xs" x="30" y="66">test items are in the training corpus</text>
+  <path class="ar" d="M350,54 L400,54"/>
+  <rect class="f-green" x="406" y="26" width="340" height="56" rx="5"/>
+  <text class="on-fill-sm" x="422" y="48">Held-out or post-cutoff benchmarks</text>
+  <text class="xs" x="422" y="66">n-gram overlap checks · canary strings · dynamic test sets</text>
+
+  <rect class="f-pink" x="14" y="94" width="330" height="56" rx="5"/>
+  <text class="on-fill-sm" x="30" y="116">2 · No error bars</text>
+  <text class="xs" x="30" y="134">a 0.4-point gap on 1,000 items is noise</text>
+  <path class="ar" d="M350,122 L400,122"/>
+  <rect class="f-green" x="406" y="94" width="340" height="56" rx="5"/>
+  <text class="on-fill-sm" x="422" y="116">Report a CI, and multiple seeds</text>
+  <text class="xs" x="422" y="134">binomial SE = √(p(1−p)/n) · paired tests, not independent ones</text>
+
+  <rect class="f-pink" x="14" y="162" width="330" height="56" rx="5"/>
+  <text class="on-fill-sm" x="30" y="184">3 · Discontinuous metric</text>
+  <text class="xs" x="30" y="202">exact match manufactures phase transitions</text>
+  <path class="ar" d="M350,190 L400,190"/>
+  <rect class="f-green" x="406" y="162" width="340" height="56" rx="5"/>
+  <text class="on-fill-sm" x="422" y="184">Report a continuous metric alongside</text>
+  <text class="xs" x="422" y="202">token edit distance · Brier score · log-likelihood</text>
+
+  <rect class="f-pink" x="14" y="230" width="330" height="56" rx="5"/>
+  <text class="on-fill-sm" x="30" y="252">4 · Judge bias</text>
+  <text class="xs" x="30" y="270">length, position, and self-preference</text>
+  <path class="ar" d="M350,258 L400,258"/>
+  <rect class="f-green" x="406" y="230" width="340" height="56" rx="5"/>
+  <text class="on-fill-sm" x="422" y="252">Swap positions, control for length</text>
+  <text class="xs" x="422" y="270">never judge with a model from the family under test</text>
+</svg>
+</Figure>
+
+## Contamination, and how to detect it
+
+The problem is straightforward and the detection is not, because you generally do
+not have access to the training corpus.
+
+<Steps>
+
+1. **N-gram overlap.** Search the training data for verbatim spans from the test
+   set. Only possible with open data, and defeated by paraphrase.
+
+2. **Canary strings.** Benchmarks embed a unique GUID and ask trainers to filter
+   on it. Depends entirely on good faith and on the filter running.
+
+3. **Memorisation probes.** Give the model the first half of a test item and see
+   whether it completes the second half verbatim. Suggestive rather than
+   conclusive.
+
+4. **Temporal split.** Evaluate only on items created *after* the model's training
+   cutoff. The most reliable method available, and it means benchmarks have a
+   shelf life.
+
+5. **Perturbation.** Rewrite items while preserving the answer. A large drop
+   suggests the model was matching surface form rather than reasoning.
+
+</Steps>
+
+The structural fix is **dynamic benchmarks** — continuously refreshed with new
+items, so there is no fixed set to memorise. SWE-bench is a partial example: it
+draws from real GitHub issues, and new issues keep appearing.
+
+## LLM judges
+
+Using a strong model to score outputs is cheap, fast, and correlates with human
+preference at roughly 80% agreement — which is close to the agreement rate
+*between humans*.
+
+The biases are documented and consistent:
+
+| Bias | Effect | Mitigation |
+|---|---|---|
+| **Length** | prefers longer responses regardless of quality | control for length; report length alongside score |
+| **Position** | prefers whichever option came first | evaluate both orders, average |
+| **Self-preference** | rates its own family's outputs higher | never judge with a model related to one under test |
+| **Style over substance** | confident formatting beats correct content | use reference answers where possible |
+
+<Aside type="danger" title="Judges are a proxy, and proxies get gamed">
+This is the same structure as [reward hacking](/training/post-training/). If you
+optimise a model against a judge, you will find the judge's blind spots — verbosity
+and confident formatting most reliably. A judge used for *measurement* is
+reasonable; a judge used as a *training signal* needs the same scepticism you would
+apply to any learned reward model.
+</Aside>
+
+<Tier level="formal" />
+
+## Confidence intervals, which almost nobody reports
+
+Benchmark accuracy is a binomial proportion. For $n$ items and observed accuracy
+$\hat p$:
+
+$$
+\operatorname{SE}(\hat p) = \sqrt{\frac{\hat p (1 - \hat p)}{n}}, \qquad
+\text{95\% CI} \approx \hat p \pm 1.96\,\operatorname{SE}.
+$$
+
+For MMLU-scale evaluation, $n \approx 14{,}000$ and $\hat p = 0.85$:
+
+$$
+\operatorname{SE} = \sqrt{\frac{0.85 \times 0.15}{14000}} \approx 0.0030,
+$$
+
+so the CI is roughly $\pm 0.6$ points. For a 1,000-item subject subset:
+
+$$
+\operatorname{SE} = \sqrt{\frac{0.85 \times 0.15}{1000}} \approx 0.0113 \implies \pm 2.2 \text{ points}.
+$$
+
+**A two-point difference on a thousand-item benchmark is not significant.** Read
+per-subject MMLU breakdowns with this in mind — most of those subsets are a few
+hundred items, giving error bars of ±4 points or more.
+
+## Use a paired test
+
+Comparing two models on the *same* items means the observations are paired, and
+treating them as independent throws away power and inflates the variance estimate.
+
+McNemar's test uses only the discordant pairs. Let $b$ be the count where model A
+is right and B wrong, $c$ the reverse:
+
+$$
+\chi^2 = \frac{(|b - c| - 1)^2}{b + c}, \qquad \text{df} = 1.
+$$
+
+Items both models get right or both get wrong carry no information about which is
+better, and excluding them is why the paired test is more sensitive. For small
+$b+c$, use the exact binomial test on $b \sim \operatorname{Bin}(b+c, 0.5)$
+instead.
+
+## The emergence argument, formalised
+
+Let per-token accuracy be $a(N)$, smooth and increasing in model size $N$. For a
+task requiring $L$ tokens all correct:
+
+$$
+\operatorname{EM}(N) = a(N)^{L}.
+$$
+
+Differentiating:
+
+$$
+\frac{d\,\operatorname{EM}}{dN} = L\, a(N)^{L-1}\,a'(N).
+$$
+
+For small $a$ this is near zero (the $a^{L-1}$ factor crushes it); as $a \to 1$ it
+approaches $L\,a'(N)$. So the exact-match curve is **flat, then steep, then
+saturating** — an S-curve — while $a(N)$ itself is smooth throughout.
+
+The sharpness scales with $L$: longer required outputs produce sharper apparent
+transitions from identical underlying improvement.
+
+**The diagnostic.** Plot a continuous metric — token-level accuracy, edit
+distance, or log-likelihood of the correct answer — on the same axis. If the
+sharpness survives, the discontinuity is in the model. If it dissolves, it was in
+the metric.
+
+<Figure
+  lead="The same smooth improvement, scored two ways."
+  caption="Per-token accuracy improves smoothly and unremarkably with scale — the left curve. Score the same models by exact match on a five-token answer and you get the right curve, which looks like a phase transition: flat, then a sudden jump, then saturation. Nothing discontinuous happened inside the model; raising a smooth quantity to the fifth power produced the appearance of one. The diagnostic is simply to plot both, and the sharpness scales with required output length."
+>
+<svg viewBox="0 0 760 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Smooth per-token accuracy versus discontinuous exact-match accuracy">
+  <text class="lb" x="190" y="18" text-anchor="middle">Per-token accuracy a(N)</text>
+  <line class="bx" x1="60" y1="190" x2="330" y2="190"/>
+  <line class="bx" x1="60" y1="34" x2="60" y2="190"/>
+  <text class="xs" x="195" y="214" text-anchor="middle">model scale  →</text>
+  <path class="thick" d="M64,168 C110,150 150,120 200,96 C250,72 290,58 326,50"/>
+  <text class="xs" x="195" y="236" text-anchor="middle">smooth, boring, no story</text>
+
+  <line class="bx" x1="390" y1="14" x2="390" y2="242" opacity="0.3"/>
+
+  <text class="lb" x="570" y="18" text-anchor="middle">Exact match = a(N)⁵</text>
+  <line class="bx" x1="440" y1="190" x2="710" y2="190"/>
+  <line class="bx" x1="440" y1="34" x2="440" y2="190"/>
+  <text class="xs" x="575" y="214" text-anchor="middle">model scale  →</text>
+  <path class="thick" d="M444,186 C490,184 530,178 560,160 C586,142 600,92 620,68 C646,44 680,40 706,38"/>
+  <circle class="f-pink" cx="590" cy="114" r="6"/>
+  <text class="xs" x="575" y="236" text-anchor="middle">"emergence" — same models, different metric</text>
+
+  <text class="xs" x="150" y="122">0.70 → 0.95</text>
+  <text class="xs" x="470" y="122">0.17 → 0.77</text>
+</svg>
+</Figure>
+
+## Scoring rules
+
+Accuracy discards the model's confidence. For a calibrated view use the **Brier
+score**:
+
+$$
+\text{BS} = \frac{1}{n}\sum_{i=1}^{n}\big(p_i - y_i\big)^2,
+$$
+
+which is *proper* — uniquely minimised by reporting your true belief, so it cannot
+be gamed by strategic over- or under-confidence. It decomposes as
+
+$$
+\text{BS} = \underbrace{\mathbb{E}\big[(p - \bar y_{p})^2\big]}_{\text{calibration}} - \underbrace{\mathbb{E}\big[(\bar y_{p} - \bar y)^2\big]}_{\text{resolution}} + \underbrace{\bar y(1-\bar y)}_{\text{irreducible}},
+$$
+
+separating "are your stated probabilities honest" from "do they discriminate".
+Two models can share an accuracy and differ enormously on both.
+
+## Elo and its assumptions
+
+Chatbot Arena ranks models by pairwise human preference using an Elo-style rating.
+Under the Bradley–Terry model — the same one behind [reward
+modelling](/training/post-training/) — the probability A beats B is
+
+$$
+P(A \succ B) = \frac{1}{1 + 10^{(R_B - R_A)/400}}.
+$$
+
+Three assumptions worth surfacing, because they are load-bearing and often
+violated:
+
+- **Transitivity.** If A beats B and B beats C then A beats C. Real preferences on
+  heterogeneous tasks are not reliably transitive.
+- **A single latent dimension.** One number per model, so "better at code, worse at
+  prose" is not representable.
+- **A representative query distribution.** The rating reflects what Arena users
+  happen to ask, which is not what your users ask.
+
+Arena is the most robust preference signal available and it measures preference
+under a particular distribution — not capability in general.
+
+<Tier level="frontier" />
+
+## Where this stands, as of 2026
+
+**Static benchmarks saturate and then mislead.** MMLU, HumanEval and GSM8K are all
+in the range where remaining headroom is dominated by label noise and ambiguous
+items. Improvements at the top are partly fitting the errors in the test set.
+
+**The field has moved toward held-out, dynamic, and agentic evaluation.**
+Benchmarks built from post-cutoff material, continuously refreshed item pools, and
+tasks with programmatic verification. SWE-bench-style evaluation — real issues,
+real test suites — is now more informative than any multiple-choice benchmark.
+
+**Arena-style human preference is the most trusted single signal**, and it is
+measuring preference on a particular query distribution, with all the caveats
+above. It is not a capability measure and is frequently read as one.
+
+**LLM judges are ubiquitous for development and under-validated for publication.**
+They are appropriate for iteration; using one as the primary evidence in a model
+comparison requires reporting agreement with human labels on the specific task.
+
+## Open problems
+
+- **No good measure of contamination.** Every detection method is heuristic and
+  most require training-data access nobody has.
+
+- **Benchmarks measure what is easy to measure.** Multiple choice, short answers,
+  verifiable outputs. The things people actually want — judgement, taste,
+  reliability over long horizons — resist automatic scoring entirely.
+
+- **Construct validity is rarely examined.** Does MMLU measure "massive multitask
+  language understanding"? It measures the ability to answer those particular
+  multiple-choice questions. The gap between the two is assumed away.
+
+- **Agentic evaluation is stochastic and expensive.** The same task can succeed or
+  fail across seeds. Getting a stable estimate needs many runs, and many runs cost
+  real money, so most reported agent numbers rest on very few samples.
+
+- **No standard reporting protocol.** Prompting, few-shot count, decoding
+  temperature, and answer extraction all vary between papers and all move scores by
+  more than the differences being claimed.
+
+## What to read next, in order
+
+1. **Schaeffer et al. (2023), Mirage** — the metric argument. Short, and it
+   permanently changes how you read a capability curve.
+2. **Liang et al. (2022), HELM** — for the multi-metric framing: accuracy,
+   calibration, robustness, fairness, efficiency measured together.
+3. **Zheng et al. (2023), MT-Bench** — the judge-bias measurements are the useful
+   part, more than the benchmark.
+4. **Xu et al. (2024), contamination survey** — for the detection landscape and
+   why none of it is sufficient.
+
+<Papers papers={frontmatter.papers} />

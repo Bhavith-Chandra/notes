@@ -1,0 +1,475 @@
+---
+title: Backpropagation
+description: "Reverse-mode automatic differentiation from first principles — why it costs the same as the forward pass, and why memory rather than compute is the real constraint."
+sidebar:
+  order: 0
+depth: formal
+readingTime: 30
+papers:
+  - title: "Learning representations by back-propagating errors"
+    authors: "David E. Rumelhart, Geoffrey E. Hinton, Ronald J. Williams"
+    year: 1986
+    url: "https://doi.org/10.1038/323533a0"
+  - title: "Automatic differentiation in machine learning: a survey"
+    authors: "Baydin, Pearlmutter, Radul, Siskind"
+    year: 2015
+    url: "https://arxiv.org/abs/1502.05767"
+  - title: "Training Deep Nets with Sublinear Memory Cost"
+    authors: "Chen, Xu, Zhang, Guestrin"
+    year: 2016
+    url: "https://arxiv.org/abs/1604.06174"
+  - title: "On the difficulty of training Recurrent Neural Networks"
+    authors: "Razvan Pascanu, Tomas Mikolov, Yoshua Bengio"
+    year: 2012
+    url: "https://arxiv.org/abs/1211.5063"
+  - title: "Deep Residual Learning for Image Recognition (ResNet)"
+    authors: "He, Zhang, Ren, Sun"
+    year: 2015
+    url: "https://arxiv.org/abs/1512.03385"
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+<Abstract>
+Backpropagation is the chain rule applied in a specific order. That order is the
+entire contribution: computing derivatives from the output backwards costs about
+the same as one forward pass regardless of how many parameters there are, while
+the forward direction would cost one pass *per parameter*. The price is memory —
+you must keep every intermediate activation — and that trade determines almost
+everything about how large models are trained.
+</Abstract>
+
+<KeyPoints>
+
+- **Reverse mode is chosen because networks have one output and many inputs.** For $f: \mathbb{R}^n \to \mathbb{R}$, reverse mode gets the whole gradient in one backward sweep; forward mode needs $n$ sweeps. With $n$ in the billions this is not a constant-factor difference.
+- **The cost is memory, not compute.** Every activation on the forward path must be retained for the backward pass. This is why activation memory, not parameter count, usually sets your maximum batch size.
+- **Vanishing and exploding gradients are the same phenomenon.** Gradients are products of Jacobians along the path; products of many terms either shrink or grow geometrically. Residual connections fix it by making one term of each product exactly the identity.
+- **Autodiff is neither symbolic nor numerical.** It evaluates exact derivatives numerically by composing known local derivatives — no expression swell, no finite-difference error.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## Blame assignment
+
+A network makes a prediction and it is wrong by some amount. Millions of
+parameters contributed. Which ones, and how much should each move?
+
+The naive approach: nudge one parameter, re-run the whole network, see how the
+error changed. That is one full forward pass per parameter. For a billion
+parameters, a billion forward passes per training step. Completely impossible.
+
+Backpropagation gets **every** parameter's contribution in a single backward sweep
+costing roughly what one forward pass costs. That is the whole idea, and it is
+worth pausing on how large the saving is: a factor of a billion.
+
+## How the trick works
+
+Blame flows backwards through the network in the reverse of how the signal flowed
+forwards.
+
+Start at the output: *"the answer was 0.3 too high."* The final layer knows what it
+did to produce that output, so it can compute two things — how its own weights
+should change, and how much of the blame belongs to its *inputs*, which were the
+previous layer's outputs.
+
+Hand that blame back one layer. Repeat. Each layer needs only local information:
+what it received, what it produced, and how much blame arrived from ahead.
+
+**The saving comes from sharing.** Every path from a parameter to the output goes
+through the layers ahead of it. Computing blame backwards means each shared segment
+is computed once and reused by everything behind it, rather than recomputed for
+every parameter.
+
+<Aside type="tip" title="Why backwards rather than forwards">
+You could apply the chain rule from inputs to output instead — that is forward-mode
+autodiff — and for a function with one input and many outputs it is the better
+choice. Neural networks are the opposite shape: billions of inputs (parameters),
+one output (the loss). **Match the direction to the shape**, and for a scalar loss
+that means backwards.
+</Aside>
+
+## The bill: memory
+
+The backward pass needs to know what each layer saw on the way forward. So every
+intermediate activation must be **kept** from the forward pass until the backward
+pass reaches it.
+
+For a large model with long sequences this dominates memory — often exceeding the
+parameters and optimizer state combined. It is why you run out of memory when you
+increase batch size or sequence length, and why gradient checkpointing exists.
+
+<Tier level="mechanics" />
+
+## The two sweeps
+
+<Figure
+  lead="Forward computes and stores; backward consumes and discards."
+  caption="The forward pass computes each layer's output and retains it — the shaded band is activation memory, and it grows with depth, batch size and sequence length. The backward pass walks the same graph in reverse, and at each node needs two things: the incoming gradient from ahead, and the stored activation from the forward pass. Each node produces its parameter gradient and passes blame further back. Total backward cost is roughly two forward passes, which is why training a step costs about 3x inference."
+>
+<svg viewBox="0 0 760 310" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Forward pass storing activations and backward pass consuming them">
+  <defs>
+    <marker id="bp1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <text class="lb" x="14" y="20">FORWARD — compute and store</text>
+
+  <rect class="f-grey" x="20" y="34" width="70" height="38" rx="4"/>
+  <text class="on-fill-sm" x="55" y="58" text-anchor="middle">x</text>
+  <path class="ar" d="M94,53 L130,53" marker-end="url(#bp1)"/>
+  <rect class="f-blue" x="136" y="34" width="86" height="38" rx="4"/>
+  <text class="on-fill-sm" x="179" y="58" text-anchor="middle">layer 1</text>
+  <path class="ar" d="M226,53 L262,53" marker-end="url(#bp1)"/>
+  <rect class="f-blue" x="268" y="34" width="86" height="38" rx="4"/>
+  <text class="on-fill-sm" x="311" y="58" text-anchor="middle">layer 2</text>
+  <path class="ar" d="M358,53 L394,53" marker-end="url(#bp1)"/>
+  <rect class="f-blue" x="400" y="34" width="86" height="38" rx="4"/>
+  <text class="on-fill-sm" x="443" y="58" text-anchor="middle">layer 3</text>
+  <path class="ar" d="M490,53 L526,53" marker-end="url(#bp1)"/>
+  <rect class="f-pink" x="532" y="34" width="86" height="38" rx="4"/>
+  <text class="on-fill-sm" x="575" y="58" text-anchor="middle">loss L</text>
+
+  <rect class="f-amber" x="136" y="88" width="350" height="34" rx="4" opacity="0.6"/>
+  <text class="on-fill-sm" x="311" y="110" text-anchor="middle">activations a₁, a₂, a₃ retained — this is the memory cost</text>
+  <path class="dash" d="M179,76 L179,86"/>
+  <path class="dash" d="M311,76 L311,86"/>
+  <path class="dash" d="M443,76 L443,86"/>
+
+  <line class="bx" x1="14" y1="142" x2="746" y2="142" opacity="0.3"/>
+
+  <text class="lb" x="14" y="168">BACKWARD — consume and discard</text>
+
+  <rect class="f-pink" x="532" y="182" width="86" height="38" rx="4"/>
+  <text class="on-fill-sm" x="575" y="206" text-anchor="middle">∂L/∂L = 1</text>
+  <path class="ar" d="M528,201 L492,201" marker-end="url(#bp1)"/>
+  <rect class="f-purple" x="400" y="182" width="86" height="38" rx="4"/>
+  <text class="on-fill-sm" x="443" y="206" text-anchor="middle">layer 3ᵀ</text>
+  <path class="ar" d="M396,201 L360,201" marker-end="url(#bp1)"/>
+  <rect class="f-purple" x="268" y="182" width="86" height="38" rx="4"/>
+  <text class="on-fill-sm" x="311" y="206" text-anchor="middle">layer 2ᵀ</text>
+  <path class="ar" d="M264,201 L228,201" marker-end="url(#bp1)"/>
+  <rect class="f-purple" x="136" y="182" width="86" height="38" rx="4"/>
+  <text class="on-fill-sm" x="179" y="206" text-anchor="middle">layer 1ᵀ</text>
+
+  <path class="dash" d="M179,126 L179,178" marker-end="url(#bp1)"/>
+  <path class="dash" d="M311,126 L311,178" marker-end="url(#bp1)"/>
+  <path class="dash" d="M443,126 L443,178" marker-end="url(#bp1)"/>
+  <text class="xs" x="640" y="140">stored activations are</text>
+  <text class="xs" x="640" y="156">read back in here</text>
+
+  <path class="ar" d="M179,224 L179,250" marker-end="url(#bp1)"/>
+  <path class="ar" d="M311,224 L311,250" marker-end="url(#bp1)"/>
+  <path class="ar" d="M443,224 L443,250" marker-end="url(#bp1)"/>
+  <rect class="f-green" x="136" y="252" width="350" height="30" rx="4"/>
+  <text class="on-fill-sm" x="311" y="272" text-anchor="middle">∂L/∂W₁ , ∂L/∂W₂ , ∂L/∂W₃ — all in one sweep</text>
+
+  <text class="xs" x="600" y="268">≈ 2× forward cost</text>
+  <text class="xs" x="600" y="284">→ a training step ≈ 3× inference</text>
+</svg>
+</Figure>
+
+## Two rules, and the whole algorithm
+
+<Steps>
+
+1. **Chain rule along a path.** If $L$ depends on $b$ which depends on $a$, then
+   $\dfrac{\partial L}{\partial a} = \dfrac{\partial L}{\partial b}\cdot
+   \dfrac{\partial b}{\partial a}$.
+
+2. **Sum over paths.** If $a$ influences $L$ through several routes, add the
+   contributions. This is what makes residual connections and multi-head attention
+   work correctly without special handling.
+
+</Steps>
+
+Everything else is bookkeeping: build the graph during the forward pass, walk it in
+reverse topological order, and at each node apply the local derivative.
+
+## Gradient checkpointing
+
+The memory/compute dial. Instead of keeping every activation, keep only every
+$\sqrt{n}$-th one — the *checkpoints* — and recompute the rest during the backward
+pass from the nearest checkpoint.
+
+Memory drops from $O(n)$ to $O(\sqrt{n})$ at the cost of roughly one extra forward
+pass, so about 33% more compute for a large memory saving. Standard practice for
+training anything that does not fit otherwise.
+
+<Figure
+  lead="Checkpointing trades one extra forward pass for a square-root memory bound."
+  caption="Top: keeping every activation costs memory linear in depth. Bottom: keep only every sqrt(n)-th activation and recompute the segment between checkpoints when the backward pass reaches it. Memory falls from O(n) to O(sqrt n) for roughly 33% more compute. The optimum at k = sqrt(n) falls straight out of minimising n/k + k, and this one trade is what makes training models that do not otherwise fit possible."
+>
+<svg viewBox="0 0 760 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Full activation storage versus gradient checkpointing">
+  <text class="lb" x="14" y="20">Store everything — O(n) memory</text>
+  <g>
+    <rect class="f-blue" x="40" y="34" width="30" height="26" rx="3"/>
+    <rect class="f-blue" x="76" y="34" width="30" height="26" rx="3"/>
+    <rect class="f-blue" x="112" y="34" width="30" height="26" rx="3"/>
+    <rect class="f-blue" x="148" y="34" width="30" height="26" rx="3"/>
+    <rect class="f-blue" x="184" y="34" width="30" height="26" rx="3"/>
+    <rect class="f-blue" x="220" y="34" width="30" height="26" rx="3"/>
+    <rect class="f-blue" x="256" y="34" width="30" height="26" rx="3"/>
+    <rect class="f-blue" x="292" y="34" width="30" height="26" rx="3"/>
+    <rect class="f-blue" x="328" y="34" width="30" height="26" rx="3"/>
+    <rect class="f-blue" x="364" y="34" width="30" height="26" rx="3"/>
+    <rect class="f-blue" x="400" y="34" width="30" height="26" rx="3"/>
+    <rect class="f-blue" x="436" y="34" width="30" height="26" rx="3"/>
+    <rect class="f-blue" x="472" y="34" width="30" height="26" rx="3"/>
+    <rect class="f-blue" x="508" y="34" width="30" height="26" rx="3"/>
+    <rect class="f-blue" x="544" y="34" width="30" height="26" rx="3"/>
+    <rect class="f-blue" x="580" y="34" width="30" height="26" rx="3"/>
+  </g>
+  <text class="xs" x="628" y="52">16 stored</text>
+
+  <line class="bx" x1="14" y1="84" x2="746" y2="84" opacity="0.3"/>
+
+  <text class="lb" x="14" y="110">Checkpoint every √n — O(√n) memory</text>
+  <g>
+    <rect class="f-green" x="40" y="124" width="30" height="26" rx="3"/>
+    <rect class="bx" x="76" y="124" width="30" height="26" rx="3" opacity="0.35"/>
+    <rect class="bx" x="112" y="124" width="30" height="26" rx="3" opacity="0.35"/>
+    <rect class="bx" x="148" y="124" width="30" height="26" rx="3" opacity="0.35"/>
+    <rect class="f-green" x="184" y="124" width="30" height="26" rx="3"/>
+    <rect class="bx" x="220" y="124" width="30" height="26" rx="3" opacity="0.35"/>
+    <rect class="bx" x="256" y="124" width="30" height="26" rx="3" opacity="0.35"/>
+    <rect class="bx" x="292" y="124" width="30" height="26" rx="3" opacity="0.35"/>
+    <rect class="f-green" x="328" y="124" width="30" height="26" rx="3"/>
+    <rect class="bx" x="364" y="124" width="30" height="26" rx="3" opacity="0.35"/>
+    <rect class="bx" x="400" y="124" width="30" height="26" rx="3" opacity="0.35"/>
+    <rect class="bx" x="436" y="124" width="30" height="26" rx="3" opacity="0.35"/>
+    <rect class="f-green" x="472" y="124" width="30" height="26" rx="3"/>
+    <rect class="bx" x="508" y="124" width="30" height="26" rx="3" opacity="0.35"/>
+    <rect class="bx" x="544" y="124" width="30" height="26" rx="3" opacity="0.35"/>
+    <rect class="bx" x="580" y="124" width="30" height="26" rx="3" opacity="0.35"/>
+  </g>
+  <text class="xs" x="628" y="142">4 stored</text>
+  <text class="xs" x="40" y="170">filled = kept · outlined = recomputed on the backward pass</text>
+
+  <rect class="f-amber" x="40" y="188" width="570" height="34" rx="5" opacity="0.5"/>
+  <text class="on-fill-sm" x="56" y="209">memory O(n/k + k) minimised at k = √n  ·  cost ≈ +1 forward pass (~33%)</text>
+</svg>
+</Figure>
+
+## Vanishing and exploding gradients
+
+The gradient reaching layer $k$ from a network of depth $n$ is a **product** of
+$n - k$ Jacobians. Products of many terms behave badly:
+
+- Typical magnitude below 1 → the product shrinks geometrically → early layers get
+  almost no signal.
+- Typical magnitude above 1 → the product grows geometrically → updates explode and
+  training diverges.
+
+These are not two problems. They are the same product behaving in the two ways a
+product can.
+
+**Residual connections are the fix that mattered.** Writing $y = x + F(x)$ makes
+the Jacobian $I + \partial F/\partial x$. The identity term means the product
+contains a 1 at every layer, so there is always a path along which gradient reaches
+the input undiminished. This is why networks went from tens of layers to hundreds
+in one paper.
+
+<Tier level="formal" />
+
+## Reverse-mode autodiff
+
+Let the computation be a DAG of primitive operations producing intermediates
+$v_1, \dots, v_n$ with $v_n = L$ scalar. Define the **adjoint**
+
+$$
+\bar v_i \;\equiv\; \frac{\partial L}{\partial v_i}.
+$$
+
+Initialise $\bar v_n = 1$ and sweep in reverse topological order, accumulating over
+every consumer $j$ of node $i$:
+
+$$
+\bar v_i = \sum_{j \in \operatorname{children}(i)} \bar v_j \, \frac{\partial v_j}{\partial v_i}.
+$$
+
+The sum is rule 2 above; the product inside is rule 1. **Backpropagation is this
+recursion specialised to a layered network** — there is nothing else in it.
+
+## Why it costs what it costs
+
+The **cheap gradient principle**: for $f: \mathbb{R}^n \to \mathbb{R}^m$,
+
+$$
+\text{forward mode} \sim O(n) \cdot \operatorname{cost}(f), \qquad
+\text{reverse mode} \sim O(m) \cdot \operatorname{cost}(f).
+$$
+
+Forward mode propagates one *input* direction per sweep, giving one column of the
+Jacobian. Reverse mode propagates one *output* direction, giving one row.
+
+For a loss, $m = 1$. So reverse mode delivers the entire gradient in $O(1)$ sweeps
+regardless of $n$. Baydin et al. give the standard bound: the backward pass costs
+at most a small constant (usually cited as ≤ 4, in practice ≈ 2) times the forward
+pass.
+
+The memory bound is the other side:
+
+$$
+\text{memory} = O\big(\text{number of intermediates on the forward path}\big),
+$$
+
+because reverse mode cannot begin until the forward pass has finished, so every
+intermediate must survive in between. Forward mode has no such requirement — it
+needs $O(1)$ extra memory — which is the real reason the two modes trade off rather
+than one dominating.
+
+## Layer derivatives
+
+For a linear layer $y = Wx + b$ with incoming adjoint $\bar y$:
+
+$$
+\bar W = \bar y\, x^{\top}, \qquad \bar b = \bar y, \qquad \bar x = W^{\top}\bar y .
+$$
+
+Three things worth reading off:
+
+- $\bar W$ is an **outer product**, so its cost matches the forward matmul.
+- $\bar x$ uses $W^{\top}$ — the same weights transposed. This is why the backward
+  pass is often described as running the network "in reverse".
+- **$x$ must have been stored.** That single requirement is the source of the
+  entire activation-memory problem.
+
+For an elementwise nonlinearity $y = \sigma(x)$:
+
+$$
+\bar x = \bar y \odot \sigma'(x).
+$$
+
+ReLU's derivative is $\mathbb{1}\{x > 0\}$ — exactly 0 or 1. A sigmoid's peaks at
+0.25, so ten sigmoid layers multiply gradient by at most $0.25^{10} \approx
+10^{-6}$. **This is the vanishing-gradient problem in one line**, and it is why
+ReLU replaced sigmoid.
+
+## Products of Jacobians
+
+For a depth-$n$ network,
+
+$$
+\frac{\partial L}{\partial x_k} = \frac{\partial L}{\partial x_n} \prod_{i=k}^{n-1} J_i, \qquad J_i = \frac{\partial x_{i+1}}{\partial x_i}.
+$$
+
+Bounding by spectral norms:
+
+$$
+\left\|\frac{\partial L}{\partial x_k}\right\| \;\leq\; \left\|\frac{\partial L}{\partial x_n}\right\| \prod_{i=k}^{n-1}\|J_i\| .
+$$
+
+If $\|J_i\| \leq \gamma$ for all $i$, the bound is $\gamma^{\,n-k}$:
+
+- $\gamma < 1$: vanishes geometrically.
+- $\gamma > 1$: explodes geometrically.
+- $\gamma = 1$: preserved — and this knife-edge is exactly what normalisation and
+  careful initialisation are trying to hold.
+
+**Residual connections.** With $x_{i+1} = x_i + F_i(x_i)$,
+
+$$
+J_i = I + \frac{\partial F_i}{\partial x_i} \implies \prod_{i=k}^{n-1} J_i = \prod_{i=k}^{n-1}\left(I + \frac{\partial F_i}{\partial x_i}\right).
+$$
+
+Expanding the product gives $I$ plus terms involving the $\partial F_i$. The
+leading $I$ is a path of length zero from $x_k$ to the loss — gradient reaches
+every layer *undiminished* along it, no matter the depth. The network is, in this
+sense, an ensemble of paths of many lengths, and the short ones carry the gradient.
+
+## Gradient clipping
+
+Since exploding gradients come from the product's magnitude, bound it directly:
+
+$$
+g \leftarrow g \cdot \min\left(1, \frac{c}{\|g\|_2}\right).
+$$
+
+Pascanu et al.'s justification is geometric: loss surfaces contain **cliffs** —
+regions of sharp curvature where the gradient's magnitude is enormous but its
+direction remains informative. Clipping preserves direction and bounds step size,
+so you step off the cliff carefully rather than being thrown across the landscape.
+
+This is why global-norm clipping is correct and per-parameter value clipping is
+not: the latter changes the direction, discarding the one thing the gradient still
+had right.
+
+## Checkpointing, formally
+
+With $n$ layers and checkpoints every $k$:
+
+$$
+\text{memory} = O\!\left(\frac{n}{k} + k\right),
+$$
+
+storing $n/k$ checkpoints plus the $k$ activations of the segment being recomputed.
+Minimising over $k$:
+
+$$
+\frac{d}{dk}\left(\frac{n}{k} + k\right) = -\frac{n}{k^2} + 1 = 0 \implies k = \sqrt{n},
+$$
+
+giving $O(\sqrt{n})$ memory for one extra forward pass — the Chen et al. result.
+
+<Tier level="frontier" />
+
+## Where this stands, as of 2026
+
+**Backpropagation is not the bottleneck and never really was.** The algorithm has
+been stable since 1986. What changed is the systems engineering around it:
+mixed-precision training, fused kernels, activation checkpointing, and sharded
+optimizer state.
+
+**Memory is the constraint that shapes distributed training.** ZeRO-style sharding
+partitions optimizer state, gradients, and parameters across devices precisely
+because backprop's memory footprint is what limits scale. Tensor and pipeline
+parallelism are both, at bottom, strategies for fitting the backward pass.
+
+**Biological plausibility remains an open question with no practical stakes.**
+Backprop requires symmetric weights for the backward pass and a global error signal,
+neither of which brains appear to have. Alternatives — feedback alignment, target
+propagation, forward-forward — are interesting scientifically and none is
+competitive at scale.
+
+**Higher-order information is being revisited.** Hessian-vector products via
+double-backward are cheap enough to be practical, which is what makes the
+matrix-preconditioner optimizers on the [optimization
+page](/training/optimization/) feasible.
+
+## Open problems
+
+- **The memory wall is not solved, only managed.** Checkpointing, offloading and
+  sharding all trade compute or bandwidth for memory. None removes the underlying
+  requirement that forward activations survive until the backward pass.
+
+- **Sequential dependency limits parallelism.** The backward pass cannot start
+  until the forward pass ends, and gradients must flow layer by layer. Pipeline
+  parallelism hides this with micro-batches and cannot eliminate it.
+
+- **No credible alternative learning rule.** Every proposed replacement is either
+  much less sample-efficient or has not been demonstrated at scale.
+
+- **Gradient noise is poorly characterised.** SGD's stochasticity is essential to
+  generalisation and there is no good theory of the noise distribution or of what
+  it does — which is the same gap that appears on the
+  [generalization page](/foundations/generalization/).
+
+## What to read next, in order
+
+1. **Baydin et al. (2015)** — Sections 2–3. The clearest available account of why
+   autodiff is neither symbolic differentiation nor finite differences, which is
+   the most common confusion.
+2. **Rumelhart, Hinton & Williams (1986)** — four pages, and worth reading as
+   history.
+3. **Chen et al. (2016)** — the $\sqrt{n}$ checkpointing derivation.
+4. **Pascanu et al. (2012)** — Sections 2–3 for the cliff geometry that justifies
+   clipping.
+
+<Papers papers={frontmatter.papers} />

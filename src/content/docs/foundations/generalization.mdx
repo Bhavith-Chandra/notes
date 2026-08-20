@@ -220,6 +220,35 @@ anything that changes EMC (width, epochs, data, regularisation) moves the peak.
 The sample-wise result is the most practically startling: more data is not
 monotonically better. It nearly always is; it is not guaranteed to be.
 
+<Figure
+  lead="Grokking separates fitting from understanding in time."
+  caption="Training accuracy saturates within a few hundred steps and stays there. Test accuracy sits at chance for orders of magnitude longer — a period in which, by every visible signal, nothing is happening — then rises abruptly to near-perfect. Weight decay is required: without it the model stays memorised indefinitely. The standard account is a race between a fast-to-find high-norm memorising solution and a slow-to-find low-norm generalising one, with decay slowly penalising the former until the latter takes over. It fits the phenomenology and is not a complete theory."
+>
+<svg viewBox="0 0 760 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Grokking: training accuracy saturates early while test accuracy rises much later">
+  <line class="bx" x1="80" y1="196" x2="700" y2="196"/>
+  <line class="bx" x1="80" y1="30" x2="80" y2="196"/>
+  <text class="xs" x="390" y="222" text-anchor="middle">optimisation steps (log scale)  →</text>
+  <text class="xs" x="46" y="106" text-anchor="middle">accuracy</text>
+  <text class="xs" x="66" y="44" text-anchor="end">100%</text>
+  <text class="xs" x="66" y="200" text-anchor="end">0%</text>
+
+  <path class="thick" d="M84,190 C110,120 130,52 170,44 C300,40 500,40 696,40"/>
+  <text class="sm" x="230" y="62">train — fits in ~10² steps</text>
+
+  <path class="thick" d="M84,192 C200,192 340,192 452,190 C480,188 496,150 512,88 C524,52 540,44 560,42 C620,40 660,40 696,40" opacity="0.8"/>
+  <text class="sm" x="580" y="70">test — grokks at ~10⁵</text>
+
+  <rect class="f-amber" x="176" y="168" width="270" height="22" rx="4" opacity="0.5"/>
+  <text class="on-fill-sm" x="311" y="184" text-anchor="middle">memorised · test at chance · nothing visibly happening</text>
+
+  <line class="bx" x1="452" y1="30" x2="452" y2="196" stroke-dasharray="4 4" opacity="0.5"/>
+  <text class="xs" x="452" y="24" text-anchor="middle">grokking onset</text>
+
+  <text class="xs" x="150" y="138">weight decay is REQUIRED —</text>
+  <text class="xs" x="150" y="154">without it the test curve never rises</text>
+</svg>
+</Figure>
+
 ## Grokking
 
 An extreme, isolated demonstration that fitting and understanding are separable in

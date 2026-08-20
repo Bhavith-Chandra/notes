@@ -319,6 +319,66 @@ has nothing to do with faster integer arithmetic — which is a common
 misunderstanding, and it explains why quantization helps decode and barely helps
 prefill.
 
+<Figure
+  lead="Speculative decoding spends idle bandwidth on speculative compute."
+  caption="Top: standard decoding reads every weight to produce one token, then does it again. The GPU's arithmetic units are idle almost the whole time. Bottom: a small draft model proposes several tokens cheaply, and the large model verifies all of them in a single pass — the same weight read that would have yielded one token. Accepted drafts are kept; the first rejection resamples from a corrected distribution and discards the rest. You are not doing less work; you are doing more work in the time you were already spending waiting."
+>
+<svg viewBox="0 0 760 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Standard decoding compared with speculative decoding">
+  <defs>
+    <marker id="in1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <text class="lb" x="14" y="20">Standard — one full weight read per token</text>
+  <line class="bx" x1="60" y1="88" x2="716" y2="88" opacity="0.35"/>
+  <rect class="f-pink" x="60" y="40" width="128" height="40" rx="4"/>
+  <text class="on-fill-sm" x="124" y="65" text-anchor="middle">read 140 GB → 1 tok</text>
+  <rect class="f-pink" x="196" y="40" width="128" height="40" rx="4"/>
+  <text class="on-fill-sm" x="260" y="65" text-anchor="middle">read 140 GB → 1 tok</text>
+  <rect class="f-pink" x="332" y="40" width="128" height="40" rx="4"/>
+  <text class="on-fill-sm" x="396" y="65" text-anchor="middle">read 140 GB → 1 tok</text>
+  <rect class="f-pink" x="468" y="40" width="128" height="40" rx="4"/>
+  <text class="on-fill-sm" x="532" y="65" text-anchor="middle">read 140 GB → 1 tok</text>
+  <text class="xs" x="620" y="65">4 tokens, 4 reads</text>
+  <text class="xs" x="60" y="104">compute units idle ≈ 99% of this time</text>
+
+  <line class="bx" x1="14" y1="130" x2="746" y2="130" opacity="0.3"/>
+
+  <text class="lb" x="14" y="156">Speculative — draft cheaply, verify in one read</text>
+
+  <rect class="f-blue" x="60" y="176" width="42" height="32" rx="4"/>
+  <text class="xs" x="81" y="196" text-anchor="middle">d₁</text>
+  <rect class="f-blue" x="106" y="176" width="42" height="32" rx="4"/>
+  <text class="xs" x="127" y="196" text-anchor="middle">d₂</text>
+  <rect class="f-blue" x="152" y="176" width="42" height="32" rx="4"/>
+  <text class="xs" x="173" y="196" text-anchor="middle">d₃</text>
+  <rect class="f-blue" x="198" y="176" width="42" height="32" rx="4"/>
+  <text class="xs" x="219" y="196" text-anchor="middle">d₄</text>
+  <text class="xs" x="150" y="168" text-anchor="middle">small draft model — cheap, sequential</text>
+
+  <path class="ar" d="M246,192 L290,192" marker-end="url(#in1)"/>
+
+  <rect class="f-purple" x="296" y="164" width="196" height="56" rx="5"/>
+  <text class="on-fill-sm" x="394" y="186" text-anchor="middle">ONE read of 140 GB</text>
+  <text class="on-fill-sm" x="394" y="203" text-anchor="middle">verifies all 4 in parallel</text>
+
+  <path class="ar" d="M496,192 L540,192" marker-end="url(#in1)"/>
+
+  <rect class="f-green" x="546" y="176" width="38" height="32" rx="4"/>
+  <text class="xs" x="565" y="196" text-anchor="middle">✓</text>
+  <rect class="f-green" x="588" y="176" width="38" height="32" rx="4"/>
+  <text class="xs" x="607" y="196" text-anchor="middle">✓</text>
+  <rect class="f-green" x="630" y="176" width="38" height="32" rx="4"/>
+  <text class="xs" x="649" y="196" text-anchor="middle">✓</text>
+  <rect class="f-grey" x="672" y="176" width="38" height="32" rx="4" opacity="0.5"/>
+  <text class="xs" x="691" y="196" text-anchor="middle">✗</text>
+  <text class="xs" x="628" y="224" text-anchor="middle">3 accepted + 1 resampled</text>
+
+  <text class="xs" x="380" y="252" text-anchor="middle">4 tokens for 1 read instead of 4 — and the output distribution is provably unchanged</text>
+</svg>
+</Figure>
+
 ## Speculative decoding, and its correctness proof
 
 Draft model $q$, target model $p$. Draft $\gamma$ tokens autoregressively from $q$,
@@ -387,6 +447,67 @@ Multi-head sets $n_{\text{kv}} = n_{\text{head}}$; multi-query sets $n_{\text{kv
 The reduction factor is exactly $g$. GQA with 8 groups on a 64-head model gives an
 8× smaller cache, which translates directly into 8× more concurrent sequences at
 fixed memory — and concurrency is throughput.
+
+<Figure
+  lead="Contiguous allocation wastes most of the cache."
+  caption="Left: each request reserves a buffer sized to the maximum sequence length it might reach. Requests that finish early leave the remainder stranded — measured waste in real systems ran 60–80%. Right: the cache is split into fixed-size blocks that need not be contiguous, with a block table mapping logical positions to physical ones. Waste falls to the tail of the last block, under 4%. Freed memory becomes additional concurrent sequences, and concurrency is throughput — so this is a throughput result wearing the costume of a memory result."
+>
+<svg viewBox="0 0 760 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Contiguous KV cache allocation versus paged allocation">
+  <text class="lb" x="14" y="20">Contiguous — reserve L_max per request</text>
+
+  <text class="xs" x="14" y="46">req A</text>
+  <rect class="f-blue" x="60" y="32" width="60" height="20" rx="3"/>
+  <rect class="bx" x="120" y="32" width="220" height="20" rx="3" opacity="0.5"/>
+  <text class="xs" x="230" y="46" text-anchor="middle">wasted</text>
+
+  <text class="xs" x="14" y="76">req B</text>
+  <rect class="f-green" x="60" y="62" width="130" height="20" rx="3"/>
+  <rect class="bx" x="190" y="62" width="150" height="20" rx="3" opacity="0.5"/>
+  <text class="xs" x="265" y="76" text-anchor="middle">wasted</text>
+
+  <text class="xs" x="14" y="106">req C</text>
+  <rect class="f-amber" x="60" y="92" width="36" height="20" rx="3"/>
+  <rect class="bx" x="96" y="92" width="244" height="20" rx="3" opacity="0.5"/>
+  <text class="xs" x="218" y="106" text-anchor="middle">wasted</text>
+
+  <text class="xs" x="60" y="134">60–80% of the cache is stranded</text>
+
+  <line class="bx" x1="380" y1="14" x2="380" y2="236" opacity="0.3"/>
+
+  <text class="lb" x="404" y="20">Paged — fixed blocks, non-contiguous</text>
+
+  <text class="xs" x="404" y="46">req A</text>
+  <rect class="f-blue" x="450" y="32" width="26" height="20" rx="3"/>
+  <rect class="f-blue" x="480" y="32" width="26" height="20" rx="3"/>
+  <rect class="f-blue" x="510" y="32" width="26" height="20" rx="3" opacity="0.55"/>
+
+  <text class="xs" x="404" y="76">req B</text>
+  <rect class="f-green" x="450" y="62" width="26" height="20" rx="3"/>
+  <rect class="f-green" x="480" y="62" width="26" height="20" rx="3"/>
+  <rect class="f-green" x="510" y="62" width="26" height="20" rx="3"/>
+  <rect class="f-green" x="540" y="62" width="26" height="20" rx="3"/>
+  <rect class="f-green" x="570" y="62" width="26" height="20" rx="3" opacity="0.55"/>
+
+  <text class="xs" x="404" y="106">req C</text>
+  <rect class="f-amber" x="450" y="92" width="26" height="20" rx="3"/>
+  <rect class="f-amber" x="480" y="92" width="26" height="20" rx="3" opacity="0.55"/>
+
+  <text class="xs" x="620" y="46">only the last</text>
+  <text class="xs" x="620" y="62">block is partly</text>
+  <text class="xs" x="620" y="78">empty → &lt;4%</text>
+
+  <text class="xs" x="404" y="134">plus: identical prompt prefixes can SHARE physical blocks</text>
+
+  <line class="bx" x1="14" y1="156" x2="746" y2="156" opacity="0.3"/>
+
+  <rect class="f-purple" x="14" y="172" width="150" height="56" rx="5"/>
+  <text class="on-fill-sm" x="89" y="194" text-anchor="middle">block table</text>
+  <text class="xs" x="89" y="212" text-anchor="middle">logical → physical</text>
+  <text class="xs" x="190" y="188">exactly the virtual-memory trick from operating systems:</text>
+  <text class="xs" x="190" y="206">a level of indirection removes the need for contiguity,</text>
+  <text class="xs" x="190" y="224">and indirection additionally enables sharing between requests</text>
+</svg>
+</Figure>
 
 ## PagedAttention's fragmentation accounting
 

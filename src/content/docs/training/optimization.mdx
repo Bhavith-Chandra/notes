@@ -162,6 +162,51 @@ The division by $\sqrt{\hat v_t}$ is the adaptive part: it is a diagonal
 approximation to a preconditioner, rescaling each coordinate by its own gradient
 magnitude.
 
+<Figure
+  lead="Coupled weight decay regularises backwards."
+  caption="With L2 added to the loss, the decay term passes through Adam's second-moment division, so it is scaled by 1/sqrt(v). Parameters with large gradients — the ones doing the most work and most at risk of growing — receive the LEAST shrinkage. AdamW applies the decay outside the adaptive step, so every parameter shrinks by the same proportion. The bug is invisible with SGD because there is no per-parameter scaling to divide by, which is why it survived unnoticed for years."
+>
+<svg viewBox="0 0 760 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Coupled versus decoupled weight decay across parameters with different gradient scales">
+  <text class="lb" x="180" y="18" text-anchor="middle">Coupled L2 — the bug</text>
+  <text class="xs" x="180" y="34" text-anchor="middle">decay ∝ λθ / √v̂</text>
+
+  <line class="bx" x1="60" y1="176" x2="330" y2="176"/>
+  <text class="xs" x="195" y="200" text-anchor="middle">gradient magnitude √v̂  →</text>
+  <text class="xs" x="40" y="112" text-anchor="middle">decay</text>
+  <text class="xs" x="40" y="128" text-anchor="middle">applied</text>
+
+  <rect class="f-pink" x="80" y="60" width="34" height="116" rx="3"/>
+  <rect class="f-pink" x="128" y="102" width="34" height="74" rx="3"/>
+  <rect class="f-pink" x="176" y="128" width="34" height="48" rx="3"/>
+  <rect class="f-pink" x="224" y="146" width="34" height="30" rx="3"/>
+  <rect class="f-pink" x="272" y="158" width="34" height="18" rx="3"/>
+
+  <text class="xs" x="97" y="52" text-anchor="middle">small</text>
+  <text class="xs" x="289" y="150" text-anchor="middle">large</text>
+  <text class="xs" x="195" y="222" text-anchor="middle">high-gradient params get the LEAST decay</text>
+  <text class="xs" x="195" y="238" text-anchor="middle">— exactly backwards</text>
+
+  <line class="bx" x1="390" y1="14" x2="390" y2="242" opacity="0.3"/>
+
+  <text class="lb" x="570" y="18" text-anchor="middle">Decoupled (AdamW) — the fix</text>
+  <text class="xs" x="570" y="34" text-anchor="middle">decay = ηλθ, outside the adaptive step</text>
+
+  <line class="bx" x1="450" y1="176" x2="720" y2="176"/>
+  <text class="xs" x="585" y="200" text-anchor="middle">gradient magnitude √v̂  →</text>
+
+  <rect class="f-green" x="470" y="106" width="34" height="70" rx="3"/>
+  <rect class="f-green" x="518" y="106" width="34" height="70" rx="3"/>
+  <rect class="f-green" x="566" y="106" width="34" height="70" rx="3"/>
+  <rect class="f-green" x="614" y="106" width="34" height="70" rx="3"/>
+  <rect class="f-green" x="662" y="106" width="34" height="70" rx="3"/>
+
+  <path class="dash" d="M462,106 L706,106" opacity="0.6"/>
+  <text class="xs" x="585" y="98" text-anchor="middle">uniform</text>
+  <text class="xs" x="585" y="222" text-anchor="middle">every parameter shrinks by the same</text>
+  <text class="xs" x="585" y="238" text-anchor="middle">proportion, as intended</text>
+</svg>
+</Figure>
+
 ## The AdamW fix
 
 This is the single most useful thing on this page, because the failure is silent.

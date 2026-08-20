@@ -334,6 +334,34 @@ dominates, which is the long-horizon regime — and it can lose at short horizon
 which is exactly what the empirical results show.
 </Aside>
 
+<Figure
+  lead="The stride trades two error terms against each other."
+  caption="A short stride keeps low-level rollouts accurate but forces many high-level steps, so the high-level error compounds. A long stride does the reverse. Total error is the sum, and the minimum sits somewhere in between — at a point determined by the two per-step error rates and the Lipschitz constant, none of which you know. So c is set by sweep, and results are sensitive to it. Adaptive stride selection is the clearest unaddressed gap in this area."
+>
+<svg viewBox="0 0 760 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Total planning error as a function of stride, showing the two competing terms">
+  <line class="bx" x1="90" y1="190" x2="690" y2="190"/>
+  <line class="bx" x1="90" y1="26" x2="90" y2="190"/>
+  <text class="xs" x="390" y="214" text-anchor="middle">stride c  →</text>
+  <text class="xs" x="52" y="100" text-anchor="middle">error</text>
+
+  <path class="dash" d="M96,44 C150,110 200,150 280,168 C400,184 550,186 686,186" opacity="0.85"/>
+  <text class="sm" x="150" y="40">high level: ε_hi · L^(H/c)</text>
+
+  <path class="dash" d="M96,186 C230,184 380,180 480,166 C560,150 630,110 686,44" opacity="0.85"/>
+  <text class="sm" x="560" y="40" text-anchor="end">low level: ε_lo · L^c</text>
+
+  <path class="thick" d="M96,50 C160,110 240,132 330,134 C420,136 510,120 600,80 C640,60 668,46 686,38"/>
+  <text class="sm" x="330" y="118" text-anchor="middle">total</text>
+
+  <circle class="f-pink" cx="345" cy="135" r="6"/>
+  <line class="bx" x1="345" y1="26" x2="345" y2="190" stroke-dasharray="4 4" opacity="0.45"/>
+  <text class="xs" x="345" y="20" text-anchor="middle">optimum ≈ √H</text>
+
+  <text class="xs" x="130" y="164">many short segments</text>
+  <text class="xs" x="580" y="164" text-anchor="end">few long segments</text>
+</svg>
+</Figure>
+
 ## Choosing the stride
 
 The optimum balances the two error terms. Differentiating

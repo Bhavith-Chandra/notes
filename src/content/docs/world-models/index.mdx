@@ -344,6 +344,35 @@ $\epsilon$ smaller. Halving the per-step error buys you one extra step of horizo
 under geometric growth. You need to change $k$, not $\epsilon$ — which means
 changing the *temporal resolution* at which you plan.
 
+<Figure
+  lead="Halving the per-step error buys you one extra step."
+  caption="Under geometrically compounding error, prediction accuracy is not a lever you can pull hard enough. Two models differing by a factor of two in per-step error reach the same useless accuracy only one step apart, because the growth is exponential in horizon and merely linear in epsilon. The consequence is structural: you cannot fix long-horizon planning by training a better one-step model, you have to change the number of steps — which is the whole argument for hierarchy."
+>
+<svg viewBox="0 0 760 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Compounding prediction error over a rollout horizon">
+  <line class="bx" x1="80" y1="196" x2="700" y2="196"/>
+  <line class="bx" x1="80" y1="26" x2="80" y2="196"/>
+  <text class="xs" x="390" y="222" text-anchor="middle">rollout steps k  →</text>
+  <text class="xs" x="44" y="110" text-anchor="middle">error</text>
+
+  <path class="dash" d="M80,66 L700,66" opacity="0.55"/>
+  <text class="xs" x="700" y="60" text-anchor="end">plan is fiction beyond here</text>
+
+  <path class="thick" d="M84,192 C160,188 240,178 320,156 C400,132 450,100 500,60 C520,44 530,36 540,32"/>
+  <text class="sm" x="548" y="46">ε</text>
+
+  <path class="thick" d="M84,194 C180,190 280,182 380,166 C460,150 530,110 590,62 C606,48 616,40 624,34" opacity="0.7"/>
+  <text class="sm" x="632" y="48">ε / 2</text>
+
+  <circle class="f-pink" cx="500" cy="60" r="5"/>
+  <circle class="f-green" cx="590" cy="62" r="5"/>
+  <path class="ar" d="M508,74 L582,74"/>
+  <text class="xs" x="545" y="92" text-anchor="middle">one extra step</text>
+
+  <text class="xs" x="150" y="120">‖ẑ − z‖ ≤ ε (Lᵏ − 1)/(L − 1)</text>
+  <text class="xs" x="150" y="140">exponential in k, linear in ε</text>
+</svg>
+</Figure>
+
 ## Hierarchy, stated formally
 
 That last observation is the whole argument for hierarchical world models, and it

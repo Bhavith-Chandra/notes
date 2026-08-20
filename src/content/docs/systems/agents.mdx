@@ -1,0 +1,497 @@
+---
+title: Agents and Tool Use
+description: "The loop, why tool calls beat parametric knowledge, where multi-step agents actually break, and how to evaluate something that can take a different path every run."
+sidebar:
+  order: 3
+depth: frontier
+readingTime: 35
+prereqs:
+  - label: "Retrieval and RAG"
+    slug: "systems/retrieval"
+papers:
+  - title: "Chain-of-Thought Prompting Elicits Reasoning in Large Language Models"
+    authors: "Wei, Wang, Schuurmans, … Zhou"
+    year: 2022
+    url: "https://arxiv.org/abs/2201.11903"
+  - title: "Self-Consistency Improves Chain of Thought Reasoning in Language Models"
+    authors: "Wang, Wei, Schuurmans, … Zhou"
+    year: 2022
+    url: "https://arxiv.org/abs/2203.11171"
+  - title: "ReAct: Synergizing Reasoning and Acting in Language Models"
+    authors: "Yao, Zhao, Yu, … Cao"
+    year: 2022
+    url: "https://arxiv.org/abs/2210.03629"
+  - title: "Toolformer: Language Models Can Teach Themselves to Use Tools"
+    authors: "Schick, Dwivedi-Yu, Dessì, … Scialom"
+    year: 2023
+    url: "https://arxiv.org/abs/2302.04761"
+  - title: "Reflexion: Language Agents with Verbal Reinforcement Learning"
+    authors: "Shinn, Cassano, Berman, Gopinath, Narasimhan, Yao"
+    year: 2023
+    url: "https://arxiv.org/abs/2303.11366"
+  - title: "Tree of Thoughts: Deliberate Problem Solving with Large Language Models"
+    authors: "Yao, Yu, Zhao, … Narasimhan"
+    year: 2023
+    url: "https://arxiv.org/abs/2305.10601"
+  - title: "SWE-bench: Can Language Models Resolve Real-World GitHub Issues?"
+    authors: "Jimenez, Yang, Wettig, … Narasimhan"
+    year: 2023
+    url: "https://arxiv.org/abs/2310.06770"
+  - title: "DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning"
+    authors: "DeepSeek-AI, Daya Guo et al."
+    year: 2025
+    url: "https://arxiv.org/abs/2501.12948"
+  - title: "Model Context Protocol Specification"
+    authors: "Anthropic"
+    year: 2024
+    url: "https://modelcontextprotocol.io/specification"
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+<Abstract>
+An agent is a language model in a loop with tools and a stopping condition. That
+is the entire architecture — the difficulty is not building the loop but making
+it survive twenty iterations without compounding its own errors. Per-step
+reliability of 95% gives you 36% success over twenty steps, and that arithmetic,
+more than any capability limit, is what determines where agents work today.
+</Abstract>
+
+<KeyPoints>
+
+- **Tool use converts generation into verification.** A model asked to compute $\sqrt{18327}$ must produce digits from a distribution; a model that calls a calculator gets the answer. Prefer tools wherever a correct external answer exists.
+- **The binding constraint is error compounding, not intelligence.** $0.95^{20} \approx 0.36$. Long-horizon reliability requires either a very high per-step success rate or a mechanism that catches and corrects failures.
+- **Reasoning before acting measurably helps, and reasoning alone hallucinates.** ReAct's contribution was interleaving them: thoughts keep the plan coherent, observations keep it grounded. Either without the other degrades.
+- **Evaluating agents is harder than evaluating models.** The same task can succeed via different trajectories, runs are stochastic, and a single number hides whether the agent got lucky. Report pass@1 across multiple seeds, not a best run.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## The loop
+
+Strip away the terminology and an agent is four steps repeated:
+
+<Steps>
+
+1. The model looks at the goal and everything that has happened so far.
+2. It decides on one action — call a tool, or declare it is finished.
+3. The action runs, in the world, and returns a result.
+4. The result is appended to the history. Go to 1.
+
+</Steps>
+
+That is all. A chatbot is this loop with zero iterations and no tools. Everything
+labelled "agentic" is a variation on how step 2 chooses, and how you decide when
+to stop.
+
+## Why tools beat memory
+
+Ask a model for the current time and it cannot know — it is generating text, not
+reading a clock. Ask it to multiply two large numbers and it will produce
+digit-by-digit output from a learned distribution, which is right surprisingly
+often and not reliably.
+
+Give it a clock and a calculator and both problems dissolve. **The model's job
+changes from knowing the answer to knowing which tool answers the question.** That
+second job is much easier and much more reliable.
+
+The generalisation is worth holding: a tool is worth adding whenever a correct
+answer exists outside the model and the model's own attempt would be a guess.
+
+## The arithmetic that governs everything
+
+Suppose an agent is right 95% of the time at each step. That sounds excellent.
+
+Over a twenty-step task, if any single failure derails the run:
+
+$$
+0.95^{20} \approx 0.36 .
+$$
+
+**Thirty-six percent.** At 99% per step it is 82%. At 90% it is 12%.
+
+This is why agents work well on short, well-scoped tasks and struggle on long
+open-ended ones — and why the useful engineering questions are "how do we shorten
+the horizon?" and "how do we make failures recoverable?" rather than "how do we
+make the model smarter?".
+
+<Aside type="tip" title="The two levers, and they are not equal">
+You can raise per-step reliability, or you can make failures **recoverable** so
+they do not terminate the run. The second is usually the better investment: a tool
+that returns a clear error the model can act on turns a fatal step into a retry,
+which changes the exponent's base far more than a marginally better prompt does.
+</Aside>
+
+<Tier level="mechanics" />
+
+## The agent loop, with its failure points
+
+<Figure
+  lead="Four steps, and the three places runs die."
+  caption="The loop itself is trivial; the engineering is in the guards. Context growth is the quiet one — every observation is appended, so a twenty-step run can exhaust the window and the earliest instructions fall out of scope. Loops are the visible one, where the agent repeats a failing action indefinitely. And the compounding-error curve at the bottom is the reason short horizons and recoverable failures matter more than model quality on any single step."
+>
+<svg viewBox="0 0 760 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The agent loop with failure modes and the compounding error curve">
+  <defs>
+    <marker id="ag1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <rect class="f-grey" x="14" y="80" width="82" height="42" rx="5"/>
+  <text class="on-fill-sm" x="55" y="106" text-anchor="middle">goal</text>
+  <path class="ar" d="M100,101 L136,101" marker-end="url(#ag1)"/>
+
+  <rect class="f-blue" x="142" y="76" width="112" height="50" rx="5"/>
+  <text class="on-fill-sm" x="198" y="96" text-anchor="middle">1. think</text>
+  <text class="xs" x="198" y="112" text-anchor="middle">read history, plan</text>
+
+  <path class="ar" d="M258,101 L294,101" marker-end="url(#ag1)"/>
+  <rect class="f-purple" x="300" y="76" width="112" height="50" rx="5"/>
+  <text class="on-fill-sm" x="356" y="96" text-anchor="middle">2. choose action</text>
+  <text class="xs" x="356" y="112" text-anchor="middle">tool call, or stop</text>
+
+  <path class="ar" d="M416,101 L452,101" marker-end="url(#ag1)"/>
+  <rect class="f-amber" x="458" y="76" width="112" height="50" rx="5"/>
+  <text class="on-fill-sm" x="514" y="96" text-anchor="middle">3. execute</text>
+  <text class="xs" x="514" y="112" text-anchor="middle">in the world</text>
+
+  <path class="ar" d="M574,101 L610,101" marker-end="url(#ag1)"/>
+  <rect class="f-green" x="616" y="76" width="112" height="50" rx="5"/>
+  <text class="on-fill-sm" x="672" y="96" text-anchor="middle">4. observe</text>
+  <text class="xs" x="672" y="112" text-anchor="middle">append result</text>
+
+  <path class="thick" d="M672,130 C672,166 200,166 198,132" marker-end="url(#ag1)"/>
+  <text class="xs" x="430" y="160" text-anchor="middle">history grows every iteration — context exhaustion is the quiet killer</text>
+
+  <text class="xs" x="198" y="188" text-anchor="middle">✗ loops on a failing action</text>
+  <text class="xs" x="514" y="188" text-anchor="middle">✗ irreversible side effect</text>
+
+  <line class="bx" x1="14" y1="204" x2="746" y2="204" opacity="0.3"/>
+
+  <text class="lb" x="14" y="228">Compounding reliability</text>
+  <line class="bx" x1="110" y1="300" x2="450" y2="300"/>
+  <line class="bx" x1="110" y1="240" x2="110" y2="300"/>
+  <text class="xs" x="280" y="316" text-anchor="middle">steps  →</text>
+
+  <path class="thick" d="M110,242 C170,248 260,262 340,278 C390,288 420,294 446,297"/>
+  <text class="xs" x="452" y="252">99% per step</text>
+  <path class="thick" d="M110,244 C150,262 200,286 250,294 C310,300 400,301 446,301" opacity="0.75"/>
+  <text class="xs" x="452" y="272">95% per step</text>
+  <path class="dash" d="M110,246 C130,282 160,297 200,300 C280,302 400,302 446,302"/>
+  <text class="xs" x="452" y="292">90% per step</text>
+
+  <rect class="f-pink" x="530" y="238" width="200" height="66" rx="5" opacity="0.5"/>
+  <text class="on-fill-sm" x="546" y="258">0.95²⁰ ≈ 0.36</text>
+  <text class="xs" x="546" y="276">Excellent per-step accuracy</text>
+  <text class="xs" x="546" y="292">still fails most long runs.</text>
+</svg>
+</Figure>
+
+## The patterns
+
+<Tabs>
+<TabItem label="ReAct">
+
+Interleave **Thought → Action → Observation**, repeatedly.
+
+The paper's contribution was showing that either half alone underperforms.
+Chain-of-thought reasoning without actions hallucinates facts — nothing grounds
+it. Actions without reasoning lose the thread across steps — the model has no
+place to maintain a plan.
+
+Together, thoughts carry the plan forward and observations correct it. This is
+the substrate almost every production agent still runs on, and it long predates
+the tooling built around it.
+
+</TabItem>
+<TabItem label="Reflexion">
+
+After a failed attempt, have the model write a **verbal** post-mortem — what went
+wrong, what to do differently — and put that text in the context for the next
+attempt.
+
+The framing worth noticing: this is reinforcement learning where the "policy
+update" is natural language in the context window rather than a gradient step. No
+weights change. The lesson persists only as long as the text stays in context.
+
+It works, and it depends entirely on the model producing an accurate diagnosis of
+its own failure — which it often cannot, particularly when the failure was a
+misreading rather than a mistake.
+
+</TabItem>
+<TabItem label="Search over plans">
+
+Tree of Thoughts generalises chain-of-thought from a single line to a **tree**:
+generate several candidate next steps, evaluate them, expand the promising ones,
+backtrack from dead ends.
+
+This is classical search with the model supplying both the successor function and
+the heuristic. It helps substantially on puzzle-like tasks with verifiable
+intermediate states, and costs many times more tokens.
+
+Self-consistency is the cheap relative: sample several independent
+chain-of-thought traces and take the majority answer. It requires no tree, no
+evaluator, and captures a large share of the benefit when the answer space is
+small.
+
+</TabItem>
+<TabItem label="Tool interfaces">
+
+Tools are exposed to the model as typed function signatures with descriptions. The
+model emits a structured call; the runtime executes it and returns the result.
+
+**The description is a prompt, and it is usually the weakest link.** Most tool-use
+failures in practice are not reasoning failures — they are the model calling the
+wrong tool because two descriptions overlap, or passing a malformed argument
+because the schema was ambiguous. Tool design deserves the same care as prompt
+design, and gets far less.
+
+The Model Context Protocol standardises this interface so tools are portable
+across clients rather than reimplemented per application.
+
+</TabItem>
+</Tabs>
+
+## Practical guards
+
+| Failure | Guard |
+|---|---|
+| Infinite loop on a failing action | hard iteration cap; detect repeated identical calls |
+| Context exhaustion | summarise or evict old observations; keep the goal pinned |
+| Irreversible side effect | require confirmation for destructive actions; prefer dry-run modes |
+| Silent wrong answer | verify with a second tool where one exists |
+| Cost runaway | token and wall-clock budget per run, enforced by the runtime |
+
+Almost all of these are runtime concerns rather than model concerns, which is the
+general shape of agent engineering: **the model is one component, and most
+reliability comes from the scaffolding around it.**
+
+<Tier level="formal" />
+
+## The loop as a POMDP
+
+An agent is a partially observed decision process. At step $t$ the model holds a
+history
+
+$$
+h_t = (g,\ a_1, o_1,\ a_2, o_2,\ \dots,\ a_{t-1}, o_{t-1}),
+$$
+
+with $g$ the goal, and samples an action from the policy induced by the LM:
+
+$$
+a_t \sim \pi_\theta(\cdot \mid h_t), \qquad o_t = \mathcal{E}(a_t),
+$$
+
+where $\mathcal{E}$ is the environment. Termination is itself an action.
+
+Two structural properties distinguish this from standard RL:
+
+**The history is the state, and it is unbounded.** There is no learned state
+compression — everything is kept verbatim in the context. So the effective state
+space grows with $t$, and eventually exceeds the window. Summarisation is a lossy
+state-compression scheme bolted on, and what it discards is chosen heuristically.
+
+**The policy is frozen.** No gradient flows. Within-episode adaptation happens
+entirely through what is written into $h_t$ — which is exactly what Reflexion
+exploits and exactly why its lessons vanish when the context is trimmed.
+
+## Compounding reliability
+
+Let $p$ be the probability a step succeeds, and assume failures are independent
+and fatal. Success over $n$ steps:
+
+$$
+P_{\text{success}} = p^{n}.
+$$
+
+Solving for the per-step reliability needed to hit a target $P^*$:
+
+$$
+p \;=\; \big(P^{*}\big)^{1/n}.
+$$
+
+For $P^* = 0.9$ over $n=50$ steps, $p = 0.9^{1/50} \approx 0.9979$. **Better than
+99.7% per step**, which is far beyond what current models achieve on open-ended
+actions.
+
+Now add recovery. If a failed step is retried and succeeds with probability $p$
+each time, up to $k$ attempts, the effective per-step reliability is
+
+$$
+p_{\text{eff}} = 1 - (1-p)^{k},
+$$
+
+so at $p = 0.95$ and $k=3$, $p_{\text{eff}} = 1 - 0.05^3 = 0.999875$, and
+
+$$
+p_{\text{eff}}^{20} \approx 0.9975 .
+$$
+
+**Retry moves success from 36% to 99.7%.** This is the formal version of the
+earlier claim that recoverability beats raw accuracy — and it holds only when
+failures are *detectable* and *independent*, which is precisely what good tool
+error messages and idempotent operations buy you. A failure the agent cannot see
+is not retryable.
+
+<Figure
+  lead="Retry changes the base of the exponent, which is worth more than a better model."
+  caption="Left: a fatal failure ends the run, so success is p to the power n and 95% per-step accuracy yields 36% over twenty steps. Right: if the failure is detectable and the step can be retried, effective per-step reliability becomes 1 minus (1-p) cubed — and twenty steps now succeed 99.7% of the time. The condition is doing the work: the agent must be able to SEE that the step failed. This is why clear tool error messages and idempotent operations buy more reliability than prompt engineering does."
+>
+<svg viewBox="0 0 760 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Success probability with fatal failures versus with retry">
+  <defs>
+    <marker id="ag2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <text class="lb" x="180" y="18" text-anchor="middle">Failure is fatal</text>
+  <rect class="f-green" x="30" y="36" width="40" height="30" rx="4"/>
+  <text class="xs" x="50" y="56" text-anchor="middle">✓</text>
+  <path class="ar" d="M74,51 L94,51" marker-end="url(#ag2)"/>
+  <rect class="f-green" x="98" y="36" width="40" height="30" rx="4"/>
+  <text class="xs" x="118" y="56" text-anchor="middle">✓</text>
+  <path class="ar" d="M142,51 L162,51" marker-end="url(#ag2)"/>
+  <rect class="f-pink" x="166" y="36" width="40" height="30" rx="4"/>
+  <text class="xs" x="186" y="56" text-anchor="middle">✗</text>
+  <path class="ar" d="M210,51 L230,51" marker-end="url(#ag2)"/>
+  <rect class="f-grey" x="234" y="36" width="82" height="30" rx="4" opacity="0.5"/>
+  <text class="xs" x="275" y="56" text-anchor="middle">run dead</text>
+
+  <rect class="f-pink" x="30" y="92" width="286" height="52" rx="5" opacity="0.5"/>
+  <text class="on-fill-sm" x="46" y="114">0.95²⁰ = 0.36</text>
+  <text class="xs" x="46" y="132">excellent per-step accuracy, most runs fail</text>
+
+  <line class="bx" x1="360" y1="14" x2="360" y2="240" opacity="0.3"/>
+
+  <text class="lb" x="560" y="18" text-anchor="middle">Failure is detectable and retryable</text>
+  <rect class="f-green" x="404" y="36" width="40" height="30" rx="4"/>
+  <text class="xs" x="424" y="56" text-anchor="middle">✓</text>
+  <path class="ar" d="M448,51 L468,51" marker-end="url(#ag2)"/>
+  <rect class="f-amber" x="472" y="36" width="40" height="30" rx="4"/>
+  <text class="xs" x="492" y="56" text-anchor="middle">✗</text>
+  <path class="ar" d="M492,70 C462,88 462,88 470,96" marker-end="url(#ag2)"/>
+  <rect class="f-green" x="472" y="96" width="40" height="30" rx="4"/>
+  <text class="xs" x="492" y="116" text-anchor="middle">✓</text>
+  <text class="xs" x="524" y="92">retry</text>
+  <path class="ar" d="M516,111 C556,111 556,66 566,54" marker-end="url(#ag2)"/>
+  <rect class="f-green" x="570" y="36" width="40" height="30" rx="4"/>
+  <text class="xs" x="590" y="56" text-anchor="middle">✓</text>
+  <path class="ar" d="M614,51 L634,51" marker-end="url(#ag2)"/>
+  <rect class="f-green" x="638" y="36" width="82" height="30" rx="4"/>
+  <text class="xs" x="679" y="56" text-anchor="middle">continues</text>
+
+  <rect class="f-green" x="404" y="140" width="316" height="52" rx="5" opacity="0.55"/>
+  <text class="on-fill-sm" x="420" y="162">p_eff = 1 − (1−0.95)³ = 0.99988  →  0.99988²⁰ ≈ 0.997</text>
+  <text class="xs" x="420" y="180">36% → 99.7%, with no change to the model at all</text>
+
+  <text class="xs" x="30" y="216">The lever is not accuracy per step. It is whether a failed step is visible to the agent</text>
+  <text class="xs" x="30" y="234">and whether the operation can safely be repeated — both properties of your TOOLS, not your model.</text>
+</svg>
+</Figure>
+
+## Self-consistency
+
+Sample $m$ independent reasoning traces and take the plurality answer:
+
+$$
+\hat y = \arg\max_{y}\ \sum_{i=1}^{m}\mathbb{1}\{y_i = y\}.
+$$
+
+Why this helps: reasoning errors are largely *independent* across samples while the
+correct path is *systematic*. If each trace is correct with probability $p > 1/2$
+and errors scatter across many distinct wrong answers, the majority converges on
+the truth as $m$ grows — the Condorcet jury argument.
+
+The condition matters. When errors are **correlated** — a systematic
+misunderstanding of the question, a shared flawed assumption — the majority
+converges on the wrong answer with increasing confidence. Self-consistency
+amplifies agreement, and agreement is not evidence when the mistakes share a
+cause.
+
+## Test-time compute
+
+The unifying frame for chain-of-thought, self-consistency, tree search, and
+extended reasoning: they all spend more compute at inference to improve one
+answer, rather than more compute at training to improve all answers.
+
+$$
+\text{quality} = f\big(\text{train compute},\ \text{test compute}\big),
+$$
+
+and the empirical finding since 2024 is that the second argument has been badly
+under-exploited. DeepSeek-R1 showed RL on verifiable rewards induces models to
+*lengthen their own reasoning* — the model discovers that thinking longer produces
+correct answers, and the reward makes that discovery.
+
+This connects agents to [post-training](/training/post-training/) directly: an
+agent's loop is test-time compute with an environment attached, and RLVR is how
+you train a model to use that compute well.
+
+<Tier level="frontier" />
+
+## Where this stands, as of 2026
+
+**Agents work well when the task is verifiable and the horizon is short.** Coding
+is the clearest case, and not by accident — tests provide ground truth at every
+step, so failures are detectable and therefore recoverable. SWE-bench performance
+climbed dramatically once models were trained with that loop in mind.
+
+**Reasoning models changed the shape of the problem.** Models trained with RL on
+verifiable rewards do substantially more of the planning internally, which reduces
+how much scaffolding the surrounding framework must supply. Some of the elaborate
+2023-era agent architectures are now unnecessary.
+
+**Tool interfaces have standardised.** MCP established a common protocol for
+exposing tools, so integrations are written once rather than per framework. This
+is unglamorous and it is the change that most affects what people can actually
+build.
+
+**Multi-agent systems remain oversold.** Several specialised agents passing
+messages sounds appealing and frequently underperforms one capable agent with good
+tools. Each hand-off is a lossy serialisation of context, and the coordination
+overhead usually exceeds the specialisation benefit. Treat multi-agent
+architectures as something to justify, not to assume.
+
+## Open problems
+
+- **Long-horizon reliability is unsolved.** Everything above is mitigation. Tasks
+  requiring hundreds of dependent steps remain out of reach, and the compounding
+  arithmetic says why.
+
+- **Evaluation is genuinely hard.** Trajectories vary between runs, multiple paths
+  can be correct, and partial credit is ill-defined. A single reported success rate
+  from one seed conveys very little. Report pass@1 over multiple seeds and, where
+  possible, the trajectory cost.
+
+- **Prompt injection is unmitigated.** An agent that reads untrusted content —
+  web pages, emails, documents — can be instructed by that content. There is no
+  robust defence, only partial ones, and this is the primary reason capable agents
+  are deployed with narrow permissions.
+
+- **Cost is unpredictable.** The same task can consume wildly different token
+  counts across runs. Budgeting is guesswork, and this blocks a lot of production
+  deployment.
+
+- **Credit assignment across a trajectory is unsolved.** When a twenty-step run
+  fails, which step was responsible? Without an answer, training agents end-to-end
+  is extremely sample-inefficient.
+
+## What to read next, in order
+
+1. **Yao et al. (2022), ReAct** — the ablations showing reasoning-only and
+   acting-only both underperform are the argument.
+2. **Wang et al. (2022), Self-Consistency** — cheap, effective, and a good lesson
+   in when majority voting is and is not valid.
+3. **Jimenez et al. (2023), SWE-bench** — read the task construction. It is the
+   most honest agent benchmark and the construction explains why.
+4. **DeepSeek-AI (2025), R1** — for how test-time compute is trained rather than
+   prompted.
+
+<Papers papers={frontmatter.papers} />

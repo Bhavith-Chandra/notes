@@ -288,6 +288,36 @@ likelihood — unchanged. This is why reward values are not comparable across
 prompts and why reward-model "scores" reported in isolation are close to
 meaningless.
 
+<Figure
+  lead="Optimise a proxy hard enough and you find its errors."
+  caption="The reward model agrees with true quality in the region where it saw training data. Push the policy beyond that region and the two curves separate: predicted reward keeps climbing while actual quality falls. The optimiser cannot tell the difference — high predicted reward is precisely what it selects for — so it walks straight into the gap. The KL penalty is a leash of radius roughly beta around the reference policy; it does not fix the divergence, it just bounds how far you may travel into it."
+>
+<svg viewBox="0 0 760 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Reward model divergence from true quality under optimisation pressure">
+  <line class="bx" x1="70" y1="205" x2="716" y2="205"/>
+  <line class="bx" x1="70" y1="26" x2="70" y2="205"/>
+  <text class="xs" x="393" y="232" text-anchor="middle">KL distance from the reference policy  →</text>
+  <text class="xs" x="40" y="110" text-anchor="middle">score</text>
+
+  <path class="thick" d="M74,190 C170,140 260,96 360,74 C470,50 580,40 706,34"/>
+  <text class="sm" x="600" y="58">predicted reward — keeps rising</text>
+
+  <path class="dash" d="M74,190 C170,142 250,104 330,96 C420,88 470,120 540,166 C600,196 650,204 706,206" opacity="0.9"/>
+  <text class="sm" x="560" y="188">true quality — turns over</text>
+
+  <circle class="f-pink" cx="330" cy="96" r="6"/>
+  <text class="xs" x="336" y="120">divergence begins</text>
+
+  <rect class="f-green" x="80" y="164" width="250" height="24" rx="4" opacity="0.45"/>
+  <text class="on-fill-sm" x="205" y="181" text-anchor="middle">RM in-distribution — proxy is honest</text>
+
+  <rect class="f-pink" x="360" y="164" width="346" height="24" rx="4" opacity="0.45"/>
+  <text class="on-fill-sm" x="533" y="181" text-anchor="middle">reward hacking — length, sycophancy, confident formatting</text>
+
+  <line class="bx" x1="330" y1="26" x2="330" y2="205" stroke-dasharray="5 4" opacity="0.45"/>
+  <text class="xs" x="330" y="20" text-anchor="middle">where the KL leash should hold you</text>
+</svg>
+</Figure>
+
 ## The RLHF objective and its solution
 
 $$
