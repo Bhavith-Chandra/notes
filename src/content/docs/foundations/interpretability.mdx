@@ -1,0 +1,559 @@
+---
+title: Interpretability
+description: "Circuits, induction heads, activation patching and sparse autoencoders — what mechanistic interpretability can actually establish, and what it still cannot."
+sidebar:
+  order: 5
+depth: frontier
+readingTime: 40
+prereqs:
+  - label: "Representations"
+    slug: "foundations/representations"
+papers:
+  - title: "Zoom In: An Introduction to Circuits"
+    authors: "Olah, Cammarata, Schubert, et al."
+    year: 2020
+    url: "https://distill.pub/2020/circuits/zoom-in/"
+  - title: "A Mathematical Framework for Transformer Circuits"
+    authors: "Elhage, Nanda, Olsson, et al."
+    year: 2021
+    url: "https://transformer-circuits.pub/2021/framework/index.html"
+  - title: "In-context Learning and Induction Heads"
+    authors: "Olsson, Elhage, Nanda, et al."
+    year: 2022
+    url: "https://transformer-circuits.pub/2022/in-context-learning-and-induction-heads/index.html"
+  - title: "Toy Models of Superposition"
+    authors: "Elhage et al."
+    year: 2022
+    url: "https://transformer-circuits.pub/2022/toy_model/index.html"
+  - title: "Locating and Editing Factual Associations in GPT (ROME)"
+    authors: "Kevin Meng, David Bau, Alex Andonian, Yonatan Belinkov"
+    year: 2022
+    url: "https://arxiv.org/abs/2202.05262"
+  - title: "Causal Mediation Analysis for Interpreting Neural NLP: The Case of Gender Bias"
+    authors: "Vig, Gehrmann, Belinkov, et al."
+    year: 2020
+    url: "https://arxiv.org/abs/2004.12265"
+  - title: "Towards Best Practices of Activation Patching in Language Models: Metrics and Methods"
+    authors: "Fred Zhang, Neel Nanda"
+    year: 2023
+    url: "https://arxiv.org/abs/2309.16042"
+  - title: "Towards Monosemanticity: Decomposing Language Models With Dictionary Learning"
+    authors: "Bricken, Templeton, Batson, et al."
+    year: 2023
+    url: "https://transformer-circuits.pub/2023/monosemantic-features/index.html"
+  - title: "Scaling Monosemanticity: Extracting Interpretable Features from Claude 3 Sonnet"
+    authors: "Templeton, Conerly, Marcus, et al."
+    year: 2024
+    url: "https://transformer-circuits.pub/2024/scaling-monosemanticity/index.html"
+  - title: "Gemma Scope: Open Sparse Autoencoders Everywhere All At Once on Gemma 2"
+    authors: "Lieberum, Rajamanoharan, Conmy, et al."
+    year: 2024
+    url: "https://arxiv.org/abs/2408.05147"
+  - title: "Circuit Tracing: Revealing Computational Graphs in Language Models"
+    authors: "Ameisen, Lindsey, Pearce, et al."
+    year: 2025
+    url: "https://transformer-circuits.pub/2025/attribution-graphs/methods.html"
+  - title: "On the Biology of a Large Language Model"
+    authors: "Lindsey, Gurnee, Ameisen, et al."
+    year: 2025
+    url: "https://transformer-circuits.pub/2025/attribution-graphs/biology.html"
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+<Abstract>
+Mechanistic interpretability tries to reverse-engineer what a network actually
+computes — not which inputs correlate with which outputs, but the algorithm
+implemented in the weights. It has produced genuine results: induction heads,
+factual recall localised to specific MLP layers, millions of interpretable
+features extracted from a production model. It has also run into a structural
+problem — features do not live in neurons — that shapes everything the field
+currently does.
+</Abstract>
+
+<KeyPoints>
+
+- **Correlation is not mechanism.** A neuron firing on cats does not mean the model uses it to detect cats. Establishing that requires intervention — change the activation, watch the output — which is why causal methods dominate.
+- **The neuron basis is the wrong basis.** Superposition means a model represents more features than it has dimensions, packed as overlapping directions. Individual neurons therefore look polysemantic, and reading them is a category error.
+- **Sparse autoencoders find the right basis, at a price.** Train a wide, sparse autoencoder on activations and you recover far more monosemantic features. But dictionary size is a free parameter, and increasing it splits features indefinitely with no principled stopping point.
+- **Induction heads are the field's best result.** A two-head circuit that finds a previous occurrence of the current token and predicts what followed it. Mechanistically characterised, causally verified, and correlated with the phase change where in-context learning appears.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## Two questions that get confused
+
+**"What makes this model output X?"** is a question about behaviour. You can answer
+it with correlations — find inputs that produce X, look for patterns.
+
+**"How does this model compute X?"** is a question about mechanism. It asks what
+algorithm the weights implement, and it cannot be answered by correlation at all.
+
+Mechanistic interpretability is the second question. The distinction matters
+because the first is much easier and is routinely reported as though it answered
+the second.
+
+## Why looking at neurons fails
+
+The intuitive approach is to find inputs that make a neuron fire, and name the
+neuron after them.
+
+This runs into two problems, and the second is fatal.
+
+**Correlation without causation.** A neuron might reliably fire on images of cats
+while playing no role in the model's cat classification — it could be a byproduct
+of something else that happens to co-occur. To know it matters you have to
+intervene: clamp it and see whether behaviour changes.
+
+**Polysemanticity.** Most neurons respond to several unrelated things — a neuron
+that fires on cat faces, the front of cars, and legal citations. This looks like
+confusion and is not. A model with 4,000 dimensions needs to represent far more
+than 4,000 concepts, so it assigns each concept a *direction* and packs in more
+directions than dimensions, accepting slight overlap.
+
+This works because concepts are **sparse** — very few are active at once — so the
+interference rarely bites. The cost is that any single neuron sits at the
+intersection of many feature directions, and reading it shows a mixture.
+
+<Aside type="tip" title="The reframing that organises the field">
+Features are directions, not neurons. The neuron basis is arbitrary — an accident
+of how the network was parameterised. Interpretability's central technical problem
+is **finding the right basis**, and sparse autoencoders are the current best
+attempt at doing so automatically.
+</Aside>
+
+## What a circuit is
+
+A circuit is a subgraph of the network that implements an identifiable
+computation — a small set of attention heads and MLP layers, and the specific way
+information flows between them, that together perform some function.
+
+The canonical example is the **induction head**, and it is worth stating precisely
+because it is the field's cleanest result.
+
+Given text like `... Ms Dursley ... Ms D`, the model should predict `ursley`. Two
+heads, in two different layers, cooperate:
+
+1. A **previous-token head** in an early layer writes, at each position,
+   information about the token that came *before* it.
+2. An **induction head** in a later layer looks for earlier positions whose
+   "previous token" matches the current token, then copies whatever came *after*
+   those positions.
+
+That is a complete algorithm — match-and-copy — implemented in attention weights,
+verified by intervention, and it appears in essentially every transformer above a
+certain size.
+
+<Tier level="mechanics" />
+
+## Activation patching
+
+The workhorse method, and the reason findings can claim causality rather than
+correlation.
+
+<Figure
+  lead="Patch one component; measure how much of the behaviour returns."
+  caption="Run the model on a clean prompt and a corrupted one that changes the answer. Then run the corrupted prompt again, but overwrite one component's activation with the value it took on the clean run. If the correct answer comes back, that component carried the information — and you have a causal claim, not a correlational one. Sweeping every layer and position produces a heatmap showing where the relevant computation lives."
+>
+<svg viewBox="0 0 760 290" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Activation patching: clean run, corrupted run, and patched run">
+  <defs>
+    <marker id="ip1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <text class="xs" x="14" y="42">CLEAN</text>
+  <rect class="f-green" x="80" y="26" width="140" height="30" rx="4"/>
+  <text class="on-fill-sm" x="150" y="46" text-anchor="middle">"Rome is in ___"</text>
+  <rect class="f-blue" x="240" y="26" width="34" height="30" rx="3"/>
+  <rect class="f-blue" x="278" y="26" width="34" height="30" rx="3"/>
+  <rect class="f-blue" x="316" y="26" width="34" height="30" rx="3"/>
+  <rect class="f-blue" x="354" y="26" width="34" height="30" rx="3"/>
+  <path class="ar" d="M392,41 L426,41" marker-end="url(#ip1)"/>
+  <rect class="f-green" x="432" y="26" width="90" height="30" rx="4"/>
+  <text class="on-fill-sm" x="477" y="46" text-anchor="middle">"Italy" ✓</text>
+
+  <text class="xs" x="14" y="106">CORRUPTED</text>
+  <rect class="f-pink" x="80" y="90" width="140" height="30" rx="4"/>
+  <text class="on-fill-sm" x="150" y="110" text-anchor="middle">"Paris is in ___"</text>
+  <rect class="f-pink" x="240" y="90" width="34" height="30" rx="3"/>
+  <rect class="f-pink" x="278" y="90" width="34" height="30" rx="3"/>
+  <rect class="f-pink" x="316" y="90" width="34" height="30" rx="3"/>
+  <rect class="f-pink" x="354" y="90" width="34" height="30" rx="3"/>
+  <path class="ar" d="M392,105 L426,105" marker-end="url(#ip1)"/>
+  <rect class="f-pink" x="432" y="90" width="90" height="30" rx="4"/>
+  <text class="on-fill-sm" x="477" y="110" text-anchor="middle">"France"</text>
+
+  <text class="xs" x="14" y="182">PATCHED</text>
+  <rect class="f-pink" x="80" y="166" width="140" height="30" rx="4"/>
+  <text class="on-fill-sm" x="150" y="186" text-anchor="middle">"Paris is in ___"</text>
+  <rect class="f-pink" x="240" y="166" width="34" height="30" rx="3"/>
+  <rect class="f-blue" x="278" y="166" width="34" height="30" rx="3"/>
+  <rect class="f-pink" x="316" y="166" width="34" height="30" rx="3"/>
+  <rect class="f-pink" x="354" y="166" width="34" height="30" rx="3"/>
+  <path class="thick" d="M295,60 C295,120 295,140 295,162" marker-end="url(#ip1)"/>
+  <text class="xs" x="306" y="140">copy this ONE activation</text>
+  <text class="xs" x="306" y="156">from the clean run</text>
+  <path class="ar" d="M392,181 L426,181" marker-end="url(#ip1)"/>
+  <rect class="f-green" x="432" y="166" width="90" height="30" rx="4"/>
+  <text class="on-fill-sm" x="477" y="186" text-anchor="middle">"Italy" ✓</text>
+
+  <path class="ar" d="M528,181 L566,181" marker-end="url(#ip1)"/>
+  <rect class="f-amber" x="572" y="158" width="164" height="46" rx="5"/>
+  <text class="on-fill-sm" x="654" y="178" text-anchor="middle">that component</text>
+  <text class="on-fill-sm" x="654" y="194" text-anchor="middle">CARRIED the fact</text>
+
+  <line class="bx" x1="14" y1="226" x2="746" y2="226" opacity="0.3"/>
+  <text class="xs" x="14" y="248">Sweep every layer × position and the resulting heatmap localises the computation. This is an intervention,</text>
+  <text class="xs" x="14" y="266">so the claim is causal — unlike a probe, which only shows the information is present somewhere.</text>
+</svg>
+</Figure>
+
+<Steps>
+
+1. **Clean run.** Prompt that produces the behaviour. Cache every activation.
+2. **Corrupted run.** Minimally different prompt that changes the answer.
+3. **Patched run.** Run corrupted, but overwrite one component with its cached
+   clean value.
+4. **Measure recovery.** How much of the clean behaviour returns.
+5. **Sweep.** Repeat for every layer and position to localise the computation.
+
+</Steps>
+
+**The choice of corruption is a modelling decision.** Swapping a token, adding
+noise to embeddings, or using a different prompt entirely all define different
+counterfactuals, and they can give different answers. Zhang & Nanda showed that
+metric and corruption choices materially change conclusions — this is a live
+methodological problem, not a settled recipe.
+
+## Sparse autoencoders
+
+If features are directions and there are more of them than dimensions, you need an
+**overcomplete** basis. Train a wide autoencoder on the model's activations with a
+sparsity penalty:
+
+<Tabs>
+<TabItem label="The method">
+
+Take activations $x$ from some layer. Train an encoder into a much wider space
+(8× to 100× the layer width) with an $\ell_1$ penalty forcing few features active,
+then a decoder reconstructing $x$.
+
+The learned dictionary directions turn out to be far more monosemantic than
+neurons. Scaling Monosemanticity extracted millions of features from a production
+model — features for the Golden Gate Bridge, for code errors, for sycophantic
+praise, for internal conflict — and demonstrated they are causal by *steering*:
+clamp a feature high and the model's behaviour changes accordingly.
+
+</TabItem>
+<TabItem label="Feature splitting">
+
+The unresolved problem. Increase the dictionary size and a feature resolves into
+several finer ones: "bird" becomes "bird", then "seabird" and "raptor", then
+specific species.
+
+None of these is wrong. There is no principled number of features, and no
+criterion telling you when to stop. Reconstruction error versus sparsity is a
+trade-off curve, not an optimum — so "we found N features" is a statement about
+your hyperparameter as much as about the model.
+
+</TabItem>
+<TabItem label="Open dictionaries">
+
+Gemma Scope released SAEs trained on every layer of an open model, which changed
+the field's accessibility — before it, this work required either training your own
+dictionaries at significant cost or working inside a frontier lab.
+
+</TabItem>
+</Tabs>
+
+## Attribution graphs
+
+The 2025 development. Rather than analysing one component, use the SAE features as
+nodes and trace the computational graph *between* them for a specific prompt —
+which features activated, which caused which, and how they combined to produce the
+output.
+
+This moved the field from "here is an interesting component" to "here is the
+computation this model performed on this input", and it surfaced behaviours worth
+knowing about: planning ahead in poetry (the model selects a rhyme before writing
+the line leading to it), and cases where the stated chain-of-thought does not match
+the computation actually performed.
+
+<Aside type="caution" title="Motivated reasoning, caught mechanistically">
+The circuit-tracing work found instances where a model produces a plausible
+argument for an answer it had already arrived at by other means — the reasoning
+shown to the user was not the reasoning that determined the output. This matters
+directly for anyone treating chain-of-thought as an explanation. It is a report of
+the process, and the report is not always accurate.
+</Aside>
+
+<Tier level="formal" />
+
+## The residual stream decomposition
+
+Elhage et al.'s framework starts from writing a transformer's computation as a sum
+of paths. The residual stream at layer $\ell$ is
+
+$$
+x_\ell = x_0 + \sum_{i<\ell}\ \sum_{h}\ \operatorname{head}_{i,h}(x_i) + \sum_{i<\ell}\operatorname{MLP}_i(x_i),
+$$
+
+so every component *adds* to a shared bus rather than transforming a pipeline.
+
+For an attention-only model this becomes an explicit sum over paths from input to
+output, each path a product of the head matrices along it. The decomposition
+separates each head into two circuits:
+
+$$
+W_{QK} = W_Q^{\top} W_K \quad (\text{which positions attend where}), \qquad
+W_{OV} = W_O W_V \quad (\text{what gets written when they do}).
+$$
+
+**These are independent.** $W_{QK}$ determines the attention pattern; $W_{OV}$
+determines what information moves given that pattern. Analysing them separately is
+what makes head-level interpretation tractable, because a head's "job" factors into
+where it looks and what it copies.
+
+<Figure
+  lead="Match-and-copy, implemented in two heads across two layers."
+  caption="The previous-token head in an early layer writes, at each position, information about what preceded it. The induction head in a later layer then builds its query from the current token and its keys from what layer 1 wrote — so it attends precisely to positions that follow an earlier occurrence of the current token, and copies whatever came next. This is K-composition: layer 2's keys are constructed from layer 1's output rather than from the embedding. The algorithm is readable off the weights and confirmed by ablation."
+>
+<svg viewBox="0 0 760 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Induction head circuit performing match and copy across two layers">
+  <defs>
+    <marker id="ih1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <text class="xs" x="14" y="46">tokens</text>
+  <rect class="f-grey" x="80" y="30" width="64" height="30" rx="4"/>
+  <text class="on-fill-sm" x="112" y="50" text-anchor="middle">Ms</text>
+  <rect class="f-blue" x="150" y="30" width="80" height="30" rx="4"/>
+  <text class="on-fill-sm" x="190" y="50" text-anchor="middle">Dursley</text>
+  <rect class="f-grey" x="236" y="30" width="60" height="30" rx="4"/>
+  <text class="on-fill-sm" x="266" y="50" text-anchor="middle">said</text>
+  <rect class="f-grey" x="302" y="30" width="52" height="30" rx="4"/>
+  <text class="on-fill-sm" x="328" y="50" text-anchor="middle">…</text>
+  <rect class="f-grey" x="360" y="30" width="64" height="30" rx="4"/>
+  <text class="on-fill-sm" x="392" y="50" text-anchor="middle">Ms</text>
+  <rect class="f-green" x="430" y="30" width="80" height="30" rx="4"/>
+  <text class="on-fill-sm" x="470" y="50" text-anchor="middle">?</text>
+
+  <text class="xs" x="112" y="76" text-anchor="middle">j</text>
+  <text class="xs" x="190" y="76" text-anchor="middle">j+1</text>
+  <text class="xs" x="392" y="76" text-anchor="middle">t</text>
+  <text class="xs" x="470" y="76" text-anchor="middle">t+1</text>
+
+  <line class="bx" x1="14" y1="92" x2="746" y2="92" opacity="0.3"/>
+
+  <text class="lb" x="14" y="116">LAYER 1 — previous-token head</text>
+  <path class="thick" d="M180,132 C160,150 132,150 116,136" marker-end="url(#ih1)"/>
+  <rect class="f-amber" x="150" y="136" width="80" height="30" rx="4"/>
+  <text class="on-fill-sm" x="190" y="156" text-anchor="middle">"prev = Ms"</text>
+  <text class="xs" x="250" y="156">writes info about the PRECEDING token into position j+1</text>
+
+  <text class="lb" x="14" y="200">LAYER 2 — induction head</text>
+  <path class="thick" d="M384,214 C330,236 250,236 196,176" marker-end="url(#ih1)"/>
+  <text class="xs" x="290" y="252" text-anchor="middle">query built from "Ms" matches the key at j+1</text>
+  <text class="xs" x="290" y="268" text-anchor="middle">(which layer 1 built from "Ms")</text>
+
+  <path class="thick" d="M214,166 C300,120 400,180 462,206" marker-end="url(#ih1)"/>
+  <rect class="f-green" x="430" y="196" width="80" height="30" rx="4"/>
+  <text class="on-fill-sm" x="470" y="216" text-anchor="middle">Dursley</text>
+  <text class="xs" x="530" y="206">copies what FOLLOWED</text>
+  <text class="xs" x="530" y="222">the earlier match</text>
+
+  <rect class="f-purple" x="560" y="120" width="180" height="56" rx="5" opacity="0.55"/>
+  <text class="on-fill-sm" x="576" y="142">W_QK: where to look</text>
+  <text class="on-fill-sm" x="576" y="162">W_OV: what to copy</text>
+  <text class="xs" x="560" y="192">independent circuits — which is</text>
+  <text class="xs" x="560" y="208">what makes heads analysable</text>
+</svg>
+</Figure>
+
+## Induction heads, formally
+
+A two-layer composition. Let the current token at position $t$ be $A$, and suppose
+the sequence contains an earlier occurrence `[A][B]` at positions $j, j+1$.
+
+**Layer 1 — previous-token head.** Attends from each position to the one before,
+so position $j+1$ accumulates information about token $A$:
+
+$$
+x_{j+1} \mathrel{+}= W_{OV}^{(1)}\, e(A).
+$$
+
+**Layer 2 — induction head.** Its query at position $t$ is built from $e(A)$; its
+key at position $j+1$ was built from the $A$-information written in layer 1. So the
+QK score
+
+$$
+\big(W_Q^{(2)} e(A)\big)^{\top}\big(W_K^{(2)} W_{OV}^{(1)} e(A)\big)
+$$
+
+is large exactly at positions following a previous $A$. The head then copies via
+$W_{OV}^{(2)}$ the token at that position — which is $B$.
+
+This is **K-composition**: layer 2's keys are constructed from layer 1's output
+rather than from the embedding directly. The algorithm is match-and-copy, it is
+readable off the weights, and it is causally verified by ablation.
+
+**Why it matters beyond itself.** Olsson et al. showed induction heads form during
+a narrow window of training that coincides with a visible bump in the loss curve
+and with the sudden appearance of in-context learning. That is a mechanistic
+account of an emergent capability — currently the field's strongest such result.
+
+## Superposition and the capacity bound
+
+From the [representations page](/foundations/representations/): a layer with $n$
+dimensions represents $m > n$ features as
+
+$$
+x = \sum_{i=1}^{m} f_i\, w_i, \qquad w_i \in \mathbb{R}^{n}, \ \|w_i\| = 1,
+$$
+
+with $f$ sparse. Interference between features $i$ and $j$ is $\langle w_i, w_j
+\rangle$, and the expected damage is
+
+$$
+\mathbb{E}[\text{interference}] = \Pr\big[f_i \neq 0 \wedge f_j \neq 0\big]\cdot\big|\langle w_i, w_j\rangle\big|.
+$$
+
+Sparsity makes the first factor tiny, so substantial overlap is affordable. The
+optimal packing minimises maximum coherence
+
+$$
+\mu(W) = \max_{i\neq j}\ \big|\langle w_i, w_j\rangle\big|,
+$$
+
+subject to the Welch bound
+
+$$
+\mu \;\geq\; \sqrt{\frac{m-n}{n(m-1)}},
+$$
+
+which is why toy models settle into regular polytopes — those are the
+configurations achieving it.
+
+## The sparse autoencoder objective
+
+$$
+h = \operatorname{ReLU}\big(W_e(x - b_d) + b_e\big), \qquad \hat x = W_d h + b_d,
+$$
+
+$$
+\mathcal{L} = \underbrace{\|x - \hat x\|_2^2}_{\text{reconstruction}} + \lambda \underbrace{\sum_{i} |h_i|\,\|W_{d,i}\|_2}_{\text{sparsity}},
+$$
+
+with $\dim(h) = R \cdot \dim(x)$ for expansion factor $R \in [8, 100]$.
+
+Two details that are easy to skip and matter:
+
+**The $\ell_1$ term is weighted by decoder column norms.** Without it, the model
+shrinks $h$ and grows $W_d$ to cheat the penalty while leaving the reconstruction
+unchanged. Either this weighting or an explicit unit-norm constraint on decoder
+columns is required.
+
+**Subtracting $b_d$ before encoding** centres the input, which measurably improves
+feature quality — activations have a large mean component that would otherwise be
+absorbed into many features.
+
+**The fundamental tension.** Raising $\lambda$ gives sparser, more interpretable
+features and worse reconstruction; lowering it does the reverse. Since there is no
+ground truth for "the right number of features", the operating point is chosen by
+inspection. This is the feature-splitting problem in its formal dress.
+
+Variants — TopK SAEs that fix the active count directly, JumpReLU with a learned
+threshold — address the $\ell_1$ penalty's tendency to shrink activations, and none
+resolves the dictionary-size question.
+
+## Causal mediation
+
+Activation patching is causal mediation analysis applied to networks. For a
+mediator $M$ (some component) and treatment $T$ (clean vs corrupted input), the
+**indirect effect** through $M$ is
+
+$$
+\text{IE} = \mathbb{E}\big[Y\big(T=0,\ M = M(T{=}1)\big)\big] - \mathbb{E}\big[Y(T=0)\big],
+$$
+
+i.e. run with the corrupted input but $M$ set to its clean value. That is exactly
+the patched run.
+
+The **direct effect** holds $M$ fixed and varies the input, and the two decompose
+the total effect. Reporting both distinguishes a component that carries the
+information from one that merely correlates with it.
+
+Meng et al.'s ROME used this to localise factual associations to **mid-layer MLPs
+at the subject token position** — and then went further, editing the MLP's weights
+with a rank-one update to change the stored fact. That the edit works is strong
+evidence the localisation was correct: prediction, intervention, confirmation.
+
+<Tier level="frontier" />
+
+## Where this stands, as of 2026
+
+**Sparse autoencoders scaled to production models and the dictionary problem
+remains.** Millions of interpretable features extracted from a frontier model,
+demonstrably causal via steering. Feature splitting means the feature count is
+still a hyperparameter, and there is no principled criterion for stopping.
+
+**Attribution graphs moved the unit of analysis from components to computations.**
+Tracing feature-to-feature causation on specific prompts produces something much
+closer to "what the model did" than any previous method. It is labour-intensive and
+currently applied to selected examples rather than at scale.
+
+**The linear representation hypothesis mostly holds, with exceptions.** Many
+concepts are single directions and steering along them works. Circular
+representations — days of the week, months — have been documented, so "features are
+directions" is a strong default rather than a law.
+
+**Chain-of-thought is not reliably an explanation.** Mechanistic work has caught
+models constructing post-hoc justifications for answers reached otherwise. Anyone
+using reasoning traces as evidence of a model's process should hold that finding in
+view.
+
+## Open problems
+
+- **No principled dictionary size.** Feature splitting continues indefinitely as
+  you expand. Nothing says how many features a model "has".
+
+- **Coverage is unknown.** SAEs reconstruct activations imperfectly, and what the
+  residual contains is not characterised. Absence of a feature in the dictionary is
+  not evidence of its absence in the model.
+
+- **It does not scale by hand.** Circuit analysis is skilled manual work per
+  behaviour. Automating it — using models to interpret models — is the obvious move
+  and is not yet reliable.
+
+- **Interpretability illusions.** A component can appear to implement a clean
+  algorithm on your chosen distribution and behave differently off it. Findings
+  validated on narrow prompt sets frequently do not generalise.
+
+- **The gap to safety applications is real.** The stated goal is detecting
+  deception, hidden goals, and dangerous capabilities. Current methods find
+  features and small circuits; that is some distance from auditing a model's
+  intentions, and the field is generally honest about the gap.
+
+## What to read next, in order
+
+1. **Elhage et al. (2021), Mathematical Framework** — the QK/OV decomposition. The
+   foundation everything else builds on, and it repays slow reading.
+2. **Olsson et al. (2022), Induction Heads** — the field's cleanest result,
+   including the training-dynamics correlation.
+3. **Elhage et al. (2022), Toy Models of Superposition** — why the neuron basis is
+   wrong, argued from a solvable model.
+4. **Templeton et al. (2024), Scaling Monosemanticity** — SAEs on a production
+   model, with steering experiments that establish causality.
+5. **Lindsey et al. (2025), On the Biology of a Large Language Model** — attribution
+   graphs applied to real behaviours. The most concrete picture available of what a
+   large model does internally.
+
+<Papers papers={frontmatter.papers} />

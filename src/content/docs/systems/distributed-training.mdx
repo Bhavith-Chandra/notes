@@ -1,0 +1,557 @@
+---
+title: Distributed Training
+description: "Data, tensor, pipeline and sequence parallelism — what each shards, what each costs in communication, and how to combine them without stalling the cluster."
+sidebar:
+  order: 4
+depth: frontier
+readingTime: 40
+prereqs:
+  - label: "Backpropagation"
+    slug: "foundations/backpropagation"
+papers:
+  - title: "Mixed Precision Training"
+    authors: "Micikevicius, Narang, Alben, et al."
+    year: 2017
+    url: "https://arxiv.org/abs/1710.03740"
+  - title: "GPipe: Efficient Training of Giant Neural Networks using Pipeline Parallelism"
+    authors: "Huang, Cheng, Bapna, et al."
+    year: 2018
+    url: "https://arxiv.org/abs/1811.06965"
+  - title: "Megatron-LM: Training Multi-Billion Parameter Language Models Using Model Parallelism"
+    authors: "Shoeybi, Patwary, Puri, et al."
+    year: 2019
+    url: "https://arxiv.org/abs/1909.08053"
+  - title: "PipeDream: Generalized Pipeline Parallelism for DNN Training"
+    authors: "Narayanan, Harlap, Phanishayee, et al."
+    year: 2019
+    url: "https://dl.acm.org/doi/10.1145/3341301.3359646"
+  - title: "ZeRO: Memory Optimizations Toward Training Trillion Parameter Models"
+    authors: "Rajbhandari, Rasley, Ruwase, He"
+    year: 2019
+    url: "https://arxiv.org/abs/1910.02054"
+  - title: "Efficient Large-Scale Language Model Training on GPU Clusters Using Megatron-LM"
+    authors: "Narayanan, Shoeybi, Casper, et al."
+    year: 2021
+    url: "https://arxiv.org/abs/2104.04473"
+  - title: "PyTorch FSDP: Experiences on Scaling Fully Sharded Data Parallel"
+    authors: "Zhao, Gu, Varma, et al."
+    year: 2023
+    url: "https://arxiv.org/abs/2304.11277"
+  - title: "Ring Attention with Blockwise Transformers for Near-Infinite Context"
+    authors: "Hao Liu, Matei Zaharia, Pieter Abbeel"
+    year: 2023
+    url: "https://arxiv.org/abs/2310.01889"
+  - title: "Training Deep Nets with Sublinear Memory Cost"
+    authors: "Chen, Xu, Zhang, Guestrin"
+    year: 2016
+    url: "https://arxiv.org/abs/1604.06174"
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+<Abstract>
+A 70B model needs roughly 840 GB just for weights, gradients and optimizer state —
+before a single activation. No single accelerator has that. So training is split
+across hundreds or thousands of devices, and the engineering problem becomes
+choosing *which axis* to split along. There are four, they have very different
+communication costs, and real systems use all of them at once in an arrangement
+dictated as much by network topology as by the model.
+</Abstract>
+
+<KeyPoints>
+
+- **Four axes, four things sharded.** Data parallelism splits the batch, tensor parallelism splits individual matrices, pipeline parallelism splits layers, sequence parallelism splits the sequence. They compose because they shard orthogonal dimensions.
+- **Communication cost decides the layout, not elegance.** Tensor parallelism needs two all-reduces *per layer*, so it goes inside a node over NVLink. Pipeline parallelism sends one activation tensor per stage boundary, so it can cross slower links.
+- **Optimizer state, not weights, is the memory problem.** Adam's two fp32 moments are 8 bytes per parameter against 2 for a bf16 weight. ZeRO's insight is that every data-parallel replica holding an identical copy of all of it is pure waste.
+- **Pipelines have bubbles, and micro-batching is the only real fix.** With $p$ stages and $m$ micro-batches the idle fraction is $(p-1)/(m+p-1)$ — which is why you want many more micro-batches than stages.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## Where the memory goes
+
+The instinct that a 70B model needs 140 GB is off by roughly a factor of six.
+
+| Component | Bytes per parameter | 70B |
+|---|---|---|
+| Weights (bf16) | 2 | 140 GB |
+| Gradients (bf16) | 2 | 140 GB |
+| Adam moment 1 (fp32) | 4 | 280 GB |
+| Adam moment 2 (fp32) | 4 | 280 GB |
+| fp32 master weights | 4 | 280 GB |
+| **Total** | **16** | **~1.1 TB** |
+
+Plus activations, which scale with batch size and sequence length and can dwarf
+all of it.
+
+**The optimizer is the bulk.** That observation is what motivates most of this
+page: if you are going to shard something, shard the thing that is four times the
+size of the model.
+
+## Four ways to cut
+
+Imagine the computation as a rectangle: **batch** on one side, **model** on the
+other. You can cut either, and the model side can be cut two different ways.
+
+<Steps>
+
+1. **Data parallelism.** Every device holds the whole model and processes a
+   different slice of the batch. Simple, and it does nothing about the memory
+   problem — every device still holds everything.
+
+2. **Tensor parallelism.** Split individual weight matrices across devices. Each
+   device computes part of every layer. Fixes memory, and requires devices to
+   exchange partial results *within every layer*.
+
+3. **Pipeline parallelism.** Give each device a different set of layers, like a
+   factory line. Cheap communication — one hand-off per stage — and devices sit
+   idle waiting for work to reach them.
+
+4. **Sequence parallelism.** Split the sequence itself across devices. The only
+   option when one sequence's activations do not fit on one device.
+
+</Steps>
+
+## Why the network topology decides
+
+Inside a server, GPUs are connected by NVLink at hundreds of gigabytes per second.
+Between servers, you have InfiniBand or Ethernet — an order of magnitude slower.
+
+That gap dictates the layout:
+
+- **Tensor parallelism talks constantly** — twice per transformer layer. It must
+  stay inside a node, on the fast interconnect. Typically 8-way, matching GPUs per
+  server.
+- **Pipeline parallelism talks rarely** — once per stage boundary. It can cross the
+  slow links between nodes.
+- **Data parallelism talks once per step** — a gradient all-reduce that can overlap
+  with backward computation.
+
+**So the layout is chosen by matching each parallelism's chattiness to the
+bandwidth available at that level of the hierarchy.** This is a systems constraint
+shaping a modelling decision, and it is why cluster design and model architecture
+are discussed together.
+
+<Tier level="mechanics" />
+
+## The four axes
+
+<Figure
+  lead="Each axis shards a different dimension, so they compose."
+  caption="Data parallelism replicates the model and splits the batch — no memory saving. Tensor parallelism splits each weight matrix, so every device does part of every layer and must exchange partial sums twice per layer. Pipeline parallelism assigns whole layers to devices, communicating only at boundaries. Because these shard orthogonal dimensions they multiply: an 8-way tensor, 8-way pipeline, 16-way data layout occupies 1,024 GPUs. The frequency column is what determines where each can live in the network hierarchy."
+>
+<svg viewBox="0 0 760 310" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Data, tensor and pipeline parallelism compared">
+  <text class="lb" x="115" y="18" text-anchor="middle">Data parallel</text>
+  <text class="xs" x="115" y="34" text-anchor="middle">split the batch</text>
+  <rect class="f-blue" x="40" y="44" width="66" height="46" rx="4"/>
+  <text class="on-fill-sm" x="73" y="64" text-anchor="middle">full model</text>
+  <text class="xs" x="73" y="80" text-anchor="middle">batch 0–7</text>
+  <rect class="f-blue" x="124" y="44" width="66" height="46" rx="4"/>
+  <text class="on-fill-sm" x="157" y="64" text-anchor="middle">full model</text>
+  <text class="xs" x="157" y="80" text-anchor="middle">batch 8–15</text>
+  <text class="xs" x="115" y="110" text-anchor="middle">✗ no memory saving</text>
+  <text class="xs" x="115" y="126" text-anchor="middle">1 all-reduce / step</text>
+
+  <line class="bx" x1="245" y1="14" x2="245" y2="140" opacity="0.3"/>
+
+  <text class="lb" x="380" y="18" text-anchor="middle">Tensor parallel</text>
+  <text class="xs" x="380" y="34" text-anchor="middle">split each matrix</text>
+  <rect class="f-purple" x="290" y="44" width="80" height="46" rx="4"/>
+  <text class="on-fill-sm" x="330" y="64" text-anchor="middle">W columns 0–k</text>
+  <text class="xs" x="330" y="80" text-anchor="middle">every layer</text>
+  <rect class="f-purple" x="378" y="44" width="80" height="46" rx="4"/>
+  <text class="on-fill-sm" x="418" y="64" text-anchor="middle">W columns k–n</text>
+  <text class="xs" x="418" y="80" text-anchor="middle">every layer</text>
+  <path class="thick" d="M374,58 L374,76" opacity="0.6"/>
+  <text class="xs" x="380" y="110" text-anchor="middle">✓ shards memory</text>
+  <text class="xs" x="380" y="126" text-anchor="middle">2 all-reduces PER LAYER — needs NVLink</text>
+
+  <line class="bx" x1="500" y1="14" x2="500" y2="140" opacity="0.3"/>
+
+  <text class="lb" x="625" y="18" text-anchor="middle">Pipeline parallel</text>
+  <text class="xs" x="625" y="34" text-anchor="middle">split the layers</text>
+  <rect class="f-green" x="540" y="44" width="76" height="46" rx="4"/>
+  <text class="on-fill-sm" x="578" y="64" text-anchor="middle">layers 1–20</text>
+  <rect class="f-green" x="634" y="44" width="76" height="46" rx="4"/>
+  <text class="on-fill-sm" x="672" y="64" text-anchor="middle">layers 21–40</text>
+  <path class="ar" d="M620,67 L630,67"/>
+  <text class="xs" x="625" y="110" text-anchor="middle">✓ shards memory</text>
+  <text class="xs" x="625" y="126" text-anchor="middle">1 tensor per boundary — tolerates slow links</text>
+
+  <line class="bx" x1="40" y1="156" x2="716" y2="156" opacity="0.3"/>
+
+  <text class="lb" x="40" y="180">The pipeline bubble</text>
+  <text class="xs" x="40" y="198">4 stages, 4 micro-batches — shaded cells are idle</text>
+
+  <g>
+    <text class="xs" x="70" y="224" text-anchor="end">stage 1</text>
+    <rect class="f-green" x="80" y="212" width="34" height="16" rx="2"/>
+    <rect class="f-green" x="116" y="212" width="34" height="16" rx="2"/>
+    <rect class="f-green" x="152" y="212" width="34" height="16" rx="2"/>
+    <rect class="f-green" x="188" y="212" width="34" height="16" rx="2"/>
+    <rect class="f-grey" x="224" y="212" width="106" height="16" rx="2" opacity="0.45"/>
+
+    <text class="xs" x="70" y="244" text-anchor="end">stage 2</text>
+    <rect class="f-grey" x="80" y="232" width="34" height="16" rx="2" opacity="0.45"/>
+    <rect class="f-green" x="116" y="232" width="34" height="16" rx="2"/>
+    <rect class="f-green" x="152" y="232" width="34" height="16" rx="2"/>
+    <rect class="f-green" x="188" y="232" width="34" height="16" rx="2"/>
+    <rect class="f-green" x="224" y="232" width="34" height="16" rx="2"/>
+    <rect class="f-grey" x="260" y="232" width="70" height="16" rx="2" opacity="0.45"/>
+
+    <text class="xs" x="70" y="264" text-anchor="end">stage 3</text>
+    <rect class="f-grey" x="80" y="252" width="70" height="16" rx="2" opacity="0.45"/>
+    <rect class="f-green" x="152" y="252" width="34" height="16" rx="2"/>
+    <rect class="f-green" x="188" y="252" width="34" height="16" rx="2"/>
+    <rect class="f-green" x="224" y="252" width="34" height="16" rx="2"/>
+    <rect class="f-green" x="260" y="252" width="34" height="16" rx="2"/>
+    <rect class="f-grey" x="296" y="252" width="34" height="16" rx="2" opacity="0.45"/>
+
+    <text class="xs" x="70" y="284" text-anchor="end">stage 4</text>
+    <rect class="f-grey" x="80" y="272" width="106" height="16" rx="2" opacity="0.45"/>
+    <rect class="f-green" x="188" y="272" width="34" height="16" rx="2"/>
+    <rect class="f-green" x="224" y="272" width="34" height="16" rx="2"/>
+    <rect class="f-green" x="260" y="272" width="34" height="16" rx="2"/>
+    <rect class="f-green" x="296" y="272" width="34" height="16" rx="2"/>
+  </g>
+
+  <rect class="f-pink" x="360" y="206" width="356" height="88" rx="5" opacity="0.5"/>
+  <text class="on-fill-sm" x="376" y="228">bubble fraction = (p − 1) / (m + p − 1)</text>
+  <text class="xs" x="376" y="250">p = 4 stages, m = 4 micro-batches  →  43% idle</text>
+  <text class="xs" x="376" y="270">p = 4 stages, m = 32 micro-batches →  8.6% idle</text>
+  <text class="xs" x="376" y="288">so always run many more micro-batches than stages</text>
+</svg>
+</Figure>
+
+## Tensor parallelism, concretely
+
+Megatron's trick is choosing the split so that consecutive layers need only *one*
+synchronisation between them rather than two.
+
+For the MLP block $Y = \operatorname{GeLU}(XA)B$:
+
+- Split $A$ **column-wise**: $A = [A_1, A_2]$. Each device computes
+  $\operatorname{GeLU}(XA_i)$ independently — and this works only because GeLU is
+  elementwise, so it commutes with the column split.
+- Split $B$ **row-wise**: $B = [B_1; B_2]$. Each device computes $\operatorname{GeLU}(XA_i)B_i$,
+  and the two partial results are summed.
+
+One all-reduce for the whole block. A naive split would need one after each matmul.
+The same pattern applies to attention: split by *head*, since heads are already
+independent.
+
+<Aside type="tip" title="The general principle">
+Choose the sharding so that non-linearities fall where the data is already local.
+Communication is needed only where a sum crosses the shard boundary — so arrange
+for as few such points as possible. Every good tensor-parallel scheme is an
+application of this.
+</Aside>
+
+## ZeRO
+
+Data parallelism replicates optimizer state on every device, which is pure
+duplication. ZeRO shards it in three stages:
+
+| Stage | Sharded | Memory per device (Adam, $N$ params, $d$ devices) |
+|---|---|---|
+| baseline DP | nothing | $16N$ |
+| **ZeRO-1** | optimizer state | $4N + 12N/d$ |
+| **ZeRO-2** | + gradients | $2N + 14N/d$ |
+| **ZeRO-3** | + parameters | $16N/d$ |
+
+Stage 3 — which PyTorch calls **FSDP** — shards everything, so per-device memory
+falls linearly with device count. Parameters are gathered just before a layer runs
+and released immediately after.
+
+The cost is communication: stage 3 adds an all-gather in both the forward and
+backward pass. In practice this is largely hidden by prefetching the next layer's
+parameters while the current one computes — the technique that makes FSDP
+practical rather than merely correct.
+
+<Figure
+  lead="ZeRO removes duplication that data parallelism never needed."
+  caption="Baseline data parallelism gives every device an identical copy of everything, so adding devices adds throughput and no memory headroom at all. ZeRO shards progressively: stage 1 the optimizer state, stage 2 the gradients, stage 3 the parameters themselves. At stage 3 — PyTorch's FSDP — per-device memory falls linearly with device count. The cost is an all-gather before each layer runs, which is hidden in practice by prefetching the next layer's parameters during the current layer's compute."
+>
+<svg viewBox="0 0 760 270" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ZeRO stages progressively sharding optimizer state, gradients and parameters">
+  <text class="xs" x="14" y="42">baseline DP</text>
+  <rect class="f-blue" x="120" y="26" width="40" height="30" rx="3"/>
+  <text class="on-fill-sm" x="140" y="46" text-anchor="middle">W</text>
+  <rect class="f-green" x="164" y="26" width="40" height="30" rx="3"/>
+  <text class="on-fill-sm" x="184" y="46" text-anchor="middle">∇</text>
+  <rect class="f-amber" x="208" y="26" width="150" height="30" rx="3"/>
+  <text class="on-fill-sm" x="283" y="46" text-anchor="middle">optimizer state (12N)</text>
+  <text class="xs" x="376" y="46">×  every device holds ALL of it</text>
+  <rect class="f-pink" x="600" y="26" width="116" height="30" rx="3" opacity="0.6"/>
+  <text class="on-fill-sm" x="658" y="46" text-anchor="middle">16N per device</text>
+
+  <text class="xs" x="14" y="92">ZeRO-1</text>
+  <rect class="f-blue" x="120" y="76" width="40" height="30" rx="3"/>
+  <text class="on-fill-sm" x="140" y="96" text-anchor="middle">W</text>
+  <rect class="f-green" x="164" y="76" width="40" height="30" rx="3"/>
+  <text class="on-fill-sm" x="184" y="96" text-anchor="middle">∇</text>
+  <rect class="f-amber" x="208" y="76" width="36" height="30" rx="3"/>
+  <rect class="bx" x="246" y="76" width="112" height="30" rx="3" opacity="0.35"/>
+  <text class="xs" x="302" y="96" text-anchor="middle">on other devices</text>
+  <rect class="f-pink" x="600" y="76" width="116" height="30" rx="3" opacity="0.6"/>
+  <text class="on-fill-sm" x="658" y="96" text-anchor="middle">4N + 12N/d</text>
+
+  <text class="xs" x="14" y="142">ZeRO-2</text>
+  <rect class="f-blue" x="120" y="126" width="40" height="30" rx="3"/>
+  <text class="on-fill-sm" x="140" y="146" text-anchor="middle">W</text>
+  <rect class="f-green" x="164" y="126" width="12" height="30" rx="3"/>
+  <rect class="bx" x="178" y="126" width="26" height="30" rx="3" opacity="0.35"/>
+  <rect class="f-amber" x="208" y="126" width="36" height="30" rx="3"/>
+  <rect class="bx" x="246" y="126" width="112" height="30" rx="3" opacity="0.35"/>
+  <rect class="f-pink" x="600" y="126" width="116" height="30" rx="3" opacity="0.6"/>
+  <text class="on-fill-sm" x="658" y="146" text-anchor="middle">2N + 14N/d</text>
+
+  <text class="xs" x="14" y="192">ZeRO-3 / FSDP</text>
+  <rect class="f-blue" x="120" y="176" width="12" height="30" rx="3"/>
+  <rect class="bx" x="134" y="176" width="26" height="30" rx="3" opacity="0.35"/>
+  <rect class="f-green" x="164" y="176" width="12" height="30" rx="3"/>
+  <rect class="bx" x="178" y="176" width="26" height="30" rx="3" opacity="0.35"/>
+  <rect class="f-amber" x="208" y="176" width="36" height="30" rx="3"/>
+  <rect class="bx" x="246" y="176" width="112" height="30" rx="3" opacity="0.35"/>
+  <rect class="f-green" x="600" y="176" width="116" height="30" rx="3"/>
+  <text class="on-fill-sm" x="658" y="196" text-anchor="middle">16N / d</text>
+  <text class="xs" x="376" y="196">memory falls LINEARLY with device count</text>
+
+  <line class="bx" x1="14" y1="224" x2="746" y2="224" opacity="0.3"/>
+  <text class="xs" x="14" y="246">Filled = held locally · outlined = sharded elsewhere. Stage 3 gathers parameters just before a layer runs</text>
+  <text class="xs" x="14" y="262">and frees them immediately after; prefetching the next layer hides the all-gather behind current compute.</text>
+</svg>
+</Figure>
+
+## Mixed precision
+
+Store and compute in bf16; keep an fp32 master copy of the weights for the
+optimizer update.
+
+**Why the master copy is required.** bf16 has about 8 bits of mantissa. When the
+update $\eta \cdot \hat m/\sqrt{\hat v}$ is more than $2^{-8}$ times smaller than
+the weight, adding it rounds to no change at all — the weight silently stops
+learning. Accumulating in fp32 avoids this.
+
+**bf16 versus fp16.** bf16 has the same exponent range as fp32 with fewer mantissa
+bits; fp16 has more mantissa and much less range. Range matters more here —
+gradients underflow fp16 easily, which is why fp16 training needs *loss scaling*
+(multiply the loss by a large constant, divide it out of the gradients) and bf16
+generally does not. On hardware supporting it, bf16 is the simpler choice.
+
+<Tier level="formal" />
+
+## Memory accounting
+
+For $N$ parameters with mixed-precision Adam and $d$ data-parallel devices:
+
+$$
+M_{\text{model}} = \underbrace{2N}_{\text{bf16 weights}} + \underbrace{2N}_{\text{bf16 grads}} + \underbrace{4N + 4N + 4N}_{\text{fp32 master, } m, v} = 16N .
+$$
+
+Under ZeRO stage $s$:
+
+$$
+M_{\text{ZeRO-1}} = 4N + \frac{12N}{d}, \qquad
+M_{\text{ZeRO-2}} = 2N + \frac{14N}{d}, \qquad
+M_{\text{ZeRO-3}} = \frac{16N}{d}.
+$$
+
+Activation memory for a transformer with $L$ layers, batch $b$, sequence $s$,
+hidden $h$, heads $a$ — roughly, without recomputation:
+
+$$
+M_{\text{act}} \approx L\,b\,s\,h\left(34 + \frac{5\,a\,s}{h}\right)\ \text{bytes}.
+$$
+
+The second term is the attention matrix and it is **quadratic in sequence length**.
+For long sequences it dominates everything, which is why long-context training
+needs either FlashAttention (which never materialises that matrix) or sequence
+parallelism.
+
+## The pipeline bubble
+
+With $p$ stages and $m$ micro-batches, the pipeline takes $m + p - 1$ time slots to
+process work that would ideally take $m$. Idle fraction:
+
+$$
+\text{bubble} = \frac{(m + p - 1) - m}{m + p - 1} = \frac{p-1}{m+p-1}.
+$$
+
+Efficiency is $1 - \text{bubble}$:
+
+| $p$ | $m$ | bubble |
+|---|---|---|
+| 4 | 4 | 43% |
+| 4 | 32 | 8.6% |
+| 8 | 32 | 18% |
+| 8 | 128 | 5.2% |
+
+**More micro-batches shrink the bubble; more stages grow it.** The constraint is
+that each micro-batch must be large enough to use the device efficiently, so you
+cannot shrink them arbitrarily.
+
+**Interleaved scheduling** (Megatron-LM v2) assigns each device several
+non-contiguous chunks of layers rather than one contiguous block. With $v$ chunks
+per device the bubble becomes
+
+$$
+\text{bubble}_{\text{interleaved}} = \frac{1}{v}\cdot\frac{p-1}{m+p-1},
+$$
+
+a factor-$v$ reduction, at the cost of $v$ times more point-to-point
+communication. Worth it when the interconnect can absorb it.
+
+**1F1B scheduling** (from PipeDream) alternates one forward and one backward pass
+once the pipeline fills. It does not change the bubble fraction, but it bounds the
+number of in-flight activations to $p$ rather than $m$ — a large memory saving,
+which is why it is the default.
+
+## Tensor parallelism, formally
+
+For $Y = \operatorname{GeLU}(XA)B$ with $A \in \mathbb{R}^{h \times 4h}$, $B \in
+\mathbb{R}^{4h \times h}$, split $t$ ways:
+
+$$
+A = [A_1 \mid \cdots \mid A_t], \quad A_i \in \mathbb{R}^{h \times 4h/t}, \qquad
+B = \begin{bmatrix} B_1 \\ \vdots \\ B_t \end{bmatrix}, \quad B_i \in \mathbb{R}^{4h/t \times h}.
+$$
+
+Device $i$ computes $Y_i = \operatorname{GeLU}(XA_i)B_i$, and
+
+$$
+Y = \sum_{i=1}^{t} Y_i .
+$$
+
+**The column-then-row order is essential.** GeLU is elementwise, so
+$\operatorname{GeLU}([XA_1 \mid XA_2]) = [\operatorname{GeLU}(XA_1) \mid
+\operatorname{GeLU}(XA_2)]$ — the non-linearity does not need the full row, and no
+synchronisation is required in the middle. Splitting $A$ row-wise instead would
+force an all-reduce *before* the GeLU, doubling communication.
+
+**Cost.** Two all-reduces per layer (one for the MLP block, one for attention), each
+moving $2 b s h$ bytes for a ring all-reduce:
+
+$$
+C_{\text{TP}} = 2 L \cdot 2\,b\,s\,h\,\frac{t-1}{t}\ \text{bytes per step}.
+$$
+
+Independent of $t$ to first order, and it happens $2L$ times — which is the whole
+reason tensor parallelism must live on the fastest interconnect available.
+
+## Ring attention
+
+For sequences too long for one device, split the sequence and pass keys and values
+around a ring of devices.
+
+Device $i$ holds queries $Q_i$ for its chunk and initially $K_i, V_i$. Over $t$
+steps, each device computes attention between its local $Q_i$ and the $K_j, V_j$
+currently in hand, then passes them on. After $t$ rotations every query has seen
+every key.
+
+The correctness relies on **online softmax** — the same streaming-normalisation
+identity that makes FlashAttention work. Maintaining a running maximum $m$ and
+running sum $\ell$, blocks can be merged:
+
+$$
+m^{\text{new}} = \max(m^{(1)}, m^{(2)}), \quad
+\ell^{\text{new}} = e^{m^{(1)} - m^{\text{new}}}\ell^{(1)} + e^{m^{(2)} - m^{\text{new}}}\ell^{(2)},
+$$
+
+so partial attention outputs computed against different key blocks combine
+exactly. **No approximation** — ring attention computes the same function as
+ordinary attention, and the communication of $K, V$ overlaps with computation, so
+with enough devices the sequence length becomes effectively unbounded.
+
+## Combining the axes
+
+Real systems use 3D or 4D parallelism, with total devices
+
+$$
+D = d_{\text{tp}} \times d_{\text{pp}} \times d_{\text{dp}} \times d_{\text{sp}}.
+$$
+
+The standard allocation, and the reasoning:
+
+$$
+d_{\text{tp}} \leq \text{GPUs per node} \quad (\text{needs NVLink; typically 8}),
+$$
+$$
+d_{\text{pp}} = \left\lceil \frac{\text{model memory}}{\text{node memory} \times d_{\text{tp}}} \right\rceil \quad (\text{just enough to fit}),
+$$
+$$
+d_{\text{dp}} = \frac{D}{d_{\text{tp}}\, d_{\text{pp}}} \quad (\text{everything left over}).
+$$
+
+**Order matters: fit first, then scale.** Tensor and pipeline parallelism exist to
+make the model fit; data parallelism converts remaining devices into throughput.
+Using more tensor or pipeline parallelism than needed costs communication for no
+benefit.
+
+Narayanan et al.'s empirical result is that this ordering, with tensor parallelism
+confined to a node, reaches around 52% of theoretical peak FLOPs at thousand-GPU
+scale — and that departing from it degrades quickly.
+
+<Tier level="frontier" />
+
+## Where this stands, as of 2026
+
+**FSDP/ZeRO-3 plus tensor parallelism is the default.** The combination handles
+most models without needing pipeline parallelism, which is the fiddliest axis.
+Pipelines appear when the model is too large for that combination or when the
+interconnect between node groups is genuinely slow.
+
+**Sequence parallelism moved from exotic to routine.** Long-context training makes
+the quadratic activation term dominant, and ring attention is exact rather than
+approximate, so there is little reason not to use it when sequences are long.
+
+**MFU is the metric that matters.** Model FLOPs Utilisation — achieved FLOPs over
+theoretical peak — is how large runs are actually judged. 40–55% is good;
+anything below 30% means something in the parallelism layout is wrong, and the
+diagnosis is usually communication that was placed on the wrong tier of the
+network.
+
+**Fault tolerance is a first-order concern at scale.** A thousand-GPU run
+experiences hardware failures on a timescale of hours. Checkpointing frequency,
+elastic restart, and silent-data-corruption detection consume real engineering
+effort, and published training reports increasingly discuss them.
+
+## Open problems
+
+- **Layout search is manual.** The parallelism configuration is chosen by
+  experienced engineers and swept empirically. Automatic search exists and is not
+  reliably better than a good default.
+
+- **Heterogeneous clusters are poorly supported.** Nearly everything assumes
+  identical devices. Mixed-generation clusters run at the speed of the slowest
+  device on the critical path.
+
+- **Communication remains the ceiling.** At very large scale, all-reduce and
+  all-gather costs dominate. Overlap helps and does not eliminate; the trend toward
+  lower-precision *communication* (fp8 gradients) is the current response.
+
+- **Elastic training is unsolved.** Adding or removing devices mid-run requires
+  reconfiguring the layout, which usually means stopping and restarting from a
+  checkpoint.
+
+- **Silent data corruption.** At thousand-GPU scale, rare hardware faults produce
+  wrong numbers without error flags. Detection requires redundant computation,
+  which costs throughput, and most runs simply accept the risk.
+
+## What to read next, in order
+
+1. **Rajbhandari et al. (2019), ZeRO** — Section 3 for the memory arithmetic. It is
+   simple and it reframes the whole problem.
+2. **Narayanan et al. (2021), Megatron-LM at scale** — the definitive treatment of
+   combining the axes, with the empirical justification for the ordering.
+3. **Shoeybi et al. (2019), Megatron-LM** — for the column-then-row split and why
+   the GeLU placement matters.
+4. **Liu et al. (2023), Ring Attention** — the online-softmax argument, which is
+   the same idea as FlashAttention applied across devices instead of memory tiers.
+
+<Papers papers={frontmatter.papers} />

@@ -1,0 +1,509 @@
+---
+title: Multimodal Models
+description: "How images get into a language model — projection versus cross-attention, why resolution is the hidden bottleneck, and what 'understanding' an image actually means here."
+sidebar:
+  order: 6
+depth: frontier
+readingTime: 35
+prereqs:
+  - label: "Neural Encoders"
+    slug: "encoders/neural-encoders"
+papers:
+  - title: "Learning Transferable Visual Models From Natural Language Supervision (CLIP)"
+    authors: "Radford et al."
+    year: 2021
+    url: "https://arxiv.org/abs/2103.00020"
+  - title: "Flamingo: a Visual Language Model for Few-Shot Learning"
+    authors: "Alayrac, Donahue, Luc, et al."
+    year: 2022
+    url: "https://arxiv.org/abs/2204.14198"
+  - title: "BLIP-2: Bootstrapping Language-Image Pre-training with Frozen Image Encoders and Large Language Models"
+    authors: "Junnan Li, Dongxu Li, Silvio Savarese, Steven Hoi"
+    year: 2023
+    url: "https://arxiv.org/abs/2301.12597"
+  - title: "Visual Instruction Tuning (LLaVA)"
+    authors: "Haotian Liu, Chunyuan Li, Qingyang Wu, Yong Jae Lee"
+    year: 2023
+    url: "https://arxiv.org/abs/2304.08485"
+  - title: "Sigmoid Loss for Language Image Pre-Training (SigLIP)"
+    authors: "Zhai, Mustafa, Kolesnikov, Beyer"
+    year: 2023
+    url: "https://arxiv.org/abs/2303.15343"
+  - title: "Robust Speech Recognition via Large-Scale Weak Supervision (Whisper)"
+    authors: "Radford, Kim, Xu, et al."
+    year: 2022
+    url: "https://arxiv.org/abs/2212.04356"
+  - title: "ImageBind: One Embedding Space To Bind Them All"
+    authors: "Girdhar, El-Nouby, Liu, et al."
+    year: 2023
+    url: "https://arxiv.org/abs/2305.05665"
+  - title: "Cambrian-1: A Fully Open, Vision-Centric Exploration of Multimodal LLMs"
+    authors: "Tong, Brown, Wu, et al."
+    year: 2024
+    url: "https://arxiv.org/abs/2406.16860"
+  - title: "NVLM: Open Frontier-Class Multimodal LLMs"
+    authors: "Dai, Lee, Wang, et al."
+    year: 2024
+    url: "https://arxiv.org/abs/2409.11402"
+  - title: "An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale (ViT)"
+    authors: "Dosovitskiy et al."
+    year: 2020
+    url: "https://arxiv.org/abs/2010.11929"
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+<Abstract>
+A language model consumes token embeddings. An image is a grid of pixels. The
+entire field of vision-language modelling is about bridging that gap, and the
+surprising empirical finding is that the bridge can be almost trivial — a single
+linear layer, trained on a modest amount of data, is enough to make a frozen
+vision encoder legible to a frozen language model. What is *not* trivial is
+resolution, and that turns out to be where most real capability differences live.
+</Abstract>
+
+<KeyPoints>
+
+- **Two ways in: projection or cross-attention.** Project image features into the token space and prepend them, or leave the text stream alone and let it attend to image features through inserted layers. The first is simpler and now dominant; the second is cheaper at long context.
+- **The connector can be a single linear layer.** LLaVA's result — that a linear projection plus modest instruction tuning produces a capable VLM — was the finding that made this accessible. It works because CLIP-style encoders already produce language-aligned features.
+- **Resolution is the hidden bottleneck.** A 336×336 image at patch 14 gives 576 tokens and cannot resolve small text or fine detail. Nearly every "the model can't read this chart" failure is a resolution failure, not a reasoning failure.
+- **Contrastive and generative pretraining teach different things.** CLIP learns to *match* images and text, which is retrieval. It does not learn to *describe*, which is why VLMs bolt a generative decoder onto a contrastively-trained encoder.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## The translation problem
+
+A language model has one input format: a sequence of vectors, each standing for a
+token. It has no notion of pixels.
+
+So to show it an image you must turn the image into vectors *of the same kind* —
+vectors that sit in the same space as word embeddings and mean something to the
+same machinery.
+
+The remarkable part is how little work this takes. Run the image through a
+pretrained vision encoder, multiply the output by one learned matrix, and paste the
+result into the prompt where words would go. The language model treats them as if
+they were tokens, and it broadly works.
+
+## Why one matrix is enough
+
+This only works because of what the vision encoder already learned.
+
+A CLIP-style encoder was trained to place images near their *captions* in a shared
+space. So its output is already organised by linguistic meaning — a photo of a dog
+sits near wherever "a photo of a dog" sits. The encoder did the hard alignment
+work during its own pretraining.
+
+The projection layer therefore has an easy job: not to *create* meaning, but to
+rotate an already-meaningful space into the particular coordinates the language
+model happens to use. That is close to a change of basis, and a linear map can do
+it.
+
+<Aside type="tip" title="The consequence worth drawing">
+Your VLM's ceiling is largely set by the vision encoder, not the connector. If the
+encoder never learned to distinguish two things, no projection layer or
+instruction-tuning recipe will recover the distinction. Debug the encoder first.
+</Aside>
+
+## What actually breaks
+
+Ask a modern VLM to describe a photograph and it does well. Ask it to read the
+axis labels on a chart, count seventeen objects, or tell you what a small sign in
+the background says, and it often fails.
+
+The reason is almost always **resolution**. A 336×336 input divided into 14×14
+patches gives 576 patches — and a caption-sized piece of text in the corner of the
+original photo occupies a fraction of one patch. The information is gone before
+any reasoning begins.
+
+This is why so much recent work is about *seeing more pixels* rather than
+reasoning better: tiling the image, running the encoder at higher resolution, or
+processing crops alongside a global view.
+
+<Tier level="mechanics" />
+
+## Two architectures
+
+<Figure
+  lead="Projection prepends; cross-attention interleaves."
+  caption="Top: the projection approach turns image patches into pseudo-tokens and puts them in the sequence, so the language model's ordinary self-attention handles them with no architectural change at all. Simple, and image tokens consume context — hundreds to thousands of them per image. Bottom: the cross-attention approach leaves the text sequence untouched and inserts gated layers that read from image features. Context is preserved and the language model must be modified, which means you cannot use an off-the-shelf one unchanged."
+>
+<svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Projection-based versus cross-attention-based multimodal architectures">
+  <defs>
+    <marker id="mm1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <text class="lb" x="14" y="18">PROJECTION — LLaVA-style · image becomes tokens</text>
+
+  <rect class="f-grey" x="20" y="34" width="54" height="42" rx="4"/>
+  <text class="on-fill-sm" x="47" y="59" text-anchor="middle">image</text>
+  <path class="ar" d="M78,55 L112,55" marker-end="url(#mm1)"/>
+  <rect class="f-blue" x="118" y="34" width="90" height="42" rx="4"/>
+  <text class="on-fill-sm" x="163" y="52" text-anchor="middle">ViT encoder</text>
+  <text class="xs" x="163" y="68" text-anchor="middle">frozen</text>
+  <path class="ar" d="M212,55 L246,55" marker-end="url(#mm1)"/>
+  <rect class="f-green" x="252" y="34" width="90" height="42" rx="4"/>
+  <text class="on-fill-sm" x="297" y="52" text-anchor="middle">W (linear)</text>
+  <text class="xs" x="297" y="68" text-anchor="middle">the only new part</text>
+  <path class="ar" d="M346,55 L380,55" marker-end="url(#mm1)"/>
+
+  <rect class="f-purple" x="386" y="38" width="26" height="34" rx="3"/>
+  <rect class="f-purple" x="416" y="38" width="26" height="34" rx="3"/>
+  <rect class="f-purple" x="446" y="38" width="26" height="34" rx="3"/>
+  <rect class="f-purple" x="476" y="38" width="26" height="34" rx="3"/>
+  <rect class="f-amber" x="510" y="38" width="26" height="34" rx="3"/>
+  <rect class="f-amber" x="540" y="38" width="26" height="34" rx="3"/>
+  <rect class="f-amber" x="570" y="38" width="26" height="34" rx="3"/>
+  <text class="xs" x="429" y="90" text-anchor="middle">image tokens</text>
+  <text class="xs" x="553" y="90" text-anchor="middle">text tokens</text>
+  <path class="ar" d="M490,100 L490,116" marker-end="url(#mm1)"/>
+  <rect class="f-grey" x="386" y="118" width="210" height="30" rx="4"/>
+  <text class="on-fill-sm" x="491" y="138" text-anchor="middle">unmodified LLM</text>
+  <text class="xs" x="640" y="130">576–2900 tokens</text>
+  <text class="xs" x="640" y="146">per image</text>
+
+  <line class="bx" x1="14" y1="166" x2="746" y2="166" opacity="0.3"/>
+
+  <text class="lb" x="14" y="192">CROSS-ATTENTION — Flamingo-style · text stream untouched</text>
+
+  <rect class="f-grey" x="20" y="208" width="54" height="42" rx="4"/>
+  <text class="on-fill-sm" x="47" y="233" text-anchor="middle">image</text>
+  <path class="ar" d="M78,229 L112,229" marker-end="url(#mm1)"/>
+  <rect class="f-blue" x="118" y="208" width="90" height="42" rx="4"/>
+  <text class="on-fill-sm" x="163" y="233" text-anchor="middle">ViT encoder</text>
+
+  <rect class="f-amber" x="300" y="196" width="26" height="28" rx="3"/>
+  <rect class="f-amber" x="330" y="196" width="26" height="28" rx="3"/>
+  <rect class="f-amber" x="360" y="196" width="26" height="28" rx="3"/>
+  <rect class="f-amber" x="390" y="196" width="26" height="28" rx="3"/>
+  <text class="xs" x="358" y="190" text-anchor="middle">text only — full context preserved</text>
+
+  <path class="ar" d="M212,236 L292,262" marker-end="url(#mm1)"/>
+  <rect class="f-pink" x="298" y="242" width="180" height="34" rx="4"/>
+  <text class="on-fill-sm" x="388" y="264" text-anchor="middle">gated cross-attention layer</text>
+  <path class="ar" d="M358,228 L358,238" marker-end="url(#mm1)"/>
+  <path class="ar" d="M482,259 L512,259" marker-end="url(#mm1)"/>
+  <rect class="f-grey" x="518" y="240" width="120" height="38" rx="4"/>
+  <text class="on-fill-sm" x="578" y="264" text-anchor="middle">LLM (modified)</text>
+  <text class="xs" x="660" y="212">gate starts at 0 so the</text>
+  <text class="xs" x="660" y="228">pretrained LM is unchanged</text>
+  <text class="xs" x="660" y="244">at initialisation</text>
+</svg>
+</Figure>
+
+## The lineage
+
+<Steps>
+
+1. **CLIP (2021)** — contrastive image/text pretraining. Produces a shared
+   embedding space, excellent for retrieval and zero-shot classification. Cannot
+   generate text.
+
+2. **Flamingo (2022)** — freeze a vision encoder and a language model, insert
+   gated cross-attention layers between them. First convincing few-shot
+   vision-language model. Architecturally invasive.
+
+3. **BLIP-2 (2023)** — insert a small trainable transformer (the *Q-Former*)
+   between frozen encoder and frozen LLM, using a fixed set of learned query
+   vectors to extract a compact summary. Bridges the gap with very few trainable
+   parameters.
+
+4. **LLaVA (2023)** — replace the Q-Former with **one linear layer**, train on
+   GPT-generated instruction data. Comparable results at a fraction of the
+   complexity. This is what made VLMs reproducible in academic labs, and the
+   projection approach has dominated since.
+
+5. **High-resolution era (2024–)** — the bottleneck moves from alignment to
+   perception. Tiling, dynamic resolution, and multi-encoder designs.
+
+</Steps>
+
+## Handling resolution
+
+Vision transformers are trained at a fixed resolution, and naively upscaling
+breaks the position embeddings. The practical approaches:
+
+<Tabs>
+<TabItem label="Tiling">
+
+Split a high-resolution image into a grid of tiles, each at the encoder's native
+resolution, and encode each separately. Add a downscaled *global* view so the model
+retains overall layout.
+
+A 2×2 tiling plus global view at 576 tokens each gives 2,880 image tokens — which
+is why high-resolution VLMs consume so much context. NVLM's contribution here was
+1-D tile tagging: mark tile positions explicitly in the token stream, so the model
+knows how the pieces fit together.
+
+**This is the dominant approach**, and its cost is linear in tile count.
+
+</TabItem>
+<TabItem label="Interpolated positions">
+
+Interpolate the ViT's position embeddings to the new grid size and fine-tune
+briefly. Cheaper than tiling, and quality degrades as you move further from the
+training resolution — the encoder's learned features were tuned for a particular
+patch-to-object scale.
+
+</TabItem>
+<TabItem label="Resampling">
+
+Use a fixed number of learned queries to attend over however many patches the
+encoder produced, compressing to a constant token count regardless of input size.
+The Q-Former and Perceiver Resampler both do this.
+
+Fixed cost, and it is a bottleneck by construction: 32 or 64 query vectors cannot
+carry the information in a dense 4K document scan. Good for photographs, poor for
+text-heavy images.
+
+</TabItem>
+<TabItem label="Multiple encoders">
+
+Run several vision encoders with different strengths — CLIP for semantics, a
+self-supervised encoder like DINOv2 for spatial structure, an OCR-focused encoder
+for text — and concatenate their features.
+
+Cambrian-1's systematic study found vision-encoder choice matters far more than
+the connector design, and that combining encoders with complementary training
+objectives beats any single one. Cost is running several encoders per image.
+
+</TabItem>
+</Tabs>
+
+<Aside type="caution" title="Most VLM failures are perception, not reasoning">
+Before concluding a model "cannot reason about" a chart, check whether it can
+*read* the chart. Crop the region of interest and ask again at full resolution. In
+practice a large share of apparent reasoning failures resolve, which tells you the
+information never reached the language model.
+</Aside>
+
+<Tier level="formal" />
+
+## The contrastive objective
+
+CLIP trains paired encoders on $N$ image-text pairs with a symmetric InfoNCE loss.
+With normalised embeddings $u_i = E_I(x_i)/\|\cdot\|$, $v_j = E_T(t_j)/\|\cdot\|$
+and learned temperature $\tau$:
+
+$$
+\mathcal{L} = -\frac{1}{2N}\sum_{i=1}^{N}\left[
+\log \frac{e^{u_i^{\top} v_i/\tau}}{\sum_{j} e^{u_i^{\top} v_j/\tau}}
++ \log \frac{e^{u_i^{\top} v_i/\tau}}{\sum_{j} e^{u_j^{\top} v_i/\tau}}
+\right].
+$$
+
+Two directions because matching is symmetric: the right caption for an image, and
+the right image for a caption.
+
+**The batch-size problem.** The softmax normalises over the whole batch, so the
+loss requires a global $N \times N$ similarity matrix. That forces an all-gather
+across devices and makes batch size both a quality parameter and a systems
+constraint — CLIP used 32,768.
+
+**SigLIP's fix.** Replace softmax with an independent sigmoid on every pair:
+
+$$
+\mathcal{L}_{\text{sig}} = -\frac{1}{N}\sum_{i=1}^{N}\sum_{j=1}^{N} \log \sigma\big(z_{ij}\,(t\,u_i^{\top}v_j + b)\big), \qquad z_{ij} = \begin{cases} +1 & i = j \\ -1 & i \neq j \end{cases}
+$$
+
+Because there is no normalisation across the batch, each pair's loss is
+independent — no all-gather, and the computation shards cleanly. It works better
+at small batch sizes *and* scales further, which is unusual; most techniques trade
+one for the other. The learned bias $b$ matters because the pair set is
+overwhelmingly negative ($N$ positives against $N^2 - N$ negatives), and $b$
+absorbs that prior.
+
+## The projection connector
+
+Given patch features $H \in \mathbb{R}^{P \times d_v}$ from the vision encoder,
+project into the language model's embedding dimension:
+
+$$
+Z = H W, \qquad W \in \mathbb{R}^{d_v \times d_\ell},
+$$
+
+then form the input sequence by concatenation:
+
+$$
+X = \big[\,z_1, \dots, z_P,\ e(\text{tok}_1), \dots, e(\text{tok}_L)\,\big].
+$$
+
+Parameter count is $d_v d_\ell$ — for $d_v = 1024$, $d_\ell = 4096$ that is 4.2M,
+against billions in the models it connects. LLaVA later used a two-layer MLP,
+which helps modestly.
+
+**Why linear suffices.** If the vision encoder's output space $\mathcal{V}$ and the
+LM's embedding space $\mathcal{E}$ both encode semantics, and the semantic
+structure is approximately preserved up to a linear transformation, then a matrix
+suffices to align them. CLIP training is what makes the antecedent approximately
+true — it explicitly optimised $\mathcal{V}$ for agreement with a *text* encoder.
+
+The prediction this makes, and it holds: a **non**-language-aligned encoder needs a
+more expressive connector. Purely self-supervised encoders like DINOv2 do worse
+with a bare linear projection than CLIP encoders do.
+
+<Figure
+  lead="Resolution decides what survives to the language model."
+  caption="At 336 pixels the sign in the background occupies a fraction of one 14-pixel patch, so its content is averaged away before the language model sees anything — no amount of prompting recovers it. Tiling encodes each region at the encoder's native resolution, so the same sign now spans several patches and becomes legible. The cost is token count, and because attention is quadratic in sequence length the compute grows quartically in tile count."
+>
+<svg viewBox="0 0 760 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Low resolution single pass versus tiled high resolution encoding">
+  <text class="lb" x="150" y="18" text-anchor="middle">336px, single pass</text>
+  <rect class="f-grey" x="60" y="30" width="180" height="130" rx="4"/>
+  <g opacity="0.35">
+    <line class="bx" x1="60" y1="63" x2="240" y2="63"/><line class="bx" x1="60" y1="96" x2="240" y2="96"/>
+    <line class="bx" x1="60" y1="129" x2="240" y2="129"/>
+    <line class="bx" x1="105" y1="30" x2="105" y2="160"/><line class="bx" x1="150" y1="30" x2="150" y2="160"/>
+    <line class="bx" x1="195" y1="30" x2="195" y2="160"/>
+  </g>
+  <rect class="f-pink" x="196" y="130" width="20" height="14" rx="2"/>
+  <text class="xs" x="150" y="180" text-anchor="middle">576 tokens</text>
+  <text class="xs" x="150" y="198" text-anchor="middle">the sign is inside ONE patch</text>
+  <text class="xs" x="150" y="216" text-anchor="middle">→ averaged away, unreadable</text>
+
+  <line class="bx" x1="330" y1="14" x2="330" y2="248" opacity="0.3"/>
+
+  <text class="lb" x="540" y="18" text-anchor="middle">2×2 tiling + global view</text>
+  <rect class="f-blue" x="400" y="30" width="88" height="62" rx="3" opacity="0.6"/>
+  <rect class="f-blue" x="492" y="30" width="88" height="62" rx="3" opacity="0.6"/>
+  <rect class="f-blue" x="400" y="96" width="88" height="62" rx="3" opacity="0.6"/>
+  <rect class="f-green" x="492" y="96" width="88" height="62" rx="3"/>
+  <g opacity="0.4">
+    <line class="bx" x1="492" y1="112" x2="580" y2="112"/><line class="bx" x1="492" y1="128" x2="580" y2="128"/>
+    <line class="bx" x1="492" y1="144" x2="580" y2="144"/>
+    <line class="bx" x1="514" y1="96" x2="514" y2="158"/><line class="bx" x1="536" y1="96" x2="536" y2="158"/>
+    <line class="bx" x1="558" y1="96" x2="558" y2="158"/>
+  </g>
+  <rect class="f-pink" x="516" y="126" width="42" height="20" rx="2"/>
+  <rect class="f-amber" x="600" y="56" width="70" height="50" rx="3" opacity="0.65"/>
+  <text class="xs" x="635" y="120" text-anchor="middle">global view</text>
+  <text class="xs" x="635" y="136" text-anchor="middle">keeps layout</text>
+
+  <text class="xs" x="540" y="180" text-anchor="middle">2,880 tokens  =  (2² + 1) × 576</text>
+  <text class="xs" x="540" y="198" text-anchor="middle">the sign now spans several patches</text>
+  <text class="xs" x="540" y="216" text-anchor="middle">→ legible</text>
+
+  <line class="bx" x1="60" y1="232" x2="700" y2="232" opacity="0.3"/>
+  <text class="xs" x="60" y="252">Attention is quadratic in sequence length, so compute grows as the FOURTH power of tile count.</text>
+</svg>
+</Figure>
+
+## Token cost
+
+For an image of side $S$ with patch size $p$:
+
+$$
+P = \left(\frac{S}{p}\right)^{2}.
+$$
+
+At $S=336$, $p=14$: $P = 576$. Under $T \times T$ tiling plus a global view:
+
+$$
+P_{\text{total}} = (T^2 + 1)\left(\frac{S}{p}\right)^{2}.
+$$
+
+For $T = 2$: 2,880 tokens. Since attention is quadratic in sequence length, the
+cost contribution of the image alone is
+
+$$
+O\!\left(\left(\left(T^2+1\right)\tfrac{S^2}{p^2}\right)^{2}\right),
+$$
+
+quartic in tile count. **This is why high-resolution VLMs are expensive**, and why
+resampling to a fixed token budget keeps reappearing despite its information
+bottleneck.
+
+## Gated cross-attention
+
+Flamingo inserts layers computing
+
+$$
+h \leftarrow h + \tanh(\alpha)\cdot \operatorname{CrossAttn}\big(Q = hW_Q,\ K = ZW_K,\ V = ZW_V\big),
+$$
+
+with $\alpha$ a learned scalar initialised to **zero**. Since $\tanh(0) = 0$, the
+inserted layer is exactly the identity at initialisation and the frozen language
+model is bit-for-bit unchanged. The gate opens only as training finds the visual
+information useful.
+
+This is the same trick as LoRA's zero-initialised $B$ and the same reason: **start
+as a no-op so the pretrained model is not disrupted at step zero.** It recurs
+across the field and is worth recognising as a pattern.
+
+Compute comparison per layer, for $L$ text tokens and $P$ image tokens:
+
+$$
+\text{cross-attention} = O(L \cdot P \cdot d), \qquad \text{concatenation} = O\big((L+P)^2 d\big).
+$$
+
+Cross-attention is linear in $P$; concatenation is quadratic in the total. For
+large $P$ — high-resolution or video — cross-attention is substantially cheaper,
+which is why the Flamingo approach persists for video despite projection winning
+for single images.
+
+<Tier level="frontier" />
+
+## Where this stands, as of 2026
+
+**Projection won for images; cross-attention persists for video.** The simplicity
+of prepending tokens beat architectural surgery for the single-image case. Video
+has enough frames that quadratic cost in total tokens becomes prohibitive, so the
+cheaper cross-attention formulation remains competitive there.
+
+**Vision encoder choice dominates connector design.** Cambrian-1's systematic
+sweep is the clearest evidence: swapping the encoder moves benchmarks far more
+than swapping the connector, and combining encoders trained with different
+objectives beats any one of them. The field spent two years optimising the wrong
+component.
+
+**Native multimodal pretraining is displacing the bolt-on recipe.** Rather than
+gluing a trained vision encoder to a trained LLM, frontier models increasingly
+train on interleaved image-text data from the start. Better integration, far more
+expensive, and it forecloses the swap-in-a-better-encoder option.
+
+**Resolution is where the visible capability differences now are.** Chart reading,
+document understanding, OCR, and fine-grained counting all improved primarily
+through seeing more pixels rather than through better reasoning.
+
+## Open problems
+
+- **Fine-grained spatial reasoning is weak.** Counting, relative position, and
+  precise localisation remain poor relative to how well these models describe
+  scenes. Patch-level features may simply be the wrong granularity.
+
+- **Modality imbalance.** Vision-language models are overwhelmingly text-driven;
+  ablating the image often changes the answer less than it should. Benchmarks that
+  can be solved from the text alone are common and inflate reported performance.
+
+- **No good multimodal evaluation.** Many VQA benchmarks are answerable from
+  language priors. Reported scores frequently measure how well the model guesses
+  what a question about an image usually asks.
+
+- **Video is largely unsolved.** Long videos have too many frames to encode
+  densely; frame sampling discards temporal detail. Nothing handles hour-long video
+  well.
+
+- **Cross-modal hallucination.** Models describe objects that are not present,
+  particularly plausible co-occurring ones — a bicycle near a bike rack. The
+  language prior overrides the visual evidence and there is no reliable fix.
+
+## What to read next, in order
+
+1. **Liu et al. (2023), LLaVA** — read it for the surprise that a linear layer
+   suffices, and for the data-generation recipe.
+2. **Zhai et al. (2023), SigLIP** — the sigmoid loss argument. A clean example of
+   removing a systems constraint by changing an objective.
+3. **Tong et al. (2024), Cambrian-1** — the encoder ablations. The most useful
+   empirical paper in this area.
+4. **Alayrac et al. (2022), Flamingo** — for gated cross-attention and the
+   zero-initialised gate.
+
+<Papers papers={frontmatter.papers} />
