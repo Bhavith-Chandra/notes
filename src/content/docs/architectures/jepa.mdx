@@ -1,25 +1,494 @@
 ---
 title: Joint-Embedding Predictive Architectures
-description: "The JEPA family: predicting in embedding space, and the collapse problem that makes it hard."
+description: "The JEPA family: predicting in embedding space rather than pixel space, the five ways representations collapse, and the four mechanisms that stop it."
 sidebar:
   order: 1
-  badge:
-    text: Planned
-    variant: caution
-depth: intuition
+depth: frontier
+readingTime: 40
+prereqs:
+  - label: "Neural Encoders"
+    slug: "encoders/neural-encoders"
+papers:
+  - title: "A Path Towards Autonomous Machine Intelligence"
+    authors: "Yann LeCun"
+    year: 2022
+    url: "https://openreview.net/forum?id=BZ5a1r-kVsf"
+  - title: "Representation Learning with Contrastive Predictive Coding (CPC)"
+    authors: "van den Oord, Li, Vinyals"
+    year: 2018
+    url: "https://arxiv.org/abs/1807.03748"
+  - title: "Bootstrap your own latent: A new approach to self-supervised Learning (BYOL)"
+    authors: "Grill et al."
+    year: 2020
+    url: "https://arxiv.org/abs/2006.07733"
+  - title: "Exploring Simple Siamese Representation Learning (SimSiam)"
+    authors: "Chen, He"
+    year: 2020
+    url: "https://arxiv.org/abs/2011.10566"
+  - title: "Barlow Twins: Self-Supervised Learning via Redundancy Reduction"
+    authors: "Zbontar, Jing, Misra, LeCun, Deny"
+    year: 2021
+    url: "https://arxiv.org/abs/2103.03230"
+  - title: "VICReg: Variance-Invariance-Covariance Regularization for Self-Supervised Learning"
+    authors: "Bardes, Ponce, LeCun"
+    year: 2021
+    url: "https://arxiv.org/abs/2105.04906"
+  - title: "Emerging Properties in Self-Supervised Vision Transformers (DINO)"
+    authors: "Caron et al."
+    year: 2021
+    url: "https://arxiv.org/abs/2104.14294"
+  - title: "Self-Supervised Learning from Images with a Joint-Embedding Predictive Architecture (I-JEPA)"
+    authors: "Assran et al."
+    year: 2023
+    url: "https://arxiv.org/abs/2301.08243"
+  - title: "Revisiting Feature Prediction for Learning Visual Representations from Video (V-JEPA)"
+    authors: "Bardes, Garrido, Ponce, Chen, Rabbat, LeCun, Assran, Ballas"
+    year: 2024
+    url: "https://arxiv.org/abs/2404.08471"
+  - title: "V-JEPA 2: Self-Supervised Video Models Enable Understanding, Prediction and Planning"
+    authors: "Mido Assran et al."
+    year: 2025
+    url: "https://arxiv.org/abs/2506.09985"
+  - title: "DINOv2: Learning Robust Visual Features without Supervision"
+    authors: "Oquab et al."
+    year: 2023
+    url: "https://arxiv.org/abs/2304.07193"
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
 
-<Aside type="caution" title="Not written yet">
-This page is a placeholder so the navigation reflects the intended shape of the
-atlas. Copy `src/content/docs/_template.mdx` to start it, and see
-[How to read a page](/how-to-read/) for the authoring rules.
+<Abstract>
+A JEPA predicts the *representation* of one part of a signal from the
+representation of another part. It never reconstructs the input, never uses
+negative examples, and never requires you to hand-specify what to be invariant
+to. Those three absences are the entire design — and they buy a problem in
+exchange: with nothing forcing the encoder to distinguish inputs, the optimal
+solution is to output a constant. Preventing that is what the whole literature
+is about.
+</Abstract>
+
+<KeyPoints>
+
+- **The defining move is where the loss lives.** Not pixel space (autoencoders), not a similarity ranking against negatives (contrastive) — a distance between two embeddings, one of which is produced by a copy of the encoder that receives no gradient.
+- **Collapse is the global optimum, not a bug.** If the encoder outputs a constant, the prediction is trivially perfect. Every architectural choice in a JEPA exists to make that solution unreachable, and none of them come with a guarantee.
+- **There are exactly four anti-collapse mechanisms in use.** Contrastive repulsion, asymmetry (stop-gradient plus EMA), redundancy reduction, and explicit variance floors. Knowing which one a method uses tells you its failure mode immediately.
+- **Masking beats augmentation as a way to define the prediction task.** Augmentations encode *your* assumptions about what should be ignored. I-JEPA's mask-based formulation removes that hand-specification, which is the strongest argument for the family.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## The idea
+
+Cover the bottom half of a photograph. You can describe what is probably down
+there — *more grass, the rest of the dog, a shadow* — without being able to paint
+it. You know the *gist*, not the pixels.
+
+That distinction is the whole point. Asking a model to paint the missing half
+forces it to commit to details it cannot possibly know: the exact texture of each
+blade of grass, the precise noise in the shadow. It will get them wrong, and the
+gradient from getting them wrong is mostly noise.
+
+**A JEPA asks for the gist instead.** Predict what the hidden part *means*, in
+the model's own internal language, and don't ask about pixels at all.
+
+## Why this is the more sensible request
+
+Consider what a pixel-reconstruction loss is actually demanding. A photo of a
+lawn contains millions of bits describing individual grass blades — high entropy,
+essentially random, and completely irrelevant to any question you'd ask about the
+image. A reconstruction objective spends model capacity and gradient signal on
+exactly the content that is hardest to predict *and* least useful.
+
+Latent prediction lets the encoder simply throw the grass away. The predictor's
+target is whatever the encoder chose to keep, so unpredictable detail can be
+discarded rather than modelled.
+
+<Aside type="tip" title="The one-sentence version">
+Autoencoders ask "can you rebuild it?" Contrastive methods ask "can you tell these
+two apart?" JEPAs ask "given this part, what does the rest look like *to you*?" —
+and letting the model define "to you" is the trick.
 </Aside>
 
-## Planned coverage
+## The catch, which is severe
 
-- The joint-embedding formulation
-- Representation collapse: five ways it happens
-- Stop-gradients, EMA targets, VICReg-style regularisation
-- I-JEPA, V-JEPA, V-JEPA 2 in sequence
+There is an obvious way to cheat. If the encoder ignores its input and outputs the
+same vector for everything, then predicting one embedding from another is trivial:
+predict that constant. The loss goes to zero. The representation is worthless.
+
+This is **representation collapse**, and it is not an edge case you engineer
+around — it is the objective's global minimum. A JEPA is, structurally, an
+optimisation problem whose best answer is useless, plus a set of tricks that make
+the best answer unreachable.
+
+That framing is worth holding onto, because it explains why this literature looks
+the way it does: a stream of papers each proposing a different way to break the
+degenerate solution, with limited theory saying which should work.
+
+<Tier level="mechanics" />
+
+## The architecture
+
+<Figure
+  lead="Student, teacher, predictor."
+  caption="The context encoder sees part of the input and its output is fed to a predictor, which is told where the target sits. The target encoder — an exponentially-moving-average copy of the context encoder — embeds the true target. Loss is the distance between prediction and target. The two asymmetries are load-bearing: gradients flow only through the left path, and the teacher's weights lag the student's. Remove either and the model collapses."
+>
+<svg viewBox="0 0 760 290" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="JEPA architecture with context encoder, predictor, and EMA target encoder">
+  <defs>
+    <marker id="jp1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <rect class="f-grey" x="16" y="112" width="72" height="60" rx="5"/>
+  <text class="on-fill-sm" x="52" y="136" text-anchor="middle">image x</text>
+  <text class="xs" x="52" y="154" text-anchor="middle">masked</text>
+
+  <path class="ar" d="M92,130 L128,86" marker-end="url(#jp1)"/>
+  <path class="ar" d="M92,154 L128,214" marker-end="url(#jp1)"/>
+  <text class="xs" x="106" y="98">context</text>
+  <text class="xs" x="106" y="238">target</text>
+
+  <rect class="f-blue" x="134" y="60" width="104" height="52" rx="5"/>
+  <text class="on-fill" x="186" y="82" text-anchor="middle">Context enc.</text>
+  <text class="on-fill-sm" x="186" y="99" text-anchor="middle">E θ  · student</text>
+
+  <path class="ar" d="M242,86 L286,86" marker-end="url(#jp1)"/>
+
+  <rect class="f-purple" x="292" y="60" width="104" height="52" rx="5"/>
+  <text class="on-fill" x="344" y="82" text-anchor="middle">Predictor</text>
+  <text class="on-fill-sm" x="344" y="99" text-anchor="middle">P φ ( · , mask )</text>
+
+  <path class="ar" d="M400,86 L470,86 L470,124" marker-end="url(#jp1)"/>
+
+  <rect class="f-pink" x="134" y="190" width="104" height="52" rx="5"/>
+  <text class="on-fill" x="186" y="212" text-anchor="middle">Target enc.</text>
+  <text class="on-fill-sm" x="186" y="229" text-anchor="middle">E θ̄  · teacher</text>
+
+  <path class="ar" d="M242,216 L470,216 L470,178" marker-end="url(#jp1)"/>
+
+  <rect class="f-green" x="404" y="126" width="132" height="50" rx="5"/>
+  <text class="on-fill" x="470" y="147" text-anchor="middle">ℓ₁ distance</text>
+  <text class="on-fill-sm" x="470" y="164" text-anchor="middle">loss</text>
+
+  <path class="dash" d="M404,151 L250,120" marker-end="url(#jp1)"/>
+  <text class="xs" x="300" y="128">gradient — student only</text>
+
+  <path class="dash" d="M186,116 C120,150 120,160 186,186" marker-end="url(#jp1)"/>
+  <text class="xs" x="66" y="184">EMA copy</text>
+  <text class="xs" x="60" y="198">θ̄ ← λθ̄ + (1−λ)θ</text>
+
+  <line class="bx" x1="248" y1="252" x2="700" y2="252" opacity="0.3"/>
+  <text class="xs" x="262" y="270">✗ NO decoder · ✗ NO negatives · ✗ NO hand-picked augmentations (I-JEPA)</text>
+
+  <text class="lb" x="600" y="76">Two asymmetries</text>
+  <text class="xs" x="600" y="96">1. stop-gradient on teacher</text>
+  <text class="xs" x="600" y="112">2. teacher weights lag student</text>
+  <text class="xs" x="600" y="136">Together these make the</text>
+  <text class="xs" x="600" y="152">constant solution a moving</text>
+  <text class="xs" x="600" y="168">target the student cannot</text>
+  <text class="xs" x="600" y="184">catch by collapsing.</text>
+</svg>
+</Figure>
+
+## The five ways it collapses
+
+"Collapse" is used loosely to mean several distinct failures. Distinguishing them
+is diagnostically useful, because they look different in the metrics.
+
+<Steps>
+
+1. **Complete collapse.** Every input maps to the same vector. Loss ≈ 0, embedding
+   variance ≈ 0. Unmistakable.
+
+2. **Dimensional collapse.** Embeddings vary, but only within a low-dimensional
+   subspace of the space you allocated. A 768-dim encoder effectively using 30
+   dimensions. Loss looks fine; the singular-value spectrum of the embedding
+   matrix has a cliff. This is the common one and it is easy to miss.
+
+3. **Cluster collapse.** Everything maps to a small number of points. Variance is
+   non-zero, so naive checks pass, but within-class structure is gone.
+
+4. **Informational collapse.** Dimensions are individually varied but heavily
+   correlated with one another — the *effective* rank is far below the nominal
+   one. This is precisely what Barlow Twins and VICReg's covariance term target.
+
+5. **Shortcut collapse.** The encoder solves the task with a spurious feature that
+   happens to be predictable — colour histogram, JPEG artefacts, border pixels.
+   Not degenerate by any variance measure; just useless downstream.
+
+</Steps>
+
+<Aside type="caution" title="Always check the spectrum, not just the variance">
+Total embedding variance can look healthy while the representation lives on a
+handful of directions. Compute the singular values of a batch of embeddings and
+look at the decay. If a small number of components carry nearly all the energy,
+you have dimensional collapse regardless of what the loss curve says.
+</Aside>
+
+## The four anti-collapse mechanisms
+
+Every method in this space uses one of four strategies. This table is the most
+useful thing on the page.
+
+| Mechanism | How it works | Representative | Cost |
+|---|---|---|---|
+| **Contrastive repulsion** | explicit term pushing unlike pairs apart | SimCLR, MoCo, CPC | needs many negatives; large batches or a queue |
+| **Asymmetry** | stop-gradient + EMA teacher + predictor head | BYOL, SimSiam, DINO, I-JEPA | no guarantee; sensitive to EMA rate |
+| **Redundancy reduction** | drive cross-correlation matrix toward identity | Barlow Twins | $O(d^2)$ in embedding dim |
+| **Variance floor** | hinge loss forcing per-dimension std above a threshold | VICReg | explicit, tunable, three terms to balance |
+
+The asymmetry row is the interesting one, because it is the least principled and
+the most widely used. SimSiam's contribution was showing that the EMA is *not*
+required — stop-gradient plus a predictor head alone prevents collapse. That
+narrowed the mystery without resolving it.
+
+## The lineage, briefly
+
+<Tabs>
+<TabItem label="CPC → BYOL">
+
+**CPC (2018)** introduced the predict-in-latent-space framing with InfoNCE, and
+is the direct ancestor. It still used negatives.
+
+**BYOL (2020)** was the surprise: it removed negatives entirely and still worked.
+The community initially suspected batch normalisation was providing implicit
+contrast; follow-up work showed BYOL works without BN given careful
+initialisation, so the asymmetry really is doing the work.
+
+**SimSiam (2020)** stripped it further — no EMA, no large batches, just
+stop-gradient and a predictor — and still no collapse. The paper frames the
+mechanism as an implicit expectation-maximisation, which remains the best
+available intuition but not a proof.
+
+</TabItem>
+<TabItem label="Barlow / VICReg">
+
+These attack collapse *statistically* rather than architecturally, and are worth
+knowing because their objectives are transparent in a way the asymmetry methods
+are not.
+
+**Barlow Twins** computes the cross-correlation matrix between embeddings of two
+views and pushes it toward the identity: diagonal to 1 (invariance), off-diagonal
+to 0 (decorrelation). One loss, one hyperparameter, no negatives, no asymmetry.
+
+**VICReg** makes the three concerns explicit and separable: **V**ariance (hinge
+each dimension's std above a floor), **I**nvariance (MSE between views),
+**C**ovariance (penalise off-diagonal covariance). Because the terms are
+separate, you can diagnose which one is failing — which is why VICReg is a good
+teaching example even where it is not the top performer.
+
+</TabItem>
+<TabItem label="DINO → I-JEPA → V-JEPA">
+
+**DINO (2021)** is self-distillation with centring and sharpening of the teacher
+output to prevent collapse. Its famous result is emergent: attention maps segment
+objects with no segmentation supervision at all. **DINOv2** scaled the recipe and
+produced the general-purpose visual features most practitioners now reach for.
+
+**I-JEPA (2023)** made the decisive change: drop augmentations, use *masking*.
+Predict the representations of several target blocks from one context block. No
+hand-specified invariances at all — which removes the standard objection to
+contrastive methods, that you chose the invariances yourself and may have chosen
+wrong.
+
+**V-JEPA (2024)** carried this to video, where the temporal dimension supplies the
+prediction task naturally. **V-JEPA 2 (2025)** added an action-conditioned
+predictor and reached zero-shot robot planning, which is where this page connects
+to [world models](/world-models/).
+
+</TabItem>
+</Tabs>
+
+<Tier level="formal" />
+
+## The objective
+
+Let $x$ be the input, $x_{\text{ctx}}$ a context view, $x_{\text{tgt}}^{(i)}$ the
+$i$-th target view, and $m_i$ a positional specification of that target. With
+student parameters $\theta$, predictor $\phi$, and teacher $\bar\theta$:
+
+$$
+\mathcal{L}_{\text{JEPA}} = \sum_{i=1}^{M} \Big\| P_\phi\big(E_\theta(x_{\text{ctx}}),\, m_i\big) \;-\; \operatorname{sg}\big[E_{\bar\theta}(x_{\text{tgt}}^{(i)})\big] \Big\|_1,
+$$
+
+$$
+\bar\theta \;\leftarrow\; \lambda \bar\theta + (1-\lambda)\theta, \qquad \lambda \in [0.996, 1.0)\ \text{on a schedule}.
+$$
+
+Three details that are easy to skim past and shouldn't be:
+
+**$\ell_1$ rather than $\ell_2$.** Embedding dimensions have no natural scale, and
+squared error is dominated by whichever few dimensions happen to have large
+magnitude. $\ell_1$ weights dimensions more evenly.
+
+**The predictor is conditioned on $m_i$.** Without knowing *where* the target is,
+the best prediction is the average over all possible targets — which is a
+blurring pressure toward collapse. Positional conditioning makes the task
+well-posed.
+
+**$\lambda$ schedules toward 1.** Early in training the teacher tracks the
+student closely (fast learning); late in training it is nearly frozen (stable
+targets). Fixing $\lambda$ at either extreme degrades results.
+
+## Why the asymmetry works — the argument, and its limits
+
+Consider the degenerate solution $E_\theta(\cdot) \equiv c$. For the loss to
+vanish we need $E_{\bar\theta}(\cdot) \equiv c$ too. But $\bar\theta$ is an
+exponential moving average, so it reaches $c$ only after the student has been
+approximately constant for $O(1/(1-\lambda))$ steps — thousands of steps at
+$\lambda = 0.999$. Throughout that window the loss is non-zero and its gradient
+pushes the student away from $c$.
+
+Formally, write the student's update as gradient descent on
+$\|P_\phi(E_\theta(x)) - \operatorname{sg}[E_{\bar\theta}(x')]\|$. Because of the
+$\operatorname{sg}$, the target is a *constant* from the optimiser's perspective.
+The student is chasing a point it cannot move. Collapse would require the student
+and teacher to converge to a constant *simultaneously*, and the EMA lag makes that
+trajectory dynamically unstable.
+
+<Aside type="note" title="This is an argument about dynamics, not a theorem">
+There is no proof that the asymmetry prevents collapse, and empirically it fails
+when $\lambda$ is too small — the teacher tracks the student closely enough that
+the pair *can* descend to a constant together. The mechanism is real, the
+guarantee is not, and papers in this area are generally honest about that.
+SimSiam's EM interpretation is the most developed theoretical account and it is
+still an interpretation.
+</Aside>
+
+## VICReg, term by term
+
+The clearest formalisation of collapse prevention, because each concern gets its
+own term. For a batch of embeddings $Z \in \mathbb{R}^{n \times d}$ and $Z'$ from
+the second view:
+
+$$
+v(Z) = \frac{1}{d}\sum_{j=1}^{d} \max\big(0,\; \gamma - \sqrt{\operatorname{Var}(Z_{:,j}) + \epsilon}\big)
+$$
+
+$$
+c(Z) = \frac{1}{d}\sum_{i \neq j} \big[C(Z)\big]_{i,j}^2, \qquad C(Z) = \frac{1}{n-1}\sum_{k=1}^{n}(z_k - \bar z)(z_k - \bar z)^{\top}
+$$
+
+$$
+s(Z, Z') = \frac{1}{n}\sum_{k=1}^{n}\|z_k - z'_k\|_2^2
+$$
+
+$$
+\mathcal{L}_{\text{VICReg}} = \mu\, s(Z,Z') + \alpha\big[v(Z) + v(Z')\big] + \nu\big[c(Z) + c(Z')\big].
+$$
+
+Read the roles directly off the algebra:
+
+- $v$ is a **hinge**: it is zero once each dimension's standard deviation exceeds
+  $\gamma$ (typically 1), and grows only when a dimension starts to die. This
+  directly forbids complete and dimensional collapse.
+- $c$ penalises off-diagonal covariance, forcing dimensions to carry
+  *non-redundant* information. This is the term aimed at informational collapse.
+- $s$ is the only term that wants the two views to agree — on its own it would
+  collapse immediately.
+
+The three-way balance is the whole method, and the weights matter: $\alpha$ too
+low and variance dies, $\nu$ too high and the embedding is forced to be
+artificially isotropic.
+
+## Barlow Twins
+
+$$
+\mathcal{L}_{\text{BT}} = \sum_{i} (1 - \mathcal{C}_{ii})^2 + \beta \sum_{i}\sum_{j \neq i} \mathcal{C}_{ij}^2,
+\qquad
+\mathcal{C}_{ij} = \frac{\sum_b z^A_{b,i} z^B_{b,j}}{\sqrt{\sum_b (z^A_{b,i})^2}\sqrt{\sum_b (z^B_{b,j})^2}} .
+$$
+
+$\mathcal{C}$ is the cross-correlation between the two views' embeddings, computed
+over the batch. Driving it to the identity says: dimension $i$ of view A should
+agree with dimension $i$ of view B (invariance) and be uncorrelated with every
+other dimension (decorrelation).
+
+The information-theoretic reading is that this maximises information content
+subject to invariance — the same objective as the information bottleneck,
+approached through second-order statistics rather than density estimation. Note
+the $O(d^2)$ cost in embedding dimension, which is why these methods use large
+projector heads but bounded embedding widths.
+
+## Relation to the information bottleneck
+
+All of these optimise, implicitly, the same trade-off:
+
+$$
+\max_\theta \; I(Z; Y) - \beta\, I(Z; X)
+$$
+
+with $Y$ the unknown downstream target. The families differ in how they keep
+$I(Z;X)$ from hitting zero without access to $Y$:
+
+- reconstruction sets a **floor** on $I(Z;X)$ by requiring invertibility;
+- contrastive learning adds an explicit **repulsive** term;
+- redundancy reduction enforces a **rank** condition on second-order statistics;
+- asymmetry relies on a **dynamical** obstruction.
+
+Only the first three admit a static characterisation. The fourth — the most used —
+does not, and that is the honest state of the theory.
+
+<Tier level="frontier" />
+
+## Where this stands, as of 2026
+
+**JEPAs work, and the reasons remain partly empirical.** I-JEPA and V-JEPA produce
+strong general-purpose features without augmentations or negatives, and V-JEPA 2
+extended this to action-conditioned prediction supporting zero-shot robot planning
+at roughly 65–80% success on manipulation tasks in unseen labs. That is a real
+capability that did not exist three years earlier.
+
+**The reconstruct-versus-predict argument is not settled.** Masked autoencoders
+reconstruct raw pixels and remain competitive, which the theoretical argument says
+they shouldn't be. The usual reconciliation — that a 75% mask ratio makes the task
+semantic enough that pixel detail stops dominating the gradient — is plausible and
+unproven. Treat "latent prediction is strictly better" as directional.
+
+**DINOv2 is the practical default, and it is a self-distillation method rather
+than a JEPA proper.** Worth noting because the taxonomy and the leaderboard don't
+line up: the most-used general visual encoder is from the DINO line, not the JEPA
+line, even though they share the asymmetry mechanism.
+
+## Open problems
+
+- **No theory of collapse prevention.** Given a proposed asymmetry, nothing
+  predicts whether it suffices. Every new method establishes this by running it.
+
+- **The predictor's role is unclear.** SimSiam showed the predictor head is
+  necessary and the EMA is not. Why a small MLP between student output and loss
+  changes the optimisation landscape so decisively is unexplained.
+
+- **Masking introduces its own biases.** I-JEPA's pitch is that it avoids
+  hand-specified invariances — but block masking encodes assumptions about spatial
+  scale and locality. Whether those are meaningfully weaker assumptions than
+  augmentations is asserted more than demonstrated.
+
+- **Embedding spaces still aren't interoperable.** Two JEPAs trained identically
+  from different seeds produce incomparable spaces. This forces hierarchical
+  systems to train levels jointly in a shared space rather than composing
+  independently trained encoders.
+
+- **Evaluation remains circular.** Linear probing is the standard metric and is
+  known to be a poor proxy; alignment/uniformity is better but defined relative to
+  an augmentation family, which is precisely what these methods claim to avoid
+  needing.
+
+## What to read next, in order
+
+1. **LeCun (2022), position paper** — the argument for why this family *should*
+   work, written before it did. Read sections 4–6.
+2. **Chen & He (2020), SimSiam** — the cleanest experiment in the area. The
+   ablations are the paper.
+3. **Bardes et al. (2021), VICReg** — read it for the three-term decomposition,
+   which is the best available vocabulary for talking about collapse.
+4. **Assran et al. (2023), I-JEPA** — the current reference for
+   augmentation-free representation learning.
+
+<Papers papers={frontmatter.papers} />

@@ -1,25 +1,418 @@
 ---
 title: Hierarchical Planning
-description: "Why temporal abstraction is the standard answer to long-horizon planning, and what it costs."
+description: "Why temporal abstraction is the standard answer to long-horizon planning, what it costs, and the stride hyperparameter nobody has automated."
 sidebar:
   order: 3
-  badge:
-    text: Planned
-    variant: caution
-depth: intuition
+depth: frontier
+readingTime: 35
+prereqs:
+  - label: "Planning and MPC"
+    slug: "world-models/planning-and-mpc"
+papers:
+  - title: "Between MDPs and semi-MDPs: A framework for temporal abstraction in reinforcement learning"
+    authors: "Sutton, Precup, Singh"
+    year: 1999
+    url: "https://doi.org/10.1016/S0004-3702(99)00052-1"
+  - title: "FeUdal Networks for Hierarchical Reinforcement Learning"
+    authors: "Vezhnevets, Osindero, Schaul, Heess, Jaderberg, Silver, Kavukcuoglu"
+    year: 2017
+    url: "https://arxiv.org/abs/1703.01161"
+  - title: "Data-Efficient Hierarchical Reinforcement Learning (HIRO)"
+    authors: "Nachum, Gu, Lee, Levine"
+    year: 2018
+    url: "https://arxiv.org/abs/1805.08296"
+  - title: "Deep Hierarchical Planning from Pixels (Director)"
+    authors: "Hafner, Lee, Fischer, Abbeel"
+    year: 2022
+    url: "https://arxiv.org/abs/2206.04114"
+  - title: "Hierarchical Planning with Latent World Models (HWM)"
+    authors: "Wancong Zhang et al."
+    year: 2026
+    url: "https://arxiv.org/abs/2604.03208"
+  - title: "V-JEPA 2: Self-Supervised Video Models Enable Understanding, Prediction and Planning"
+    authors: "Mido Assran et al."
+    year: 2025
+    url: "https://arxiv.org/abs/2506.09985"
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps } from '@astrojs/starlight/components';
 
-<Aside type="caution" title="Not written yet">
-This page is a placeholder so the navigation reflects the intended shape of the
-atlas. Copy `src/content/docs/_template.mdx` to start it, and see
-[How to read a page](/how-to-read/) for the authoring rules.
+<Abstract>
+Long-horizon planning fails for two compounding reasons: the search space grows
+exponentially in the horizon, and prediction error grows geometrically along a
+rollout. Hierarchy attacks both with the same move — plan coarsely over long
+spans, finely over short ones, and never let either exponent see the full
+horizon. The idea is thirty years old; what changed recently is doing it entirely
+inside a learned latent space, with no hand-designed skills.
+</Abstract>
+
+<KeyPoints>
+
+- **Hierarchy fixes two problems with one mechanism.** Search cost drops from $A^H$ to roughly $M^{H/c} + (H/c)A^c$, and the error bound applies with exponent $c$ or $H/c$ instead of $H$. Both improvements come from the same decomposition.
+- **The shared latent space is the load-bearing idea in the modern version.** If both levels predict in the *same* space, a state predicted by the high level is directly usable as a subgoal for the low level. No skill vocabulary, no translation layer, no task-specific reward.
+- **The gain is not incremental.** A flat planner scoring 0% and a hierarchical one scoring 70% on the same task is not a tuning difference — it says the flat formulation cannot represent the problem.
+- **Hierarchy assumes the task decomposes.** It buys tractability by assuming a good plan can be written as a sequence of reachable intermediate states. When that assumption fails, or when the right subgoal spacing varies within an episode, you get nothing.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## Planning a journey
+
+You are in London and need to get to a specific meeting room in Tokyo. You do not
+plan this as a sequence of footsteps.
+
+You plan: *get to Heathrow, fly to Haneda, get across the city, find the
+building*. Four steps. Then, when you are actually walking to the station, you
+plan the footsteps — but only those, and only then.
+
+Two things are happening. You planned at a **coarse** resolution over the whole
+journey, and you plan at a **fine** resolution only over the next small piece. You
+never once considered the sequence of all footsteps from London to Tokyo, and if
+you tried, you would fail — there are too many, and your prediction of where your
+foot lands in hour nine is worthless.
+
+## Why the flat version fails
+
+Two separate failures, both fatal, and they compound.
+
+**The search explodes.** With ten plausible actions at each step, a twenty-step
+plan has $10^{20}$ possibilities. Doubling the horizon squares the space. No amount
+of sampling makes a dent in that once the horizon is long enough.
+
+**The imagination drifts.** Every predicted step feeds the next, so error
+multiplies. Ten steps is usually fine; a hundred is usually fiction. Scoring a
+plan by where you *think* you'll end up is meaningless if the ending is invented.
+
+Hierarchy fixes both at once, and that dual fix is why it keeps reappearing across
+thirty years of otherwise unrelated literatures.
+
+## What "coarse" means when there are no words
+
+The hard part is that a machine has no vocabulary of steps. It cannot plan *"get
+to the airport"* unless something gives it the concept.
+
+The classical answer was to hand-design a library of skills, or learn one. That
+works and it is fragile — the skills are task-specific and someone has to decide
+what they are.
+
+**The modern answer is to skip skills entirely.** Train two predictors that share
+one internal representation: a slow one that predicts where you'll be in eight
+steps, and a fast one that predicts the next step. Because they speak the same
+language, the slow model's prediction is directly usable as a target for the fast
+model. The "subgoal" is just a point in latent space — nobody named it, nobody
+designed it.
+
+<Tier level="mechanics" />
+
+## The two-level architecture
+
+<Figure
+  lead="Two timescales, one latent space."
+  caption="The high-level planner searches over macro-actions using a long-horizon model with stride c, and its first predicted state becomes the subgoal. The low-level planner then searches primitive actions to reach that subgoal using the short-horizon model. Because both models predict in the same latent space, the handoff needs no translation — this is what distinguishes the approach from hierarchical RL, where the levels communicate through a learned or designed interface."
+>
+<svg viewBox="0 0 760 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Two-level hierarchical planning in a shared latent space">
+  <defs>
+    <marker id="hi1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <text class="lb" x="14" y="20">HIGH LEVEL — stride c, macro-actions</text>
+  <rect class="f-purple" x="14" y="32" width="52" height="40" rx="5"/>
+  <text class="on-fill-sm" x="40" y="57" text-anchor="middle">z_t</text>
+  <path class="ar" d="M70,52 L146,52" marker-end="url(#hi1)"/>
+  <text class="xs" x="108" y="44" text-anchor="middle">m₁</text>
+  <rect class="f-purple" x="152" y="32" width="52" height="40" rx="5"/>
+  <text class="on-fill-sm" x="178" y="57" text-anchor="middle">ẑ_t+c</text>
+  <path class="ar" d="M208,52 L284,52" marker-end="url(#hi1)"/>
+  <text class="xs" x="246" y="44" text-anchor="middle">m₂</text>
+  <rect class="f-purple" x="290" y="32" width="52" height="40" rx="5"/>
+  <text class="on-fill-sm" x="316" y="57" text-anchor="middle">ẑ_t+2c</text>
+  <path class="ar" d="M346,52 L422,52" marker-end="url(#hi1)"/>
+  <text class="xs" x="384" y="44" text-anchor="middle">m₃</text>
+  <rect class="f-purple" x="428" y="32" width="52" height="40" rx="5"/>
+  <text class="on-fill-sm" x="454" y="57" text-anchor="middle">ẑ_t+3c</text>
+  <path class="ar" d="M484,52 L560,52" marker-end="url(#hi1)"/>
+  <rect class="f-green" x="566" y="32" width="60" height="40" rx="5"/>
+  <text class="on-fill-sm" x="596" y="57" text-anchor="middle">goal z_g</text>
+  <text class="xs" x="660" y="46">only H/c steps,</text>
+  <text class="xs" x="660" y="62">so error compounds</text>
+  <text class="xs" x="660" y="78">over H/c not H</text>
+
+  <path class="thick" d="M178,78 L178,126" marker-end="url(#hi1)"/>
+  <text class="xs" x="196" y="106">first predicted state becomes the SUBGOAL</text>
+
+  <line class="bx" x1="14" y1="112" x2="746" y2="112" opacity="0.25" stroke-dasharray="4 4"/>
+  <text class="xs" x="14" y="106">— same latent space, no translation needed —</text>
+
+  <text class="lb" x="14" y="150">LOW LEVEL — primitive actions, horizon c</text>
+  <rect class="f-blue" x="14" y="162" width="48" height="38" rx="5"/>
+  <text class="on-fill-sm" x="38" y="186" text-anchor="middle">z_t</text>
+  <path class="ar" d="M66,181 L102,181" marker-end="url(#hi1)"/>
+  <text class="xs" x="84" y="174" text-anchor="middle">a₁</text>
+  <rect class="f-blue" x="108" y="162" width="48" height="38" rx="5"/>
+  <path class="ar" d="M160,181 L196,181" marker-end="url(#hi1)"/>
+  <text class="xs" x="178" y="174" text-anchor="middle">a₂</text>
+  <rect class="f-blue" x="202" y="162" width="48" height="38" rx="5"/>
+  <path class="ar" d="M254,181 L290,181" marker-end="url(#hi1)"/>
+  <text class="xs" x="272" y="174" text-anchor="middle">…</text>
+  <rect class="f-blue" x="296" y="162" width="48" height="38" rx="5"/>
+  <path class="ar" d="M348,181 L384,181" marker-end="url(#hi1)"/>
+  <text class="xs" x="366" y="174" text-anchor="middle">a_c</text>
+  <rect class="f-pink" x="390" y="158" width="72" height="46" rx="5"/>
+  <text class="on-fill-sm" x="426" y="178" text-anchor="middle">subgoal</text>
+  <text class="on-fill-sm" x="426" y="194" text-anchor="middle">ẑ_t+c</text>
+
+  <path class="dash" d="M178,78 C260,110 420,120 426,154" marker-end="url(#hi1)"/>
+
+  <text class="xs" x="500" y="182">match by ℓ₁ distance in latent space —</text>
+  <text class="xs" x="500" y="198">no reward function anywhere</text>
+
+  <line class="bx" x1="14" y1="228" x2="746" y2="228" opacity="0.3"/>
+  <text class="lb" x="14" y="252">Search cost, H = 32, A = 10, c = 8</text>
+  <rect class="f-pink" x="14" y="264" width="330" height="44" rx="5"/>
+  <text class="on-fill-sm" x="30" y="284">Flat:  A^H  =  10³²</text>
+  <text class="xs" x="30" y="300">not sampleable at any budget</text>
+  <rect class="f-green" x="360" y="264" width="386" height="44" rx="5"/>
+  <text class="on-fill-sm" x="376" y="284">Hierarchical:  M^4  +  4 · 10⁸</text>
+  <text class="xs" x="376" y="300">many orders of magnitude smaller, and each factor is reachable</text>
+</svg>
+</Figure>
+
+## The pieces
+
+<Steps>
+
+1. **Two predictors, one space.** A low-level model $P^{\text{lo}}(z, a)$ stepping
+   one primitive action, and a high-level model $P^{\text{hi}}(z, m)$ stepping $c$
+   primitive steps at once. Crucially both operate on the *same* $z$.
+
+2. **An action encoder.** $\Omega: a_{t:t+c} \mapsto m_t$ compresses a chunk of
+   $c$ primitive actions into a single latent macro-action. This is what makes the
+   high-level search space $M$ rather than $A^c$.
+
+3. **High-level search.** Plan over macro-actions to reach the goal embedding.
+   Only $H/c$ steps, so both the search and the error compounding are over the
+   short exponent.
+
+4. **Subgoal extraction.** Take the *first* predicted state $\hat z_{t+c}$ from
+   the high-level plan. That is the subgoal. Nothing was designed or named.
+
+5. **Low-level search.** Plan $c$ primitive actions to minimise $d(\hat z_{t+c},
+   z)$. Execute the first one.
+
+6. **Re-plan.** Both levels, from the newly observed state. The receding-horizon
+   logic from [MPC](/world-models/planning-and-mpc/) applies at both levels.
+
+</Steps>
+
+## How this differs from hierarchical RL
+
+The classical literature — options, FeUdal, HIRO — is also hierarchical, and the
+difference is worth being precise about because the words overlap.
+
+| | Hierarchical RL | Hierarchical latent planning |
+|---|---|---|
+| Low level is | a learned policy (a *skill*) | a search procedure |
+| Subgoals are | learned embeddings or designed states | states predicted by the high-level model |
+| Needs reward | yes, per level | no |
+| Task transfer | retrain or relabel skills | swap the goal image |
+| Levels communicate via | a learned interface | a shared latent space directly |
+
+**Options (Sutton, Precup & Singh, 1999)** established the formal framework:
+temporally extended actions with an initiation set, a policy, and a termination
+condition, turning the MDP into a semi-MDP. Everything since is a way of learning
+options rather than specifying them.
+
+**FeUdal Networks (2017)** had a Manager emitting directional goals in a learned
+latent space and a Worker rewarded for moving in that direction. The direction-not-
+position choice was deliberate and is the paper's most cited idea.
+
+**HIRO (2018)** used raw state observations as subgoals, which made the levels
+trivially compatible but only works when the state space is low-dimensional and
+interpretable. Its real contribution was off-policy correction — relabelling old
+high-level transitions when the low-level policy changes underneath them.
+
+**Director (2022)** planned in the latent space of a learned world model, which is
+the closest classical ancestor of the current approach.
+
+<Aside type="tip" title="The through-line">
+Every one of these is answering "what should the subgoal *be*?". Hand-designed
+states, learned directions, raw observations, learned codes. The latent-world-model
+answer is the least designed of them: **the subgoal is whatever the long-horizon
+model predicts**, because that is by construction both reachable and on the way.
 </Aside>
 
-## Planned coverage
+<Tier level="formal" />
 
-- Options and semi-MDPs, the classical framing
-- Macro-actions and learned action encoders
-- Shared latent spaces and subgoal transfer
-- Choosing the stride: the hyperparameter nobody has automated
+## The setup
+
+Two predictors sharing an encoder $E_\theta$ and latent space $\mathcal{Z}$:
+
+$$
+P^{\text{lo}}_\phi: \mathcal{Z} \times \mathcal{A} \to \mathcal{Z}, \qquad
+P^{\text{hi}}_\psi: \mathcal{Z} \times \mathcal{M} \to \mathcal{Z},
+$$
+
+with macro-actions produced by a learned action encoder $\Omega_\xi: \mathcal{A}^c
+\to \mathcal{M}$. Both are trained by latent prediction:
+
+$$
+\mathcal{L}^{\text{lo}} = \big\| P^{\text{lo}}_\phi(z_t, a_t) - \operatorname{sg}[E_{\bar\theta}(o_{t+1})] \big\|_1,
+$$
+
+$$
+\mathcal{L}^{\text{hi}} = \big\| P^{\text{hi}}_\psi\big(z_t, \Omega_\xi(a_{t:t+c})\big) - \operatorname{sg}[E_{\bar\theta}(o_{t+c})] \big\|_1 .
+$$
+
+**The shared space is a constraint, not a convenience.** Because both losses
+target embeddings from the same encoder $E_{\bar\theta}$, the outputs of both
+predictors live in one space by construction. Train them with separate encoders
+and the handoff in step 4 above becomes meaningless — you would be handing the low
+level a point in a space it does not inhabit.
+
+## Planning
+
+$$
+m^{\star}_{1:H/c} = \arg\min_{m_{1:H/c}} \; d\big(\hat z^{\text{hi}}_{H},\, z_g\big), \qquad \hat z^{\text{hi}}_{k+1} = P^{\text{hi}}_\psi(\hat z^{\text{hi}}_{k}, m_k),
+$$
+
+$$
+z_{\text{sub}} = P^{\text{hi}}_\psi\big(z_t,\, m^{\star}_1\big),
+$$
+
+$$
+a^{\star}_{1:c} = \arg\min_{a_{1:c}} \; d\big(\hat z^{\text{lo}}_{c},\, z_{\text{sub}}\big), \qquad \hat z^{\text{lo}}_{k+1} = P^{\text{lo}}_\phi(\hat z^{\text{lo}}_{k}, a_k).
+$$
+
+Execute $a^\star_1$, observe, repeat. No reward appears anywhere; the only
+task-specific input is $z_g = E_\theta(o_g)$.
+
+## The complexity argument
+
+**Flat.** Search space $A^H$; error bound $O(\epsilon L^H)$ for Lipschitz constant
+$L > 1$.
+
+**Hierarchical.** The high level searches $M^{H/c}$; the low level searches $A^c$
+once per segment, and there are $H/c$ segments:
+
+$$
+\underbrace{M^{H/c}}_{\text{high}} \;+\; \underbrace{\frac{H}{c}\, A^{c}}_{\text{low}} .
+$$
+
+Minimising over $c$ (treating $M \approx A$ for a rough comparison) gives an
+optimum near $c \approx \sqrt{H}$, where both terms are $O(A^{\sqrt{H}})$ — the
+exponent drops from $H$ to $\sqrt{H}$.
+
+With $H = 32$, $A = 10$, $c = 8$: flat is $10^{32}$; hierarchical is $M^4 + 4
+\times 10^8$. Even with a generous macro-action space the second is many orders of
+magnitude smaller, and — the part that matters — each factor is individually
+within sampling range, which $10^{32}$ never is.
+
+**Error.** The low level compounds over $c$ steps, the high level over $H/c$
+steps:
+
+$$
+\text{err} \;=\; O\!\big(\epsilon_{\text{lo}} L^{c}\big) \;+\; O\!\big(\epsilon_{\text{hi}} L^{H/c}\big).
+$$
+
+Neither exponent is $H$. This is the second, independent benefit, and it is why
+hierarchy helps even when compute is not the constraint.
+
+<Aside type="caution" title="Where the argument leaks">
+The bound treats $\epsilon_{\text{hi}}$ as comparable to $\epsilon_{\text{lo}}$,
+and it isn't: predicting $c$ steps ahead in one shot is a harder problem than
+predicting one step, so $\epsilon_{\text{hi}} > \epsilon_{\text{lo}}$. The
+hierarchy trades a *smaller exponent* for a *larger base*. It wins when $L^{H}$
+dominates, which is the long-horizon regime — and it can lose at short horizons,
+which is exactly what the empirical results show.
+</Aside>
+
+## Choosing the stride
+
+The optimum balances the two error terms. Differentiating
+
+$$
+g(c) = \epsilon_{\text{lo}} L^{c} + \epsilon_{\text{hi}} L^{H/c}
+$$
+
+and setting $g'(c) = 0$ gives an implicit condition
+
+$$
+\epsilon_{\text{lo}} L^{c} \;=\; \epsilon_{\text{hi}} \frac{H}{c^2} L^{H/c},
+$$
+
+which has no closed form and — more to the point — depends on $\epsilon_{\text{lo}},
+\epsilon_{\text{hi}}, L$, none of which are known. In practice $c$ is a
+hyperparameter chosen by sweep, and results are sensitive to it.
+
+This is the field's most obvious unaddressed problem. Humans vary planning
+granularity continuously — coarse crossing a room, fine threading a needle — and
+nothing here does.
+
+<Tier level="frontier" />
+
+## Where this stands, as of 2026
+
+**The empirical case is unusually clear-cut.** On end-to-end pick-and-place from a
+single goal image, a flat V-JEPA2-AC planner scores 0%; the hierarchical version
+scores 70%. The flat planner succeeds only when a human manually decomposes the
+task into greedy subgoals — which is to say, only when a human supplies the
+hierarchy by hand. A 0-to-70 jump is not a tuning result; it says the flat
+formulation cannot represent the problem class.
+
+**Compute, not just accuracy.** Hierarchical planning matches or exceeds flat
+success at roughly 3× lower planning cost, and up to 4× in some settings. Two
+independent wins from one change is rare, and it is the strongest argument for the
+approach.
+
+**Model-agnostic, which is the surprising part.** The hierarchical wrapper improves
+several different latent world models — V-JEPA2-AC, DINO-WM, PLDM — without
+modification. That suggests the gain comes from the planning structure rather than
+from any particular representation, which is a stronger claim than a
+single-model result would support.
+
+**Two levels, not more.** Everything deployed is two-level. Three-plus-level
+hierarchies are natural on paper and have not produced convincing results, which
+is itself worth explaining and unexplained.
+
+## Open problems
+
+- **The stride is hand-set and sensitive.** No method adapts $c$ to the task, to
+  the current state, or to model confidence. This is the clearest gap.
+
+- **Tasks that do not decompose get nothing.** Hierarchy assumes a good plan is a
+  sequence of reachable intermediate states. Where intermediate states are not
+  meaningful, or where the useful spacing varies within an episode, the machinery
+  adds cost and no benefit.
+
+- **Subgoal reachability is unverified.** The high-level model predicts a state;
+  nothing checks the low level can actually get there in $c$ steps. If it cannot,
+  the low level chases an impossible target and wastes the segment. HIRO's
+  off-policy correction addressed a version of this in the RL setting; the
+  planning setting largely does not.
+
+- **Deeper hierarchies don't work yet**, for reasons nobody has articulated
+  clearly.
+
+- **The uncertainty problem is inherited and worsened.** The high-level model is
+  less accurate by construction, and neither level represents its own confidence,
+  so the planner cannot tell a good subgoal from a hallucinated one.
+
+## What to read next, in order
+
+1. **Sutton, Precup & Singh (1999)** — the options framework. Read Sections 2–3
+   for the semi-MDP formalism, which is the vocabulary everything since uses.
+2. **Vezhnevets et al. (2017), FeUdal** — for the directional-goal argument.
+3. **Hafner et al. (2022), Director** — the closest classical ancestor of latent
+   hierarchical planning.
+4. **Zhang et al. (2026), HWM** — the current reference, and the source of the
+   0%-vs-70% result.
+
+<Papers papers={frontmatter.papers} />

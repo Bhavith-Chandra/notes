@@ -1,22 +1,310 @@
 ---
 title: Glossary
-description: "Short, precise definitions for terms used across the atlas."
+description: "Short, precise definitions for the terms used across this atlas, each linking to the page that explains it properly."
 sidebar:
   order: 1
-  badge:
-    text: Planned
-    variant: caution
-depth: intuition
+depth: mechanics
+readingTime: 12
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-<Aside type="caution" title="Not written yet">
-This page is a placeholder so the navigation reflects the intended shape of the
-atlas. Copy `src/content/docs/_template.mdx` to start it, and see
-[How to read a page](/how-to-read/) for the authoring rules.
+Definitions are deliberately short and deliberately opinionated — where a term is
+commonly used loosely, the entry says so. Each links to the page that treats it
+properly.
+
+<Aside type="tip">
+Use your browser's find (⌘F / Ctrl+F), or the site search in the header, which
+indexes every page rather than just this one.
 </Aside>
 
-## Planned coverage
+## A
 
-One-paragraph definitions, each linking to the page that explains it properly.
+**Ablation** — removing a component and measuring what breaks. The only reliable
+way to establish that a part of a system is doing work; a paper without ablations
+is telling you what it built, not what mattered.
+
+**Alignment (representation)** — how close the embeddings of semantically
+equivalent inputs are. One half of the [Wang–Isola
+decomposition](/training/self-supervision/); the other half is uniformity. Not to
+be confused with AI alignment, which is unrelated.
+
+**ALiBi** — Attention with Linear Biases. Injects position by adding a
+distance-proportional penalty to attention scores instead of using position
+embeddings. See [Transformers](/architectures/transformers/).
+
+**Attention** — a differentiable dictionary lookup: queries are matched against
+keys to produce weights, which blend values. The core operation of the
+[transformer](/architectures/transformers/).
+
+**Autoencoder (AE)** — encoder plus decoder trained to reconstruct the input
+through a bottleneck. See [Neural Encoders](/encoders/neural-encoders/).
+
+**Augmentation** — a transformation applied to an input that is assumed not to
+change its meaning. In contrastive learning your augmentation set *is* your
+specification of what the model should ignore, which makes it a modelling
+decision, not preprocessing.
+
+## B
+
+**Backbone** — the architectural substrate (ResNet, ViT) as distinct from the
+objective that trains it. The same backbone under different objectives produces
+very different encoders.
+
+**Barlow Twins** — a self-supervised method that prevents collapse by driving the
+cross-correlation matrix between two views toward the identity. See
+[JEPA](/architectures/jepa/).
+
+**Base rate** — the unconditional frequency of an outcome. Target encodings are
+base rates conditioned on a category, which is why they drift when the underlying
+rates shift.
+
+**BYOL** — Bootstrap Your Own Latent. The result that showed contrastive negatives
+are unnecessary if you use a stop-gradient and an EMA target. See
+[JEPA](/architectures/jepa/).
+
+## C
+
+**Causal mask** — the attention mask that prevents a position from attending to
+later positions. The single difference between an encoder-only and a decoder-only
+transformer. See [Encoder–Decoder](/encoders/encoder-decoder/).
+
+**CEM (Cross-Entropy Method)** — a derivative-free planner that samples action
+sequences, keeps the best, refits a Gaussian to them, and repeats. Cannot
+represent multimodal solutions. See [Planning and
+MPC](/world-models/planning-and-mpc/).
+
+**Chinchilla scaling** — the finding that parameters and training tokens should
+scale roughly in proportion (~20 tokens per parameter), correcting the earlier
+Kaplan conclusion that favoured parameters. See
+[Transformers](/architectures/transformers/).
+
+**Codebook collapse** — in VQ-VAE, the failure where most codebook entries go
+unused so the effective vocabulary is far smaller than allocated.
+
+**Collapse (representation)** — the degenerate solution where an encoder outputs
+the same or near-same vector regardless of input. Comes in five distinguishable
+forms; see [JEPA](/architectures/jepa/).
+
+**Contrastive learning** — training by pulling matched pairs together and pushing
+unmatched pairs apart. Requires negatives. See [Self-Supervised
+Learning](/training/self-supervision/).
+
+**Cross-attention** — attention where queries come from one sequence and keys and
+values from another. The only structural difference between an encoder–decoder and
+two stacked transformers.
+
+## D
+
+**Decoder-only** — a transformer using causal masking throughout, trained on
+next-token prediction. GPT, Llama, Claude.
+
+**Dimensional collapse** — embeddings vary but occupy a low-dimensional subspace
+of the space allocated. Invisible to a variance check; visible in the singular
+value spectrum.
+
+**DINO / DINOv2** — self-distillation methods producing the current default
+general-purpose visual features. Notable for emergent object segmentation in
+attention maps with no segmentation supervision.
+
+## E
+
+**ELBO** — Evidence Lower Bound. A tractable lower bound on the log-likelihood,
+derived by Jensen's inequality. Its gap to the true log-likelihood is exactly the
+KL between the approximate and true posterior. See [Probability for
+ML](/foundations/probability-for-ml/).
+
+**EMA (Exponential Moving Average)** — a slowly-updated copy of a network's
+weights, used as a prediction target. The lag is what makes collapse dynamically
+unstable in JEPAs.
+
+**Encoder** — one word for three things: a learned function mapping data to
+vectors, an architectural position that reads rather than generates, and a
+preprocessing step turning categories into numbers. See
+[Encoders](/encoders/).
+
+**Encoder-only** — a transformer with bidirectional attention, trained with masked
+language modelling. BERT, ModernBERT. Cannot generate autoregressively.
+
+## F
+
+**Feature hashing** — mapping categories to a fixed number of buckets via a hash,
+with signed contributions so collisions cancel in expectation. See [Feature
+Encoding](/encoders/feature-encoding/).
+
+**FlashAttention** — an exact attention implementation that tiles the computation
+to avoid materialising the full attention matrix in slow memory. Same function,
+several times faster.
+
+**Free bits** — a VAE training trick allowing a fixed KL budget per latent
+dimension without penalty, used to prevent posterior collapse.
+
+## G
+
+**GQA (Grouped-Query Attention)** — sharing key/value heads across groups of query
+heads to shrink the KV cache. The current standard, sitting between full
+multi-head and multi-query.
+
+**Grokking** — delayed generalisation: a model memorises the training set, then
+much later and abruptly generalises. Interesting because it separates memorisation
+from generalisation in time.
+
+## I
+
+**I-JEPA** — Image Joint-Embedding Predictive Architecture. Predicts
+representations of masked target blocks from a context block, with no augmentations
+at all. See [JEPA](/architectures/jepa/).
+
+**InfoNCE** — the standard contrastive loss. Lower-bounds mutual information by
+$\log N - \mathcal{L}$, where $N$ is the number of samples — note the bound is
+capped by batch size and therefore loose in practice.
+
+**Information bottleneck** — the framing that a representation should maximise
+$I(Z;Y)$ while minimising $I(Z;X)$. Clarifying as a framework; its stronger claim
+as an explanation of generalisation did not survive scrutiny. See
+[Representations](/foundations/representations/).
+
+## J
+
+**JEPA** — Joint-Embedding Predictive Architecture. Predicts the representation of
+one part of a signal from another part, in embedding space, with no decoder and no
+negatives.
+
+## K
+
+**KL divergence** — $\mathbb{E}_p[\log p/q]$. Measures how badly $q$ approximates
+$p$. Asymmetric, and the asymmetry is the useful part: forward KL covers all
+modes, reverse KL commits to one.
+
+**KV cache** — stored keys and values from previous tokens, reused during
+generation. Frequently larger than the model weights at long context, and the
+reason GQA exists.
+
+## L
+
+**Latent space** — the vector space an encoder maps into. Its geometry — whether
+distances and angles mean anything — is a property of the training objective, not
+of the architecture.
+
+**Linear probe** — a linear classifier trained on frozen features to test whether a
+property is linearly decodable. High accuracy is informative; low accuracy is
+nearly uninformative.
+
+## M
+
+**MAE (Masked Autoencoder)** — masks ~75% of image patches and reconstructs pixels.
+Competitive despite the theoretical argument that pixel reconstruction wastes
+capacity — an open tension.
+
+**Macro-action** — a latent compression of a chunk of primitive actions, used to
+shrink the high-level search space in [hierarchical
+planning](/world-models/hierarchy/).
+
+**MLM (Masked Language Modelling)** — predicting hidden tokens from bidirectional
+context. Supervises ~15% of positions, versus 100% for causal LM.
+
+**Model exploitation** — a planner finding action sequences where the learned model
+is optimistically wrong. The reason a more accurate model can yield a worse
+planner. See [Planning and MPC](/world-models/planning-and-mpc/).
+
+**MPC (Model Predictive Control)** — plan over a horizon, execute only the first
+action, re-plan. The receding horizon bounds execution error at $O(\epsilon)$
+rather than $O(\epsilon L^H)$.
+
+**MPPI** — Model Predictive Path Integral control. Like CEM but weights all
+samples by $\exp(-S/\lambda)$ rather than taking a hard top-$K$ cut.
+
+## O
+
+**Option** — a temporally extended action with an initiation set, a policy, and a
+termination condition. The classical formalism for hierarchy (Sutton, Precup &
+Singh, 1999).
+
+**Out-of-fold (OOF)** — computing a statistic using only data outside the current
+validation fold. The correct way to compute target encodings, and skipping it is
+the most common serious bug in applied tabular ML.
+
+## P
+
+**Polysemantic** — a neuron that responds to multiple unrelated features. A
+consequence of superposition, and a sign the neuron basis is the wrong basis.
+
+**Posterior collapse** — in a VAE, the encoder converging to the prior so the
+latent carries no information. Not a bug — a local optimum the KL term rewards.
+
+**Pre-norm** — placing layer normalisation on the residual branch input rather than
+after the addition. Removes the need for learning-rate warmup; universal since
+~2020 and not in the original transformer paper.
+
+## R
+
+**Receding horizon** — re-planning at every timestep after executing one action.
+The mechanism that makes MPC tolerant of inaccurate models.
+
+**Reparameterisation trick** — rewriting $z \sim \mathcal{N}(\mu,\sigma^2)$ as $z =
+\mu + \sigma\epsilon$ with $\epsilon \sim \mathcal{N}(0,I)$, so gradients flow
+through $\mu$ and $\sigma$. About variance, not correctness — both estimators are
+unbiased.
+
+**Residual stream** — the running vector that transformer blocks read from and add
+to. The modern mental model treats it as a shared bus rather than a pipeline.
+
+**RoPE (Rotary Position Embedding)** — encodes position by rotating queries and
+keys, so that dot products depend only on relative offset. Current default.
+
+## S
+
+**Sparse autoencoder (SAE)** — a wide autoencoder with an $\ell_1$ penalty, trained
+to recover an overcomplete basis of monosemantic features from superposed
+activations. Suffers feature splitting, with no principled dictionary size.
+
+**Stop-gradient** — blocking gradient flow through a path. In JEPAs it is what
+prevents the student from pulling the target down to meet it.
+
+**Straight-through estimator** — copying gradients across a non-differentiable
+operation as if it were the identity. Biased, and it works. Used for VQ-VAE's
+quantisation step.
+
+**Superposition** — representing more features than dimensions by assigning
+non-orthogonal directions and tolerating interference, which sparsity makes cheap.
+See [Representations](/foundations/representations/).
+
+## T
+
+**Target encoding** — replacing a category with the mean outcome for that category.
+The strongest categorical encoding and the most dangerous; leaks the label unless
+computed out-of-fold.
+
+**Temperature ($\tau$)** — the softmax scaling in contrastive losses. Controls how
+much gradient concentrates on hard negatives. Genuinely sensitive; typical range
+0.07–0.2.
+
+**Tier** — in this atlas, one of the four depth levels every page passes through:
+intuition, mechanics, formal, frontier. See [How to read a
+page](/how-to-read/).
+
+## U
+
+**Uniformity** — how evenly embeddings spread over the hypersphere. The
+counterweight to alignment; good alignment with poor uniformity means collapse.
+
+## V
+
+**VAE (Variational Autoencoder)** — encodes to a distribution rather than a point
+and regularises toward a prior, producing a smooth samplable latent space at the
+cost of blurry reconstructions.
+
+**VICReg** — Variance-Invariance-Covariance Regularisation. Prevents collapse with
+three explicit terms, which makes it unusually diagnosable when it fails.
+
+**V-JEPA / V-JEPA 2** — the video JEPA line. V-JEPA 2 adds an action-conditioned
+predictor and supports zero-shot robot planning from a goal image.
+
+**VQ-VAE** — quantises the latent to entries of a learned codebook, giving discrete
+tokens and sharp reconstructions. Fails via codebook collapse.
+
+## W
+
+**World model** — a learned transition function: given a state and an action,
+predict the next state. Learned once, reusable across tasks, and queried by a
+planner at decision time. See [World Models](/world-models/).

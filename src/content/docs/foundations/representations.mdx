@@ -1,25 +1,407 @@
 ---
 title: Representations
-description: "What it means for a neural network to 'represent' something, and why the answer is less obvious than it sounds."
+description: "What it means for a network to 'represent' something, why linear probes mislead, and how superposition breaks the neuron-as-concept picture."
 sidebar:
   order: 1
-  badge:
-    text: Planned
-    variant: caution
-depth: intuition
+depth: frontier
+readingTime: 35
+papers:
+  - title: "Representation Learning: A Review and New Perspectives"
+    authors: "Bengio, Courville, Vincent"
+    year: 2012
+    url: "https://arxiv.org/abs/1206.5538"
+  - title: "The Information Bottleneck Method"
+    authors: "Tishby, Pereira, Bialek"
+    year: 2000
+    url: "https://arxiv.org/abs/physics/0004057"
+  - title: "Deep Learning and the Information Bottleneck Principle"
+    authors: "Tishby, Zaslavsky"
+    year: 2015
+    url: "https://arxiv.org/abs/1503.02406"
+  - title: "On the Information Bottleneck Theory of Deep Learning"
+    authors: "Saxe, Bansal, Dapello, Advani, Kolchinsky, Tracey, Cox"
+    year: 2018
+    url: "https://openreview.net/forum?id=ry_WPG-A-"
+  - title: "Understanding intermediate layers using linear classifier probes"
+    authors: "Alain, Bengio"
+    year: 2016
+    url: "https://arxiv.org/abs/1610.01644"
+  - title: "Toy Models of Superposition"
+    authors: "Elhage et al. (Anthropic)"
+    year: 2022
+    url: "https://transformer-circuits.pub/2022/toy_model/index.html"
+  - title: "Sparse Autoencoders Find Highly Interpretable Features in Language Models"
+    authors: "Cunningham, Ewart, Riggs, Huben, Sharkey"
+    year: 2023
+    url: "https://arxiv.org/abs/2309.08600"
+  - title: "The Platonic Representation Hypothesis"
+    authors: "Huh, Cheung, Wang, Isola"
+    year: 2024
+    url: "https://arxiv.org/abs/2405.07987"
+  - title: "Efficient Estimation of Word Representations in Vector Space (word2vec)"
+    authors: "Mikolov, Chen, Corrado, Dean"
+    year: 2013
+    url: "https://arxiv.org/abs/1301.3781"
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps } from '@astrojs/starlight/components';
 
-<Aside type="caution" title="Not written yet">
-This page is a placeholder so the navigation reflects the intended shape of the
-atlas. Copy `src/content/docs/_template.mdx` to start it, and see
-[How to read a page](/how-to-read/) for the authoring rules.
+<Abstract>
+"The network learns a representation" is the most-used and least-examined phrase
+in machine learning. This page takes it seriously: what is actually being
+claimed, how you would check it, and why the two obvious ways of checking — read
+the neurons, train a linear probe — are both misleading. The honest answer is
+that we can demonstrate representations are useful far more easily than we can
+say what they contain.
+</Abstract>
+
+<KeyPoints>
+
+- **A representation is a re-coordinatisation, not a compression.** The point is not that the vector is smaller; it is that the geometry of the new space aligns with the structure of the problem, so that distance means similarity and simple decision boundaries suffice.
+- **Neurons are the wrong unit of analysis.** Networks represent more features than they have dimensions, by storing them in overlapping non-orthogonal directions. This is *superposition*, and it explains why individual neurons look polysemantic.
+- **Linear probes measure the probe as much as the representation.** High probe accuracy proves information is linearly accessible. Low accuracy proves nothing at all about whether the information is there.
+- **Different models converge on similar representations.** Larger, better models trained on different data and even different modalities appear to align increasingly well — a striking empirical regularity with no settled explanation.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## Coordinates that make the problem easy
+
+Take a map of a city drawn with north up. Now redraw it with the main road as the
+horizontal axis. Nothing about the city changed; every building sits where it did.
+But questions like "is this address on the near side of the road?" went from
+requiring geometry to requiring a glance at one number.
+
+**That is what a representation is.** A re-description of the same data in
+coordinates chosen so that the questions you care about become easy.
+
+Notice what the definition does *not* say. It says nothing about being smaller.
+You can represent something in more dimensions than you started with and it can
+still be a better representation — kernel methods do exactly this. The goal is
+alignment between the geometry and the task, not compression.
+
+## The classic demonstration
+
+Train a model to predict nearby words, and the resulting word vectors have a
+property nobody built in: `king − man + woman` lands near `queen`. Directions in
+the space correspond to *concepts* — one direction is roughly gender, another
+roughly plurality, another roughly tense.
+
+Nothing in the training objective mentioned gender. The structure fell out of the
+requirement to predict context, because words that behave alike in sentences end
+up nearby, and systematic differences between groups of words end up as systematic
+displacements.
+
+<Aside type="caution" title="This example is real and heavily oversold">
+The analogy arithmetic works far less reliably than the famous examples suggest.
+Later analyses showed a large share of the effect depends on excluding the three
+query words from the nearest-neighbour search — without that exclusion the answer
+is often just `king` again. Treat it as an illustration that structure *can*
+emerge, not as evidence about how cleanly it does.
 </Aside>
 
-## Planned coverage
+## Why "what does neuron 4,217 mean?" is the wrong question
 
-- What a learned representation is, versus a hand-designed feature
-- Linear probing and what it does and does not tell you
-- The manifold hypothesis, stated carefully
-- Why representation quality is hard to measure directly
+The tempting picture is one neuron per concept: a cat neuron, a curve neuron, a
+sarcasm neuron. Interpretability work found some of these, which made the picture
+more tempting.
+
+It is mostly wrong, for a reason that is simple once stated. A language model has
+maybe 4,000 dimensions in its residual stream and needs to represent vastly more
+than 4,000 concepts. It cannot give each one a dimension. What it does instead is
+give each concept a *direction*, and pack in far more directions than dimensions
+by allowing them to be slightly non-orthogonal.
+
+This works because the features are **sparse** — of the millions of things a model
+could be tracking, only a handful are present in any given input, so the
+interference between overlapping directions rarely matters.
+
+The cost is that a single neuron participates in many features and looks
+incoherent when you inspect it. **Neurons look polysemantic because they are the
+wrong basis**, not because the model is confused.
+
+<Tier level="mechanics" />
+
+## Three things "representation" can mean
+
+Distinguishing these prevents most of the confused arguments in this area.
+
+| Sense | Claim | How you'd check |
+|---|---|---|
+| **Decodable** | the information is recoverable from the activations | train a probe |
+| **Used** | the model's output actually depends on it | ablate or patch it, watch behaviour |
+| **Structured** | it lives in a geometrically meaningful form (a direction, a subspace) | steer along it, check for linear separability |
+
+These come apart constantly. A model can *decodably* contain the author's
+nationality while never *using* it. A feature can be used without being
+structured as a single direction. Papers frequently establish the first and claim
+the third.
+
+## Probing, and how to read it
+
+Freeze the network, take activations from some layer, train a small classifier for
+some property, report accuracy.
+
+<Steps>
+
+1. **Pick a layer** and extract activations for a labelled dataset.
+2. **Train a probe** — usually linear, sometimes an MLP.
+3. **Report** held-out accuracy against a baseline.
+
+</Steps>
+
+Two asymmetric conclusions, and getting them the wrong way round is the standard
+error:
+
+- **High accuracy ⟹ the information is linearly accessible.** Solid conclusion.
+- **Low accuracy ⟹ ???** Could be that the information is absent. Could be that it
+  is encoded non-linearly. Could be that your probe is under-trained or your
+  dataset is small. **Low probe accuracy is nearly uninformative.**
+
+<Aside type="danger" title="The capacity confound">
+A sufficiently expressive probe can extract almost anything from almost any
+representation — including from random features, which are a surprisingly strong
+baseline. If your probe is an MLP, you may be measuring the probe's ability to
+learn the task rather than the representation's contribution. Always report the
+random-features baseline; a result that doesn't beat it says nothing.
+</Aside>
+
+## Superposition, concretely
+
+The idea in one sentence: **a network with $n$ dimensions can represent $m \gg n$
+features by assigning each a direction and accepting small interference.**
+
+Elhage et al.'s toy models made the conditions precise. Superposition appears when:
+
+- features are **sparse** (rarely co-occur), and
+- the model has **more features to represent than dimensions**, and
+- the loss rewards representing more features imperfectly over fewer perfectly.
+
+Under those conditions the model organises features into geometric arrangements —
+antipodal pairs, triangles, pentagons — that minimise interference for the given
+count. These are visible in the toy models and are not an artefact.
+
+The practical consequence is that recovering interpretable features means finding
+an **overcomplete, sparse basis** rather than reading the neuron basis. That is
+what sparse autoencoders do: train a wide autoencoder with an $\ell_1$ penalty on
+the hidden layer, so it learns many more features than the layer has dimensions,
+each active rarely. The recovered features are far more monosemantic than neurons.
+
+<Figure
+  lead="Why neurons look confused."
+  caption="Left: with more dimensions than features, each feature gets its own axis and each neuron means one thing. Right: with more features than dimensions, features are packed as non-orthogonal directions. Any single axis now intersects several feature directions, so reading that neuron shows a mixture — the feature is not confused, the basis is wrong. Sparse autoencoders work by searching for the right overcomplete basis instead of assuming the neuron basis is it."
+>
+<svg viewBox="0 0 760 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Privileged basis versus superposition">
+  <text class="lb" x="180" y="20" text-anchor="middle">No superposition</text>
+  <text class="xs" x="180" y="36" text-anchor="middle">features ≤ dimensions</text>
+  <line class="bx" x1="60" y1="150" x2="300" y2="150"/>
+  <line class="bx" x1="180" y1="60" x2="180" y2="240"/>
+  <line class="thick" x1="180" y1="150" x2="290" y2="150"/>
+  <line class="thick" x1="180" y1="150" x2="180" y2="70"/>
+  <text class="sm" x="296" y="146">f₁</text>
+  <text class="sm" x="184" y="66">f₂</text>
+  <text class="xs" x="180" y="212" text-anchor="middle">each axis = one feature</text>
+  <text class="xs" x="180" y="228" text-anchor="middle">neuron 1 means exactly f₁</text>
+
+  <line class="bx" x1="380" y1="30" x2="380" y2="245" opacity="0.3"/>
+
+  <text class="lb" x="570" y="20" text-anchor="middle">Superposition</text>
+  <text class="xs" x="570" y="36" text-anchor="middle">features ≫ dimensions, but sparse</text>
+  <line class="bx" x1="450" y1="150" x2="690" y2="150"/>
+  <line class="bx" x1="570" y1="60" x2="570" y2="240"/>
+  <line class="thick" x1="570" y1="150" x2="678" y2="150"/>
+  <line class="thick" x1="570" y1="150" x2="653" y2="80"/>
+  <line class="thick" x1="570" y1="150" x2="570" y2="70"/>
+  <line class="thick" x1="570" y1="150" x2="487" y2="80"/>
+  <line class="thick" x1="570" y1="150" x2="462" y2="150"/>
+  <text class="sm" x="684" y="146">f₁</text>
+  <text class="sm" x="658" y="74">f₂</text>
+  <text class="sm" x="574" y="66">f₃</text>
+  <text class="sm" x="474" y="74">f₄</text>
+  <text class="sm" x="448" y="146">f₅</text>
+  <text class="xs" x="570" y="212" text-anchor="middle">5 features, 2 dimensions</text>
+  <text class="xs" x="570" y="228" text-anchor="middle">the x-axis intersects f₁, f₂, f₄, f₅ — polysemantic</text>
+</svg>
+</Figure>
+
+<Tier level="formal" />
+
+## Definition
+
+A representation is a map $\Phi: \mathcal{X} \to \mathcal{Z}$. It is *good* for a
+task family $\mathcal{G}$ if some simple $g \in \mathcal{G}$ composed with $\Phi$
+achieves low risk:
+
+$$
+R(\Phi;\mathcal{G}) = \min_{g \in \mathcal{G}}\; \mathbb{E}_{(x,y)}\big[\ell\big(g(\Phi(x)), y\big)\big].
+$$
+
+The quantifier structure carries the content. Quality is defined **relative to a
+hypothesis class** $\mathcal{G}$. Take $\mathcal{G}$ to be all measurable
+functions and the identity map is optimal, so the definition becomes vacuous.
+Restrict $\mathcal{G}$ to linear maps and you recover linear probing, with all its
+limitations. **There is no representation quality independent of what you plan to
+do with it**, and this is the formal root of the evaluation problem.
+
+## The information bottleneck, and the argument about it
+
+Tishby's framing: find $Z$ minimising
+
+$$
+\mathcal{L}_{\text{IB}} = I(Z; X) - \beta\, I(Z; Y),
+$$
+
+compressing $X$ while preserving what predicts $Y$. The endpoints are instructive:
+$\beta \to 0$ gives $Z$ constant (all compression), $\beta \to \infty$ gives $Z =
+X$ (no compression).
+
+Tishby & Zaslavsky (2015) proposed that deep networks traverse an *information
+plane* in two phases — a fitting phase where $I(Z;Y)$ rises, then a longer
+compression phase where $I(Z;X)$ falls — and argued the compression phase explains
+generalisation.
+
+**Saxe et al. (2018) contested this substantially**, and the criticism is worth
+knowing because it is a good case study in measurement artefacts:
+
+- The observed compression depended on using saturating nonlinearities.
+  ReLU networks often showed no compression phase while generalising fine.
+- $I(Z;X)$ is *infinite* for deterministic networks with continuous inputs. The
+  measured quantity depended entirely on the binning scheme used to estimate it,
+  and the "compression" partly tracked activations spreading across bins.
+- Compression and generalisation could be decoupled experimentally.
+
+<Aside type="note" title="How to hold the IB">
+As a *framing* — a representation trades off retaining input information against
+retaining task-relevant information — it is genuinely clarifying and organises the
+whole encoder literature. As an *empirical theory of why deep learning
+generalises*, it did not survive scrutiny. Both statements are true at once, and
+papers citing Tishby often blur them.
+</Aside>
+
+## Probing, formally
+
+$$
+\text{acc}_{\mathcal{G}}(\Phi, y) = \max_{g \in \mathcal{G}}\ \mathbb{E}\big[\mathbb{1}\{g(\Phi(x)) = y\}\big].
+$$
+
+Two properties, in tension:
+
+**Monotone in $\mathcal{G}$.** If $\mathcal{G}_1 \subseteq \mathcal{G}_2$ then
+$\text{acc}_{\mathcal{G}_1} \leq \text{acc}_{\mathcal{G}_2}$. Bigger probes always
+score at least as high — so probe accuracy alone cannot be compared across papers
+using different probes.
+
+**Not monotone in information.** $\Phi_1$ can contain strictly more information
+than $\Phi_2$ about $y$ while probing worse, if $\Phi_2$ has it in a linearly
+accessible form. Probing measures *accessibility*, and accessibility is not
+information.
+
+The proposed fixes each have costs. **Control tasks** (Hewitt & Liang) probe for a
+random relabelling and report *selectivity* — the gap between real-task and
+control accuracy — which corrects for probe capacity. **Minimum description
+length** probing scores how *quickly* the probe learns rather than its final
+accuracy, which penalises probes that memorise. Both are better than raw accuracy
+and neither is standard.
+
+## Superposition, formally
+
+Model a layer as recovering $m$ sparse features from $n < m$ dimensions. With
+feature vector $f \in \mathbb{R}^m$ ($k$-sparse) and dictionary $W \in
+\mathbb{R}^{n \times m}$:
+
+$$
+z = W f, \qquad \hat f = \operatorname{ReLU}(W^{\top} z + b).
+$$
+
+Since $m > n$, $W$ has a nontrivial null space and exact recovery is impossible in
+general. But under sparsity, compressed-sensing results say recovery is possible
+when the dictionary has small **coherence**
+
+$$
+\mu(W) = \max_{i \neq j} \frac{|\langle w_i, w_j\rangle|}{\|w_i\|\|w_j\|},
+$$
+
+roughly requiring $k \lesssim 1/\mu$. The optimal geometry therefore minimises
+maximum pairwise coherence — the Welch bound problem — which is why toy models
+settle into regular polytopes.
+
+Interference between features $i$ and $j$ is $\langle w_i, w_j\rangle$. The
+network tolerates it when the features rarely co-occur, so the expected cost
+$\Pr[f_i \neq 0 \wedge f_j \neq 0]\cdot|\langle w_i, w_j\rangle|$ stays small.
+**Sparsity is what buys the capacity**, and the sparser the features, the more can
+be packed.
+
+Sparse autoencoders invert this:
+
+$$
+\min_{W_e, W_d, b}\ \big\|z - W_d\, h\big\|_2^2 + \lambda \|h\|_1, \qquad h = \operatorname{ReLU}(W_e z + b),
+$$
+
+with $\dim(h) \gg \dim(z)$. The $\ell_1$ term enforces sparsity; the
+overcompleteness allows one direction per feature rather than per dimension.
+
+<Tier level="frontier" />
+
+## Where this stands, as of 2026
+
+**Sparse autoencoders are the main interpretability tool and they have known
+problems.** They recover far more monosemantic features than the neuron basis, and
+they also suffer *feature splitting* — increase the dictionary size and one
+feature resolves into several finer ones, with no principled stopping point. The
+number of "true" features is not defined by the method, and reconstruction error
+versus sparsity is a trade-off curve rather than an optimum.
+
+**The linear representation hypothesis holds better than expected but not
+universally.** Many concepts are single directions, and steering along them works.
+But circular and multi-dimensional representations have been found — days of the
+week arranged on a circle, for instance — so "features are directions" is a good
+default rather than a law.
+
+**Representational convergence is a live and surprising result.** Huh et al.'s
+Platonic Representation Hypothesis observes that as models get larger and more
+capable, their representation spaces align increasingly well *across architectures
+and even across modalities*. The proposed explanation — that all are approximating
+the same underlying statistical structure of reality — is speculative. The
+measurements are real and worth watching.
+
+## Open problems
+
+- **No task-agnostic quality measure, and the formalism says there cannot be one.**
+  Quality is defined relative to $\mathcal{G}$. This is not a gap waiting to be
+  filled; it is a property of the definition, and the field mostly proceeds as if
+  it weren't.
+
+- **Feature splitting has no principled resolution.** SAE dictionary size is a
+  free parameter that changes what counts as a feature.
+
+- **Decodable ≠ used.** Probing tells you information is present. Establishing the
+  model *uses* it requires causal intervention, which is more work and much rarer
+  in published results.
+
+- **Cross-model comparison is unsolved.** Two models trained identically from
+  different seeds produce incomparable spaces. Methods exist (CKA, SVCCA,
+  Procrustes) and they disagree with each other, which is not reassuring.
+
+- **We cannot predict what a training setup will represent.** Given an
+  architecture, data, and objective, nothing forecasts which features emerge. Every
+  finding here is post-hoc.
+
+## What to read next, in order
+
+1. **Elhage et al. (2022), Toy Models of Superposition** — the most important
+   conceptual contribution here in a decade. Read the whole thing; it is
+   well-written and the interactive figures carry the argument.
+2. **Alain & Bengio (2016)** — short, and it inoculates you against over-reading
+   probes.
+3. **Saxe et al. (2018)** — read alongside Tishby & Zaslavsky, in that order. A
+   model example of how a compelling theory meets careful measurement.
+4. **Huh et al. (2024), Platonic Representation Hypothesis** — for the convergence
+   result, held at appropriate arm's length.
+
+<Papers papers={frontmatter.papers} />

@@ -1,25 +1,435 @@
 ---
 title: Planning and MPC
-description: "Model-predictive control, the cross-entropy method, MPPI, and why receding-horizon control tolerates bad models."
+description: "Model-predictive control, the cross-entropy method, MPPI, and why receding-horizon planning tolerates models that are badly wrong."
 sidebar:
   order: 2
-  badge:
-    text: Planned
-    variant: caution
-depth: intuition
+depth: frontier
+readingTime: 35
+prereqs:
+  - label: "World Models"
+    slug: "world-models"
+papers:
+  - title: "Model Predictive Path Integral Control using Covariance Variable Importance Sampling (MPPI)"
+    authors: "Williams, Aldrich, Theodorou"
+    year: 2015
+    url: "https://arxiv.org/abs/1509.01149"
+  - title: "Sample-efficient Cross-Entropy Method for Real-time Planning (iCEM)"
+    authors: "Pinneri, Sawant, Blaes, Achterhold, Stückler, Rolínek, Martius"
+    year: 2020
+    url: "https://arxiv.org/abs/2008.06389"
+  - title: "Learning Latent Dynamics for Planning from Pixels (PlaNet)"
+    authors: "Hafner, Lillicrap, Fischer, Villegas, Ha, Lee, Davidson"
+    year: 2019
+    url: "https://arxiv.org/abs/1811.04551"
+  - title: "Temporal Difference Learning for Model Predictive Control (TD-MPC)"
+    authors: "Hansen, Wang, Su"
+    year: 2022
+    url: "https://arxiv.org/abs/2203.04955"
+  - title: "TD-MPC2: Scalable, Robust World Models for Continuous Control"
+    authors: "Hansen, Su, Wang"
+    year: 2023
+    url: "https://arxiv.org/abs/2310.16828"
+  - title: "Mastering Atari, Go, Chess and Shogi by Planning with a Learned Model (MuZero)"
+    authors: "Julian Schrittwieser et al."
+    year: 2020
+    url: "https://arxiv.org/abs/1911.08265"
+  - title: "DINO-WM: World Models on Pre-trained Visual Features enable Zero-shot Planning"
+    authors: "Zhou, Pan, LeCun, Pinto"
+    year: 2024
+    url: "https://arxiv.org/abs/2411.04983"
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps } from '@astrojs/starlight/components';
 
-<Aside type="caution" title="Not written yet">
-This page is a placeholder so the navigation reflects the intended shape of the
-atlas. Copy `src/content/docs/_template.mdx` to start it, and see
-[How to read a page](/how-to-read/) for the authoring rules.
+<Abstract>
+Model-predictive control is the trick that makes planning with a learned,
+imperfect model work at all: search over imagined action sequences, execute only
+the first action, then throw the rest away and re-plan from what actually
+happened. Discarding 95% of your own computation sounds wasteful. It is the
+single feature that keeps compounding model error from destroying you.
+</Abstract>
+
+<KeyPoints>
+
+- **Executing one step of a long plan is the whole method.** The receding horizon means model error only gets one timestep to hurt you before reality corrects the state. Open-loop execution of the same plan fails catastrophically with the same model.
+- **Sampling doesn't defeat the exponential, it just makes it tolerable.** The plan space is $A^H$. CEM and MPPI find good regions cheaply when the objective is smooth in action space, and both degrade sharply when it isn't.
+- **The planner will find your model's bugs.** Optimising against a learned model means actively searching for inputs where it is wrong. This is *model exploitation*, and it is the reason a better model can produce a worse planner.
+- **Planning-time compute is a design axis, not an implementation detail.** How much you spend at decision time trades against model quality, horizon, and success rate. Modern papers report it as a first-class number, and older ones mostly didn't.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## Driving in fog
+
+You are driving in fog with about fifty metres of visibility. You plan a route as
+far as you can see — that gap, then the bend, then probably a straight. Then you
+drive *five* metres, look again, and re-plan.
+
+Why not drive the whole fifty? Because your view was blurry at the far end, and
+after five metres you can see better. The plan was never meant to be executed; it
+was a way of deciding what to do *right now*.
+
+**That is model-predictive control.** Plan far, act barely, re-plan constantly.
+The far-out part of the plan is not a commitment — it is context that makes the
+immediate decision sensible.
+
+## Why this rescues bad models
+
+A learned world model is wrong, and its wrongness compounds: each prediction feeds
+the next, so errors multiply. Twenty steps into an imagined rollout you may be
+somewhere entirely fictional.
+
+If you executed all twenty steps of a plan built on that rollout, you would be
+acting on fiction by the end. But you execute *one* step, then observe where you
+actually are and re-plan from there. The model's error gets one timestep to hurt
+you, and then reality resets the accumulated drift to zero.
+
+<Aside type="tip" title="The thing to actually remember">
+MPC does not make the model accurate. It makes accuracy matter less, by never
+letting error accumulate for more than one step. This is why a model good enough
+for one-step prediction can support long-horizon behaviour it could never
+*predict*.
 </Aside>
 
-## Planned coverage
+## How you search
 
-- Open-loop versus receding-horizon planning
-- CEM and MPPI, side by side
-- Planning-time compute as a design axis
-- Model exploitation and how planners get fooled
+You cannot check every plan. With ten plausible actions per step and a
+twenty-step horizon, that is $10^{20}$ sequences.
+
+So you sample. Guess a few hundred plans at random, score them in imagination,
+keep the best ones, and guess again *near those*. Repeat a handful of times. It is
+a hill-climb over plans, and it works well when good plans have good neighbours —
+which is usually but not always true.
+
+<Tier level="mechanics" />
+
+## The MPC loop
+
+<Figure
+  lead="Plan far, act once, repeat."
+  caption="Everything inside the dashed box happens in imagination — no actuator moves. Hundreds of candidate sequences are rolled out through the model, scored, and refined over a few iterations. Then only the first action of the winner is executed. On the next timestep the entire process runs again from the newly observed state, and the previous plan's tail is discarded. The shifted winner is usually reused as the initialisation, which is what makes re-planning cheap."
+>
+<svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The model predictive control loop">
+  <defs>
+    <marker id="mp1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <rect class="f-grey" x="16" y="120" width="82" height="50" rx="5"/>
+  <text class="on-fill-sm" x="57" y="140" text-anchor="middle">observe</text>
+  <text class="on-fill-sm" x="57" y="156" text-anchor="middle">state z_t</text>
+
+  <path class="ar" d="M102,145 L142,145" marker-end="url(#mp1)"/>
+
+  <rect class="bx" x="148" y="34" width="380" height="222" rx="8" stroke-dasharray="6 5" opacity="0.55"/>
+  <text class="xs" x="338" y="52" text-anchor="middle">— all of this happens in imagination —</text>
+
+  <rect class="f-blue" x="164" y="66" width="96" height="46" rx="5"/>
+  <text class="on-fill-sm" x="212" y="86" text-anchor="middle">1. sample</text>
+  <text class="xs" x="212" y="102" text-anchor="middle">N candidate plans</text>
+
+  <path class="ar" d="M264,89 L300,89" marker-end="url(#mp1)"/>
+
+  <rect class="f-purple" x="306" y="66" width="96" height="46" rx="5"/>
+  <text class="on-fill-sm" x="354" y="86" text-anchor="middle">2. roll out</text>
+  <text class="xs" x="354" y="102" text-anchor="middle">through model</text>
+
+  <path class="ar" d="M406,89 L442,89" marker-end="url(#mp1)"/>
+
+  <rect class="f-amber" x="448" y="66" width="66" height="46" rx="5"/>
+  <text class="on-fill-sm" x="481" y="86" text-anchor="middle">3. score</text>
+  <text class="xs" x="481" y="102" text-anchor="middle">vs goal</text>
+
+  <path class="ar" d="M481,116 L481,148 L354,148" marker-end="url(#mp1)"/>
+
+  <rect class="f-green" x="248" y="126" width="102" height="46" rx="5"/>
+  <text class="on-fill-sm" x="299" y="146" text-anchor="middle">4. refit</text>
+  <text class="xs" x="299" y="162" text-anchor="middle">to elite set</text>
+
+  <path class="ar" d="M244,149 L216,149 L212,120" marker-end="url(#mp1)"/>
+  <text class="xs" x="196" y="186">repeat ~4–10 iterations</text>
+
+  <path class="ar" d="M299,176 L299,214" marker-end="url(#mp1)"/>
+  <rect class="f-pink" x="216" y="216" width="166" height="34" rx="5"/>
+  <text class="on-fill-sm" x="299" y="238" text-anchor="middle">best plan a₁ … a_H</text>
+
+  <path class="ar" d="M386,233 L560,233 L560,172" marker-end="url(#mp1)"/>
+
+  <rect class="f-grey" x="540" y="120" width="120" height="50" rx="5"/>
+  <text class="on-fill-sm" x="600" y="140" text-anchor="middle">execute a₁ ONLY</text>
+  <text class="xs" x="600" y="157" text-anchor="middle">discard a₂ … a_H</text>
+
+  <path class="ar" d="M600,116 C600,50 57,50 57,116" marker-end="url(#mp1)"/>
+  <text class="xs" x="330" y="24" text-anchor="middle">then re-plan from the newly observed state</text>
+</svg>
+</Figure>
+
+## Cross-Entropy Method
+
+The workhorse. It is a distribution-fitting loop, not a gradient method.
+
+<Steps>
+
+1. **Initialise** a Gaussian over action sequences: mean $\mu \in \mathbb{R}^{H
+   \times |A|}$, diagonal std $\sigma$. On re-planning, shift last step's solution
+   forward by one and reuse it — this warm start is most of why MPC is affordable.
+
+2. **Sample** $N$ sequences from $\mathcal{N}(\mu, \sigma^2)$, clipped to the
+   action bounds. Typically $N = 100$–$1000$.
+
+3. **Evaluate** each by rolling it through the model and scoring the terminal
+   state against the goal. This is one batched forward pass, not $N$ passes.
+
+4. **Select** the top $K$ — the *elites*. Usually $K/N \approx 0.1$.
+
+5. **Refit** $\mu, \sigma$ to the elites, usually with momentum:
+   $\mu \leftarrow \alpha\mu_{\text{elite}} + (1-\alpha)\mu$.
+
+6. **Repeat** 4–10 times, then return $\mu$.
+
+</Steps>
+
+**Why it works.** Each iteration moves the sampling distribution toward the good
+region and shrinks it. It is derivative-free, so it tolerates non-differentiable
+models, discontinuous costs, and contact dynamics — which is exactly the regime
+where gradient-based trajectory optimisation struggles.
+
+**Where it fails.** A diagonal Gaussian cannot represent "go left *or* right, but
+not straight". Faced with a bimodal optimum it fits a mean between the two modes
+and produces a plan that is worse than either. This is the characteristic CEM
+failure and it shows up whenever there is an obstacle to go around.
+
+## MPPI
+
+Same loop, different update. Instead of a hard top-$K$ cut, MPPI weights *every*
+sample by the exponential of its (negative) cost:
+
+$$
+w_i = \frac{\exp\!\big(-\tfrac{1}{\lambda}\,S_i\big)}{\sum_j \exp\!\big(-\tfrac{1}{\lambda}\,S_j\big)}, \qquad \mu \leftarrow \sum_i w_i\, a^{(i)} .
+$$
+
+The soft weighting uses information from every rollout rather than discarding 90%
+of them, and the temperature $\lambda$ interpolates continuously between "average
+everything" and "take the argmax". MPPI has a derivation from stochastic optimal
+control via the path-integral formulation, which CEM does not, and it is the
+standard choice in real-time robotics.
+
+## iCEM: the practical fixes
+
+Pinneri et al. identified why vanilla CEM is sample-inefficient in real-time
+settings and fixed it with a handful of changes that are now standard:
+
+- **Coloured noise.** Sample temporally correlated (pink) noise instead of white.
+  White noise produces jittery action sequences that mostly cancel out; correlated
+  noise produces smooth, physically plausible motions and explores far more
+  effectively per sample.
+- **Elite memory.** Carry elites across re-planning steps rather than discarding.
+- **Decaying sample count.** Spend more samples on early iterations, fewer later.
+- **Clipping at the action bounds** rather than resampling.
+
+The coloured-noise point is the one worth internalising: **the sampling
+distribution should match the smoothness of plausible action sequences**, and for
+physical systems that is not white.
+
+<Tier level="formal" />
+
+## The problem
+
+Given a learned dynamics model $f_\phi$, a state $z_t$, and a cost $c$:
+
+$$
+a_{t:t+H}^{\star} = \arg\min_{a_{t:t+H}} \; \sum_{k=0}^{H-1} \gamma^k\, c\big(\hat z_{t+k},\, a_{t+k}\big) \;+\; \gamma^H\, c_{\text{term}}\big(\hat z_{t+H}\big),
+$$
+
+$$
+\text{subject to } \hat z_{t+k+1} = f_\phi(\hat z_{t+k}, a_{t+k}), \quad \hat z_t = z_t .
+$$
+
+In goal-conditioned world-model settings there is often no reward at all and the
+terminal cost is a distance in latent space:
+
+$$
+c_{\text{term}}(\hat z_{t+H}) = d\big(\hat z_{t+H},\, z_g\big), \qquad z_g = E_\theta(o_g).
+$$
+
+Execute $a_t^\star$, observe $o_{t+1}$, set $z_{t+1} = E_\theta(o_{t+1})$, repeat.
+Note what is *absent*: no reward function, no policy, no task-specific training.
+Changing the task means changing $o_g$.
+
+## Why the receding horizon works
+
+Let $\epsilon$ bound the one-step model error and let $f_\phi$ be $L$-Lipschitz in
+its state argument. After $k$ imagined steps:
+
+$$
+\|\hat z_{t+k} - z_{t+k}\| \;\leq\; \epsilon \sum_{i=0}^{k-1} L^{i} \;=\; \epsilon\,\frac{L^{k}-1}{L-1}, \qquad L \neq 1 .
+$$
+
+For $L > 1$ this grows geometrically. Now compare two execution strategies:
+
+**Open loop** — execute all $H$ actions. The state error at execution time reaches
+the bound at $k = H$, i.e. $O(\epsilon L^{H})$.
+
+**Receding horizon** — execute one action, then re-observe. The state error at
+execution is the $k=1$ bound, $O(\epsilon)$, every single step. The plan's tail
+was computed on drifting predictions, but the tail is never executed; it only
+influenced which first action looked best.
+
+**The gap between $O(\epsilon L^H)$ and $O(\epsilon)$ is the entire value of MPC**,
+and it is exponential in the horizon.
+
+<Aside type="caution" title="What re-planning does not fix">
+It bounds *execution* error, not *decision* error. If the model is badly wrong ten
+steps out, the ranking of first actions can still be wrong — you will confidently
+take a bad first step. Re-planning stops you compounding it, but a systematically
+biased model produces systematically bad decisions no amount of re-planning
+repairs.
+</Aside>
+
+## CEM, formally
+
+$$
+\mu^{(m+1)},\, \sigma^{(m+1)} \;=\; \text{MLE}\Big(\big\{a^{(i)} : i \in \mathcal{E}^{(m)}\big\}\Big),
+$$
+
+$$
+\mathcal{E}^{(m)} = \operatorname{top-}K\Big(\big\{-S(a^{(i)})\big\}_{i=1}^{N}\Big), \qquad a^{(i)} \sim \mathcal{N}\big(\mu^{(m)}, \operatorname{diag}(\sigma^{(m)})^2\big).
+$$
+
+CEM is derived as minimising the KL divergence between the sampling distribution
+and the optimal importance-sampling distribution $q^\star \propto
+\mathbb{1}\{S(a) \leq \gamma\}\,p(a)$ — hence "cross-entropy". For a Gaussian
+family the KL minimiser is just the MLE on the elites, which is why the update is
+so simple.
+
+**The diagonal covariance is the load-bearing approximation.** It cannot represent
+correlations between action dimensions or across time, and cannot represent
+multimodality at all. iCEM's coloured noise is a partial fix for the temporal part;
+nothing in standard CEM addresses multimodality.
+
+## MPPI, formally
+
+MPPI derives from the stochastic Hamilton–Jacobi–Bellman equation. Under a
+control-affine system with the noise entering through the control channel, the
+optimal control admits a path-integral form, and the free-energy relation gives
+the update
+
+$$
+u^{\star}_k \;=\; u_k + \frac{\sum_{i=1}^{N} \exp\!\big(-\tfrac{1}{\lambda} S(\tau^{(i)})\big)\,\delta u^{(i)}_k}{\sum_{i=1}^{N} \exp\!\big(-\tfrac{1}{\lambda} S(\tau^{(i)})\big)},
+$$
+
+with $\delta u^{(i)}$ the injected noise on rollout $i$ and $S(\tau)$ the
+trajectory cost.
+
+Two readings of $\lambda$:
+
+- $\lambda \to 0$: weights concentrate on the single best rollout. High variance,
+  effectively random-shooting.
+- $\lambda \to \infty$: uniform weights. The update is the mean of the noise, which
+  is zero — no learning.
+
+The derivation requires assumptions (control-affine dynamics, noise in the control
+channel) that learned latent world models generally violate. MPPI is nonetheless
+used in that setting and works; it is being applied outside its proof's
+hypotheses, which is worth knowing when it behaves oddly.
+
+## Model exploitation
+
+The failure mode that makes planning against learned models genuinely hard.
+Writing $f^\star$ for true dynamics:
+
+$$
+a^{\star} = \arg\min_a \; J_{f_\phi}(a) \quad\text{but we want}\quad \arg\min_a \; J_{f^\star}(a).
+$$
+
+The optimiser is free to find $a$ where $J_{f_\phi}(a) \ll J_{f^\star}(a)$ — that
+is, regions where the model is *optimistically wrong*. And it is actively
+searching for them, because low predicted cost is exactly what it selects for.
+
+This produces a counterintuitive effect: **a model with lower average error can
+produce a worse planner**, if its errors are concentrated in the region the
+optimiser reaches. Average predictive accuracy is the wrong metric; what matters
+is accuracy *on the distribution the planner induces*, which depends on the
+planner.
+
+The principled fix is uncertainty-aware planning — penalise trajectories the model
+is unsure about:
+
+$$
+\tilde{J}(a) = J_{f_\phi}(a) + \beta\, \mathcal{U}(a),
+$$
+
+with $\mathcal{U}$ an epistemic uncertainty estimate, usually from an ensemble.
+This works, and almost no deployed latent world model does it, because calibrated
+uncertainty in a learned latent space is itself unsolved.
+
+<Tier level="frontier" />
+
+## Where this stands, as of 2026
+
+**Planning compute is now reported as a headline number.** Older papers reported
+success rate; current ones report success rate *versus* planning time, because the
+trade-off is steep and practitioners need it. Hierarchical planners matching flat
+planners at roughly 3× lower cost is the kind of result that only becomes
+legible once compute is on the axis.
+
+**Learned value functions have largely replaced long rollouts.** TD-MPC and TD-MPC2
+plan over a short horizon and bootstrap with a learned terminal value, which
+sidesteps compounding error by simply not rolling out far. TD-MPC2 scales this to
+a single agent across many tasks and embodiments — currently among the strongest
+results in model-based continuous control.
+
+**Planning on frozen pretrained features works.** DINO-WM (Zhou et al., 2024)
+builds a world model on top of *frozen* DINOv2 features rather than training the
+encoder jointly, and achieves zero-shot planning to image goals. This is
+significant because it decouples representation learning from dynamics learning —
+you can improve either independently.
+
+**Flat planning fails on multi-stage tasks, and the failure is total.** The result
+from the hierarchical planning literature is stark: a single-level planner scores
+0% on end-to-end pick-and-place from one goal image, versus 70% for the
+hierarchical version. Not a tuning gap — a structural inability.
+
+## Open problems
+
+- **Uncertainty is essentially unmodelled in deployed systems.** Without it,
+  planners cannot distinguish a genuinely good plan from an exploit of a model
+  error. This is, in my reading, the largest gap between current systems and
+  reliable ones.
+
+- **CEM's unimodality is unaddressed.** Real tasks have multimodal solutions —
+  around the left or the right of an obstacle — and the standard sampler is
+  structurally unable to represent them.
+
+- **The horizon is a hyperparameter and a sensitive one.** Too short and the
+  planner is myopic; too long and error dominates. Nothing sets it adaptively from
+  model confidence, which is the obviously right thing to do.
+
+- **The learned-cost problem.** In goal-conditioned latent planning, "distance in
+  embedding space" is a proxy for "progress toward the goal", and it is not a
+  metric on task progress. Two states equidistant from the goal in latent space
+  may be very differently far in reality.
+
+- **Real-time guarantees are absent.** MPC in classical control comes with
+  stability and feasibility guarantees. Sampling-based planning against a learned
+  latent model has none, which is a real barrier to deployment anywhere safety
+  matters.
+
+## What to read next, in order
+
+1. **Pinneri et al. (2020), iCEM** — the most practically useful paper here. The
+   coloured-noise ablation is the part to read.
+2. **Williams et al. (2015), MPPI** — for the path-integral derivation, so you know
+   what assumptions you are violating.
+3. **Hansen et al. (2023), TD-MPC2** — the current state of the art in model-based
+   continuous control, and a clean statement of the short-horizon-plus-value idea.
+4. **Zhou et al. (2024), DINO-WM** — for the frozen-features argument.
+
+<Papers papers={frontmatter.papers} />

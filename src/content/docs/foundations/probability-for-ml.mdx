@@ -1,25 +1,348 @@
 ---
 title: Probability for ML
-description: "The specific slice of probability theory that ML papers actually assume you know."
+description: "The specific slice of probability that ML papers assume you know: expectations, KL, the reparameterisation trick, and variational bounds from first principles."
 sidebar:
   order: 2
-  badge:
-    text: Planned
-    variant: caution
-depth: intuition
+depth: formal
+readingTime: 30
+papers:
+  - title: "Auto-Encoding Variational Bayes"
+    authors: "Diederik P. Kingma, Max Welling"
+    year: 2013
+    url: "https://arxiv.org/abs/1312.6114"
+  - title: "Representation Learning with Contrastive Predictive Coding (CPC)"
+    authors: "van den Oord, Li, Vinyals"
+    year: 2018
+    url: "https://arxiv.org/abs/1807.03748"
+  - title: "The Information Bottleneck Method"
+    authors: "Tishby, Pereira, Bialek"
+    year: 2000
+    url: "https://arxiv.org/abs/physics/0004057"
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps } from '@astrojs/starlight/components';
 
-<Aside type="caution" title="Not written yet">
-This page is a placeholder so the navigation reflects the intended shape of the
-atlas. Copy `src/content/docs/_template.mdx` to start it, and see
-[How to read a page](/how-to-read/) for the authoring rules.
+<Abstract>
+ML papers assume a narrow, specific slice of probability theory — not a course,
+about six ideas. This page covers exactly those: why almost every objective is an
+expectation, what KL divergence measures and why its asymmetry is a design
+choice, how to differentiate through a sampling step, and how variational bounds
+turn intractable quantities into optimisable ones. If you can read an ELBO
+derivation comfortably, skip this page.
+</Abstract>
+
+<KeyPoints>
+
+- **Nearly every ML objective is an expectation you cannot compute.** You have samples, not distributions, so every loss you actually optimise is a Monte Carlo estimate — and the *variance* of that estimate often matters more than its form.
+- **KL divergence is not a distance, and its asymmetry is load-bearing.** Forward KL makes your approximation cover everything; reverse KL makes it commit to one mode. Which one you use determines whether your model blurs or hallucinates.
+- **The reparameterisation trick is the reason VAEs are trainable.** Not the ELBO — the ELBO was known. Moving randomness onto a parameter-free variable cuts gradient variance by orders of magnitude.
+- **A variational bound converts "I can't compute this" into "I can optimise a lower bound".** The gap is itself a KL divergence, which tells you exactly when the bound is tight.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## Everything is an average you can't take
+
+Almost every loss in machine learning has this shape:
+
+$$
+\mathcal{L}(\theta) = \mathbb{E}_{x \sim p_{\text{data}}}\big[\ell(x; \theta)\big].
+$$
+
+"The average loss over all possible data." You cannot compute it — you do not have
+all possible data, and you do not know $p_{\text{data}}$. You have a finite
+sample, so you compute
+
+$$
+\hat{\mathcal{L}}(\theta) = \frac{1}{N}\sum_{i=1}^{N} \ell(x_i; \theta),
+$$
+
+and hope it is close. That hope is what statistical learning theory formalises,
+and it is the reason minibatch sizes, variance, and estimator design keep coming
+up.
+
+## Comparing two distributions
+
+You have a true distribution and an approximation. How wrong is the
+approximation?
+
+The standard answer is **KL divergence**: on average, how surprised are you when
+you predict with $q$ and reality follows $p$? It is zero when they match and grows
+as they diverge.
+
+It is **not symmetric**: $\mathrm{KL}(p\|q) \neq \mathrm{KL}(q\|p)$. That looks
+like a defect and is actually the most useful thing about it, because the two
+directions produce visibly different failure modes.
+
+<Figure
+  lead="The two KL directions fail differently."
+  caption="Fitting a single Gaussian to a two-humped distribution. Forward KL is heavily penalised wherever p has mass and q does not, so it spreads out to cover both humps — putting mass in the valley where there is none. Reverse KL is penalised wherever q has mass and p does not, so it picks one hump and ignores the other. Neither is 'right'; the question is whether covering everything badly or covering part of it well is worse for your application."
+>
+<svg viewBox="0 0 760 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Forward versus reverse KL divergence fitting a bimodal distribution">
+  <text class="lb" x="190" y="20" text-anchor="middle">Forward KL(p‖q) — mass-covering</text>
+  <line class="bx" x1="40" y1="190" x2="350" y2="190"/>
+  <path class="thick" d="M55,190 C90,190 100,90 130,90 C160,90 168,190 195,190 C222,190 230,90 260,90 C290,90 300,190 335,190" opacity="0.85"/>
+  <path class="f-blue" d="M55,190 C110,190 120,112 195,112 C270,112 280,190 335,190 Z" opacity="0.55"/>
+  <text class="sm" x="130" y="80">p</text>
+  <text class="sm" x="195" y="132">q</text>
+  <text class="xs" x="195" y="212" text-anchor="middle">q spreads to cover both modes —</text>
+  <text class="xs" x="195" y="228" text-anchor="middle">puts mass in the empty valley. This is blur.</text>
+
+  <line class="bx" x1="400" y1="24" x2="400" y2="235" opacity="0.3"/>
+
+  <text class="lb" x="570" y="20" text-anchor="middle">Reverse KL(q‖p) — mode-seeking</text>
+  <line class="bx" x1="420" y1="190" x2="730" y2="190"/>
+  <path class="thick" d="M435,190 C470,190 480,90 510,90 C540,90 548,190 575,190 C602,190 610,90 640,90 C670,90 680,190 715,190" opacity="0.85"/>
+  <path class="f-purple" d="M470,190 C495,190 498,96 510,96 C522,96 525,190 550,190 Z" opacity="0.7"/>
+  <text class="sm" x="510" y="80">p</text>
+  <text class="sm" x="536" y="140">q</text>
+  <text class="xs" x="570" y="212" text-anchor="middle">q commits to one mode and ignores the</text>
+  <text class="xs" x="570" y="228" text-anchor="middle">other entirely. This is mode collapse.</text>
+</svg>
+</Figure>
+
+<Aside type="tip" title="How to remember which is which">
+Look at where the expectation is taken. $\mathrm{KL}(p\|q) = \mathbb{E}_p[\log
+p/q]$ averages under $p$, so it is punished wherever $p$ has mass and $q$ doesn't
+— $q$ must cover $p$. $\mathrm{KL}(q\|p)$ averages under $q$, so it is punished
+wherever $q$ has mass and $p$ doesn't — $q$ must stay inside $p$. **The
+distribution in the first slot is the one you must not miss.**
 </Aside>
 
-## Planned coverage
+## Differentiating through randomness
 
-- Expectations, and why almost every ML objective is one
-- KL divergence: what it measures and why it is asymmetric
-- The reparameterisation trick
-- Variational bounds, from first principles
+Here is a problem that stops the obvious approach dead.
+
+You want to train a network that *samples* — output a distribution, draw from it,
+do something with the sample. To train it you need the gradient of the loss with
+respect to the distribution's parameters. But "draw a random number" has no
+derivative. The chain rule hits the sampling step and stops.
+
+The fix is a change of variable. Instead of *"sample $z$ from a Gaussian with mean
+$\mu$ and std $\sigma$"*, write *"sample $\epsilon$ from a standard normal, then
+compute $z = \mu + \sigma\epsilon$"*.
+
+Same distribution. But now the randomness sits in $\epsilon$, which has no
+parameters, and $z$ is an ordinary differentiable function of $\mu$ and $\sigma$.
+Gradients flow straight through.
+
+That is the **reparameterisation trick**, and it is the technical reason VAEs
+work.
+
+<Tier level="formal" />
+
+## Expectation and the two estimators
+
+$$
+\mathbb{E}_{x\sim p}[f(x)] = \int f(x)\,p(x)\,dx \;\approx\; \frac{1}{N}\sum_{i=1}^{N} f(x_i), \quad x_i \sim p .
+$$
+
+Unbiased, with variance $\operatorname{Var}[f]/N$. The $1/\sqrt{N}$ convergence is
+why enormous batches give diminishing returns.
+
+When you need $\nabla_\theta \mathbb{E}_{p_\theta}[f(x)]$ — the parameters are in
+the *distribution*, not the function — there are exactly two standard routes.
+
+**Score function (REINFORCE).** Using $\nabla_\theta p_\theta = p_\theta
+\nabla_\theta \log p_\theta$:
+
+$$
+\nabla_\theta \mathbb{E}_{p_\theta}[f(x)] = \mathbb{E}_{p_\theta}\big[f(x)\,\nabla_\theta \log p_\theta(x)\big].
+$$
+
+Works for any $p_\theta$ you can sample and score, including discrete ones. Its
+variance is high, because $f(x)$ multiplies the score without any information
+about how $f$ changes — which is why practical RL spends so much effort on
+baselines and control variates.
+
+**Pathwise (reparameterisation).** If $x = g_\theta(\epsilon)$ with $\epsilon \sim
+p(\epsilon)$ parameter-free:
+
+$$
+\nabla_\theta \mathbb{E}_{p_\theta}[f(x)] = \mathbb{E}_{p(\epsilon)}\big[\nabla_\theta f\big(g_\theta(\epsilon)\big)\big] = \mathbb{E}_{p(\epsilon)}\big[f'\!\big(g_\theta(\epsilon)\big)\,\nabla_\theta g_\theta(\epsilon)\big].
+$$
+
+Much lower variance, because the gradient of $f$ carries local information about
+the direction of improvement. Requires $x$ to be a differentiable function of
+$\theta$ — so it does not apply to discrete variables without a relaxation like
+Gumbel-Softmax.
+
+<Aside type="note" title="This is the real content of the reparameterisation trick">
+Both estimators are unbiased. The trick is not about correctness — it is about
+*variance*. In practice the pathwise estimator has variance orders of magnitude
+lower, and that gap is the difference between a VAE that trains and one that
+doesn't.
+</Aside>
+
+## KL divergence
+
+$$
+\mathrm{KL}(p \,\|\, q) = \mathbb{E}_{x \sim p}\!\left[\log \frac{p(x)}{q(x)}\right] = \int p(x)\log\frac{p(x)}{q(x)}\,dx .
+$$
+
+Properties worth having memorised:
+
+- $\mathrm{KL}(p\|q) \geq 0$, with equality iff $p = q$ almost everywhere. (Jensen
+  applied to $-\log$, which is convex.)
+- Not symmetric, and does not satisfy the triangle inequality — it is a
+  divergence, not a metric.
+- $\mathrm{KL}(p\|q) = \infty$ if $q(x) = 0$ where $p(x) > 0$. Absolute continuity
+  is required, and violating it is a common source of `NaN`.
+
+**Closed form for diagonal Gaussians against a standard normal** — the one you
+will actually type:
+
+$$
+\mathrm{KL}\big(\mathcal{N}(\mu, \operatorname{diag}(\sigma^2)) \,\|\, \mathcal{N}(0, I)\big) = -\tfrac{1}{2}\sum_{j=1}^{k}\Big(1 + \log\sigma_j^2 - \mu_j^2 - \sigma_j^2\Big).
+$$
+
+Note it is zero exactly when $\mu = 0, \sigma = 1$ — which is why an encoder that
+ignores its input scores perfectly on this term. That is posterior collapse, read
+straight off the formula.
+
+**Relation to cross-entropy.** $H(p, q) = H(p) + \mathrm{KL}(p\|q)$. Since $H(p)$
+does not depend on your parameters, minimising cross-entropy *is* minimising
+forward KL. Every classifier you have trained was doing variational inference in
+this sense.
+
+## Jensen's inequality and where bounds come from
+
+For convex $\varphi$: $\varphi(\mathbb{E}[X]) \leq \mathbb{E}[\varphi(X)]$; the
+inequality reverses for concave $\varphi$. Since $\log$ is concave:
+
+$$
+\log \mathbb{E}[X] \;\geq\; \mathbb{E}[\log X].
+$$
+
+**This single line generates most variational bounds in ML.** Whenever you see a
+log of an expectation you cannot compute, pushing the log inside gives a
+tractable lower bound.
+
+## Deriving the ELBO
+
+The canonical application. You want $\log p_\psi(x)$ but it requires marginalising
+a latent:
+
+$$
+\log p_\psi(x) = \log \int p_\psi(x \mid z)\, p(z)\, dz .
+$$
+
+Introduce any distribution $q_\theta(z \mid x)$ with matching support, multiply and
+divide:
+
+$$
+= \log\, \mathbb{E}_{q_\theta(z\mid x)}\!\left[\frac{p_\psi(x \mid z)\,p(z)}{q_\theta(z\mid x)}\right]
+\;\overset{\text{Jensen}}{\geq}\; \mathbb{E}_{q_\theta(z\mid x)}\!\left[\log \frac{p_\psi(x\mid z)\,p(z)}{q_\theta(z\mid x)}\right],
+$$
+
+$$
+\mathcal{L}_{\text{ELBO}} = \underbrace{\mathbb{E}_{q_\theta}\big[\log p_\psi(x\mid z)\big]}_{\text{reconstruction}} \;-\; \underbrace{\mathrm{KL}\big(q_\theta(z\mid x)\,\|\,p(z)\big)}_{\text{regularisation}}.
+$$
+
+**How tight is it?** Exactly:
+
+$$
+\log p_\psi(x) - \mathcal{L}_{\text{ELBO}} = \mathrm{KL}\big(q_\theta(z\mid x)\,\|\,p_\psi(z\mid x)\big).
+$$
+
+The gap is the KL between your approximate posterior and the true one. So the
+bound is tight precisely when your encoder recovers the true posterior — which
+tells you *why* a more expressive encoder helps, and gives you a target to
+improve.
+
+<Steps>
+
+1. Write the intractable quantity as a log of an expectation.
+2. Introduce a tractable $q$ by multiplying and dividing.
+3. Apply Jensen to push the log inside.
+4. Identify the gap as a KL, so you know when the bound is tight.
+
+</Steps>
+
+This recipe recurs: it produces the ELBO, the InfoNCE bound, and the information
+bottleneck's variational form.
+
+## Mutual information
+
+$$
+I(X;Y) = \mathrm{KL}\big(p(x,y)\,\|\,p(x)p(y)\big) = \mathbb{E}_{p(x,y)}\!\left[\log\frac{p(x,y)}{p(x)p(y)}\right] = H(X) - H(X\mid Y).
+$$
+
+Symmetric, non-negative, zero iff independent. And **hard to estimate** —
+notoriously so in high dimensions, which is why the contrastive literature uses
+bounds rather than estimates.
+
+The InfoNCE bound, from the same recipe:
+
+$$
+I(X;Y) \;\geq\; \log N - \mathcal{L}_{\text{InfoNCE}} .
+$$
+
+Note the $\log N$ ceiling: with $N = 8192$, the bound cannot exceed about 9 nats
+regardless of the true mutual information. **The bound is loose at any realistic
+batch size**, so arguments that lean on it as though it were an estimate are
+overclaiming. It explains why bigger batches help; it does not establish tightness.
+
+## Two more identities worth knowing
+
+**Law of total expectation.** $\mathbb{E}[X] = \mathbb{E}_Y\big[\mathbb{E}[X\mid
+Y]\big]$. Used constantly to split an expectation over a latent.
+
+**Change of variables.** For an invertible, differentiable $f$ with $y = f(x)$:
+
+$$
+p_Y(y) = p_X\big(f^{-1}(y)\big)\left|\det \frac{\partial f^{-1}}{\partial y}\right| .
+$$
+
+This is the whole basis of normalising flows, and the reason they need
+architectures with tractable Jacobian determinants.
+
+<Tier level="frontier" />
+
+## Practical notes that matter more than they look
+
+**Numerical stability is not optional.**
+
+- Always work in log-space. `log_softmax`, `logsumexp`, `log1p` exist because
+  their naive forms overflow.
+- Have the network output $\log \sigma^2$, never $\sigma$. This makes the
+  positivity constraint automatic and keeps gradients well-scaled.
+- Add $\epsilon$ inside square roots and logs, not outside.
+
+**KL warmup.** Training a VAE with the full KL term from step zero usually
+collapses the posterior — the KL is easy to minimise, reconstruction is not, so
+the optimiser takes the easy win. Annealing the KL weight from 0 to 1 over the
+first epochs, or "free bits" (allowing a fixed KL budget per dimension without
+penalty), both fix it. This is a standard trick and rarely stated in papers.
+
+**Sample count.** VAEs typically use a *single* sample per datapoint to estimate
+the expectation in the ELBO. This works because the reparameterised estimator's
+variance is low enough and minibatching averages over datapoints. It surprises
+people; it is deliberate.
+
+## What this page deliberately leaves out
+
+Measure-theoretic foundations, most of the classical concentration inequalities,
+Bayesian model selection, and MCMC. Not because they are unimportant, but because
+you can read essentially any modern deep-learning paper without them, and this
+page is scoped to what the papers assume rather than to what a probability course
+covers.
+
+If you want the full treatment, the standard references are Murphy's *Probabilistic
+Machine Learning* for breadth and Bishop for the classical Bayesian material.
+
+## What to read next
+
+1. **Kingma & Welling (2013)**, Sections 2.3–2.4 — the reparameterisation trick in
+   its original presentation. Two pages, and the clearest statement of the
+   variance argument.
+2. **van den Oord et al. (2018), CPC**, Section 2.3 — the InfoNCE bound derivation,
+   for a second worked example of the same recipe.
+
+<Papers papers={frontmatter.papers} />

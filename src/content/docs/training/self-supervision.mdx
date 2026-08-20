@@ -1,25 +1,416 @@
 ---
 title: Self-Supervised Learning
-description: "Learning without labels: contrastive, predictive, and generative families compared."
+description: "Learning without labels: the three families, what each actually optimises, why the field bet on it, and the evaluation problem nobody has solved."
 sidebar:
   order: 1
-  badge:
-    text: Planned
-    variant: caution
-depth: intuition
+depth: frontier
+readingTime: 40
+prereqs:
+  - label: "Neural Encoders"
+    slug: "encoders/neural-encoders"
+papers:
+  - title: "Representation Learning with Contrastive Predictive Coding (CPC)"
+    authors: "van den Oord, Li, Vinyals"
+    year: 2018
+    url: "https://arxiv.org/abs/1807.03748"
+  - title: "Momentum Contrast for Unsupervised Visual Representation Learning (MoCo)"
+    authors: "He, Fan, Wu, Xie, Girshick"
+    year: 2019
+    url: "https://arxiv.org/abs/1911.05722"
+  - title: "A Simple Framework for Contrastive Learning of Visual Representations (SimCLR)"
+    authors: "Chen, Kornblith, Norouzi, Hinton"
+    year: 2020
+    url: "https://arxiv.org/abs/2002.05709"
+  - title: "Bootstrap your own latent: A new approach to self-supervised Learning (BYOL)"
+    authors: "Grill et al."
+    year: 2020
+    url: "https://arxiv.org/abs/2006.07733"
+  - title: "Understanding Contrastive Representation Learning through Alignment and Uniformity on the Hypersphere"
+    authors: "Tongzhou Wang, Phillip Isola"
+    year: 2020
+    url: "https://arxiv.org/abs/2005.10242"
+  - title: "Masked Autoencoders Are Scalable Vision Learners (MAE)"
+    authors: "He, Chen, Xie, Li et al."
+    year: 2021
+    url: "https://arxiv.org/abs/2111.06377"
+  - title: "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding"
+    authors: "Devlin, Chang, Lee, Toutanova"
+    year: 2018
+    url: "https://arxiv.org/abs/1810.04805"
+  - title: "DINOv2: Learning Robust Visual Features without Supervision"
+    authors: "Oquab et al."
+    year: 2023
+    url: "https://arxiv.org/abs/2304.07193"
+  - title: "Learning Transferable Visual Models From Natural Language Supervision (CLIP)"
+    authors: "Radford et al."
+    year: 2021
+    url: "https://arxiv.org/abs/2103.00020"
+  - title: "Understanding intermediate layers using linear classifier probes"
+    authors: "Alain, Bengio"
+    year: 2016
+    url: "https://arxiv.org/abs/1610.01644"
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps } from '@astrojs/starlight/components';
 
-<Aside type="caution" title="Not written yet">
-This page is a placeholder so the navigation reflects the intended shape of the
-atlas. Copy `src/content/docs/_template.mdx` to start it, and see
-[How to read a page](/how-to-read/) for the authoring rules.
+<Abstract>
+Self-supervised learning manufactures a supervised problem out of unlabelled
+data by hiding part of the input and asking the model to recover it. The reason
+it took over is not elegance — it is a supply curve. Labelled data is bounded by
+human effort; unlabelled data is bounded by storage. Once a self-supervised
+objective works at all, it inherits a scaling trajectory that supervised learning
+cannot match.
+</Abstract>
+
+<KeyPoints>
+
+- **The pretext task is a means, not an end.** Nobody wants a model that predicts masked patches. You want the representation it was forced to build in order to do so, and the task is chosen for what it forces, not what it produces.
+- **There are three families, distinguished by what they compare.** Generative compares to the input, contrastive compares to other samples, predictive compares to the model's own output. Everything else is a variation.
+- **The augmentation set is the specification.** In contrastive learning you are declaring what should be ignored. SimCLR's ablations showed this choice dominates architecture, and it means a wrong choice silently destroys information you needed.
+- **Evaluation is the field's weakest link.** Linear probing is standard and known to be a poor proxy — it measures what a linear head can extract, not what the representation contains. Every reported comparison rests on it anyway.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## The bargain
+
+Supervised learning needs someone to write down the answer. A million labelled
+images means a million human judgements — expensive, slow, and capped by how many
+people you can pay.
+
+Self-supervised learning gets the answer for free by *hiding part of the data and
+using it as its own label*. Cover a word, ask what it was — the sentence already
+contains the answer. Cover a patch of an image, ask what was there — the image
+already contains the answer. No annotator required, so the data supply becomes
+"everything on the internet" rather than "everything we could afford to label".
+
+## Why hiding things teaches anything
+
+This is the part that deserves a moment, because it isn't obvious.
+
+Consider: *"She poured the coffee into the ____ and carried it to her desk."*
+
+To fill the blank you need to know that coffee is liquid, that liquids go in
+containers, that the container is portable, that desks are where people work. The
+blank is trivial to *check* and hard to *answer*, and answering it requires
+assembling a great deal of knowledge about how the world works.
+
+**That asymmetry is the entire mechanism.** The task is cheap to construct and
+expensive to solve, and everything the model builds in order to solve it is the
+thing you actually wanted.
+
+<Aside type="tip" title="Choose the task for what it forces">
+A pretext task is good if solving it *requires* the structure you want. Predicting
+image rotation was an early attempt and it turned out to be solvable by spotting
+sky-at-the-top — a shortcut that teaches almost nothing. The design question is
+always: can this be solved by a cheap trick?
 </Aside>
 
-## Planned coverage
+## The three families
 
-- The three families and what each optimises
-- Negative sampling, and the methods that avoid it
-- Why SSL scales with unlabelled data and supervised learning does not
-- Evaluating a representation you have no labels for
+<Figure
+  lead="What each family compares its prediction against."
+  caption="Generative methods compare to the raw input, which forces them to model detail that may be irrelevant. Contrastive methods compare to other samples, which requires a supply of negatives. Predictive methods compare to the model's own (lagged) output, which needs neither decoder nor negatives but must be structurally prevented from collapsing. These three targets are the whole taxonomy."
+>
+<svg viewBox="0 0 760 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Three families of self-supervised learning compared by what they use as a target">
+  <defs>
+    <marker id="ss1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <rect class="f-green" x="14" y="30" width="232" height="196" rx="8"/>
+  <text class="on-fill" x="130" y="54" text-anchor="middle">Generative</text>
+  <text class="on-fill-sm" x="130" y="72" text-anchor="middle">target = the input itself</text>
+  <line class="bx" x1="34" y1="84" x2="226" y2="84"/>
+  <text class="sm" x="32" y="106">BERT (MLM) · MAE</text>
+  <text class="sm" x="32" y="124">GPT (next token)</text>
+  <text class="sm" x="32" y="142">VAE · VQ-VAE</text>
+  <text class="xs" x="32" y="168">+ collapse impossible</text>
+  <text class="xs" x="32" y="184">+ interpretable outputs</text>
+  <text class="xs" x="32" y="204">− models irrelevant detail</text>
+
+  <rect class="f-blue" x="264" y="30" width="232" height="196" rx="8"/>
+  <text class="on-fill" x="380" y="54" text-anchor="middle">Contrastive</text>
+  <text class="on-fill-sm" x="380" y="72" text-anchor="middle">target = other samples</text>
+  <line class="bx" x1="284" y1="84" x2="476" y2="84"/>
+  <text class="sm" x="282" y="106">SimCLR · MoCo</text>
+  <text class="sm" x="282" y="124">CPC · CLIP</text>
+  <text class="sm" x="282" y="142">Sentence-BERT</text>
+  <text class="xs" x="282" y="168">+ cosine-valid geometry</text>
+  <text class="xs" x="282" y="184">+ collapse ruled out</text>
+  <text class="xs" x="282" y="204">− needs many negatives</text>
+
+  <rect class="f-purple" x="514" y="30" width="232" height="196" rx="8"/>
+  <text class="on-fill" x="630" y="54" text-anchor="middle">Predictive</text>
+  <text class="on-fill-sm" x="630" y="72" text-anchor="middle">target = own lagged output</text>
+  <line class="bx" x1="534" y1="84" x2="726" y2="84"/>
+  <text class="sm" x="532" y="106">BYOL · SimSiam</text>
+  <text class="sm" x="532" y="124">DINO · DINOv2</text>
+  <text class="sm" x="532" y="142">I-JEPA · V-JEPA</text>
+  <text class="xs" x="532" y="168">+ no negatives, no decoder</text>
+  <text class="xs" x="532" y="184">+ best transfer at scale</text>
+  <text class="xs" x="532" y="204">− collapse must be engineered away</text>
+</svg>
+</Figure>
+
+<Tier level="mechanics" />
+
+## Generative: predict the input
+
+The oldest and conceptually simplest. Corrupt, then restore.
+
+**Masked language modelling (BERT).** Hide 15% of tokens, predict them from both
+directions. Of the masked positions, 80% become `[MASK]`, 10% a random token, 10%
+are left unchanged — a detail that exists because `[MASK]` never appears at
+fine-tuning time, so training exclusively on it creates a train/test mismatch.
+
+**Masked image modelling (MAE).** Hide 75% of image patches, reconstruct pixels.
+The high ratio is the key design choice and the reason it works: images are
+spatially redundant, so hiding 15% leaves the task solvable by local interpolation.
+At 75% the model must actually understand content. A secondary benefit is speed —
+the encoder only processes the visible 25%.
+
+**Next-token prediction (GPT).** Predict token $i$ from tokens $< i$. Every
+position is a training example, which makes it the most sample-efficient objective
+per pass, and it is the reason decoder-only models scaled so well.
+
+## Contrastive: predict which sample
+
+Take two augmented views of the same image. Pull their embeddings together. Push
+embeddings of different images apart.
+
+<Steps>
+
+1. **Augment.** Random crop, colour jitter, grayscale, blur. Two independent draws
+   from the same source image.
+2. **Encode.** Both views through the same encoder.
+3. **Project.** A small MLP head. Loss is computed on the projection; the
+   representation you keep is the layer *before* it — this detail is worth several
+   points of accuracy and is easy to get wrong.
+4. **Contrast.** InfoNCE over the batch: the matching view is the positive, the
+   other $2(N-1)$ views are negatives.
+
+</Steps>
+
+<Aside type="danger" title="Augmentations are a specification, and a dangerous one">
+SimCLR's ablations found that the *composition* of augmentations matters more than
+anything architectural, and that random crop plus colour distortion is the
+critical pair. The reason is instructive: crops of the same image share a colour
+histogram, so without colour jitter the model can match views by colour alone and
+learn nothing else.
+
+The flip side is a real hazard. Colour-invariance is exactly wrong if you are
+classifying ripeness, diagnosing rashes, or reading resistor bands. **You are
+declaring what the model should be blind to**, and if you declare wrong, the
+information is gone and no amount of downstream fine-tuning brings it back.
+</Aside>
+
+**The negatives problem.** InfoNCE's quality depends on having many negatives.
+SimCLR used batches up to 8192, which requires substantial hardware. MoCo's answer
+was a queue of embeddings from recent batches plus a momentum-updated encoder to
+keep those stale embeddings consistent — decoupling the number of negatives from
+the batch size. This is the practical route if you don't have a TPU pod.
+
+## Predictive: predict your own representation
+
+Covered in depth on the [JEPA page](/architectures/jepa/); the summary is that a
+student network predicts the output of an EMA copy of itself, with a stop-gradient
+on the target. No negatives, no decoder — and the trivial constant solution has to
+be blocked structurally rather than by the loss.
+
+## Choosing between them
+
+| You want | Use | Why |
+|---|---|---|
+| Retrieval, search, matching | contrastive | cosine geometry is directly meaningful |
+| Cross-modal (image↔text) | contrastive (CLIP-style) | pairs supply the positives for free |
+| General features, many unknown tasks | predictive (DINOv2, I-JEPA) | best transfer; no invariance assumptions |
+| Generation or reconstruction | generative | only family with an invertible map |
+| Small compute budget | MoCo or SimSiam | neither needs enormous batches |
+| Text understanding | generative (MLM) | still the strongest for encoder-only text |
+
+<Tier level="formal" />
+
+## InfoNCE
+
+For anchor $x$ with positive $x^+$ and $N-1$ negatives:
+
+$$
+\mathcal{L}_{\text{InfoNCE}} = -\,\mathbb{E}\left[\log \frac{\exp\!\big(\operatorname{sim}(z, z^+)/\tau\big)}{\sum_{j=1}^{N}\exp\!\big(\operatorname{sim}(z, z_j)/\tau\big)}\right],
+$$
+
+with $\operatorname{sim}(u,v) = u^\top v / (\|u\|\|v\|)$ and temperature $\tau$.
+
+**The mutual information bound.** van den Oord et al. showed
+
+$$
+I(z; z^+) \;\geq\; \log N - \mathcal{L}_{\text{InfoNCE}} .
+$$
+
+Two consequences, one encouraging and one sobering:
+
+- Minimising the loss maximises a lower bound on mutual information between views.
+  This is the theoretical justification for the whole approach.
+- **The bound is capped at $\log N$.** With $N = 8192$, $\log N \approx 9$ nats.
+  Any mutual information above that is invisible to the objective. So the bound is
+  *loose* at realistic batch sizes, and you should be sceptical of arguments that
+  lean heavily on it. It explains why large batches help; it does not establish
+  that the method is maximising anything tight.
+
+**Temperature.** Writing the gradient with respect to a negative's similarity
+$s_j$:
+
+$$
+\frac{\partial \mathcal{L}}{\partial s_j} = \frac{1}{\tau}\cdot \frac{\exp(s_j/\tau)}{\sum_k \exp(s_k/\tau)} .
+$$
+
+Small $\tau$ concentrates gradient on the *hardest* negatives — those most similar
+to the anchor. Large $\tau$ spreads it evenly. This makes $\tau$ a hard-negative
+mining knob, not a normalisation detail, and it is genuinely sensitive: typical
+values sit in $[0.07, 0.2]$ and performance degrades noticeably outside.
+
+## Alignment and uniformity
+
+Wang & Isola's decomposition is the most useful diagnostic tool in the area.
+Define, on the unit hypersphere:
+
+$$
+\mathcal{L}_{\text{align}}(f;\alpha) = \mathbb{E}_{(x,x^+)}\big[\|f(x) - f(x^+)\|_2^{\alpha}\big],
+$$
+
+$$
+\mathcal{L}_{\text{unif}}(f;t) = \log\, \mathbb{E}_{x,y \overset{\text{iid}}{\sim} p_{\text{data}}}\big[e^{-t\|f(x)-f(y)\|_2^2}\big].
+$$
+
+They prove that as $N \to \infty$, InfoNCE converges to a weighted sum of these
+two, and — more usefully — that optimising them *directly* gives representations
+comparable to or better than contrastive learning.
+
+The practical payoff: **measure them separately**. They diagnose different
+failures.
+
+| Alignment | Uniformity | Diagnosis |
+|---|---|---|
+| good | good | healthy |
+| good | poor | collapsing — embeddings clumping |
+| poor | good | positives too weak, or augmentations too aggressive |
+| poor | poor | not training |
+
+The loss value alone cannot distinguish these, which is why tracking the pair is
+worth the small extra cost.
+
+## Masked language modelling
+
+$$
+\mathcal{L}_{\text{MLM}} = -\,\mathbb{E}_{x \sim \mathcal{D}}\,\mathbb{E}_{\mathcal{M}}\left[\sum_{i \in \mathcal{M}} \log p_\theta\big(x_i \mid x_{\setminus \mathcal{M}}\big)\right],
+$$
+
+where $\mathcal{M}$ is a random subset, $|\mathcal{M}| \approx 0.15\,n$.
+
+**Why 15%, and what the trade-off is.** Let $\rho$ be the mask ratio. The
+conditioning context has $(1-\rho)n$ tokens and the supervised signal covers $\rho
+n$ positions. Small $\rho$ gives rich context but few gradients per sequence; large
+$\rho$ gives many gradients but impoverished context. The optimum depends on the
+redundancy of the modality — and this is exactly why images (highly redundant) use
+$\rho = 0.75$ while text (much less redundant) uses $\rho = 0.15$. The numbers
+differ by modality for a principled reason, not by convention.
+
+**Compared with causal LM.** MLM conditions on both sides and supervises $\rho n$
+positions; CLM conditions on the left only and supervises all $n$. MLM gets better
+representations per parameter; CLM gets more gradient per FLOP. Neither dominates,
+which is why the encoder-versus-decoder question stayed open.
+
+## The evaluation problem, stated precisely
+
+The standard protocol: freeze the encoder, train a linear classifier on top,
+report accuracy.
+
+$$
+\text{acc}_{\text{linear}} = \max_{W,b}\ \mathbb{E}_{(x,y)}\big[\mathbb{1}\{\arg\max(W f(x) + b) = y\}\big] .
+$$
+
+The problem is that this measures **linear accessibility**, not information
+content. A representation could encode a feature perfectly in a form a linear
+probe cannot read — via an XOR of two dimensions, say — and score zero. Alain &
+Bengio introduced probes as a diagnostic and were explicit that probe accuracy is
+a property of the probe-and-representation pair, not of the representation.
+
+The alternatives are each unsatisfying in their own way:
+
+- **Full fine-tuning** — measures the fine-tuning recipe as much as the encoder,
+  and washes out differences between pretraining methods.
+- **k-NN classification** — no learned head, so cleaner, but assumes Euclidean or
+  cosine geometry is the right metric, which is only true for some families.
+- **Alignment/uniformity** — better, but defined relative to an augmentation
+  family, which is circular for methods that claim to need no augmentations.
+
+**Every headline comparison between SSL methods rests on one of these.** That is
+worth remembering when a paper reports a 0.4-point improvement.
+
+<Tier level="frontier" />
+
+## Where this stands, as of 2026
+
+**In vision, self-distillation is the practical default.** DINOv2 features are
+what most practitioners reach for when they need general-purpose visual
+representations, and they transfer across a wide range of tasks without
+fine-tuning. The emergent segmentation behaviour in the DINO line — attention maps
+that outline objects with no segmentation supervision — remains the most striking
+qualitative evidence that these objectives capture something structural.
+
+**In language, SSL is simply how models are trained**, to the point that the term
+has fallen out of use. Next-token prediction is self-supervised; nobody calls it
+that any more.
+
+**Masked reconstruction refuses to die.** MAE remains competitive despite the
+theoretical argument that pixel reconstruction wastes capacity. The proposed
+explanation — aggressive masking makes the task semantic — is plausible and
+unproven, and this is a genuine open disagreement rather than a settled question.
+
+**Scaling behaviour is less characterised than for generative models.** We know
+more data helps. We do not have clean compute-optimal curves comparable to
+Chinchilla, partly because there is no agreed loss to plot against.
+
+## Open problems
+
+- **Evaluation is unsolved and everything depends on it.** No task-agnostic
+  measure of representation quality exists. This is not a minor methodological
+  gripe — it means the field's ranking of its own methods is built on a proxy
+  known to be biased.
+
+- **Shortcut learning is hard to detect in advance.** A pretext task solvable by a
+  spurious cue teaches nothing, and you generally find out only after training.
+  There is no principled way to audit a proposed task.
+
+- **Augmentation design remains hand-crafted.** Learning the augmentation
+  distribution is an obvious idea that has not produced a robust method.
+
+- **Modality transfer of recipes is poor.** MAE's 75% mask ratio does not transfer
+  to text; BERT's 15% does not transfer to images. Each modality needed its own
+  tuning, and there is no theory predicting the right ratio from properties of the
+  data.
+
+- **We cannot say what a representation "contains".** Superposition means features
+  share dimensions non-orthogonally, so neither individual neurons nor linear
+  probes are the right unit of analysis. This connects directly to the
+  interpretability work on sparse autoencoders.
+
+## What to read next, in order
+
+1. **Chen et al. (2020), SimCLR** — read Section 3 and Figure 5, the augmentation
+   ablations. The most transferable finding in the area.
+2. **Wang & Isola (2020)** — for the alignment/uniformity decomposition. It will
+   change how you debug an encoder.
+3. **He et al. (2021), MAE** — read the mask-ratio ablation, which is the paper's
+   real contribution.
+4. **Alain & Bengio (2016)** — short, and it inoculates you against over-reading
+   linear probe results.
+
+<Papers papers={frontmatter.papers} />

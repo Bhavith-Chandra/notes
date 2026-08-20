@@ -1,25 +1,518 @@
 ---
 title: Transformers
-description: "Attention, and why it replaced recurrence almost everywhere."
+description: "Attention as differentiable lookup, why quadratic cost is both the strength and the ceiling, and what actually changed between the 2017 paper and a 2026 model."
 sidebar:
   order: 2
-  badge:
-    text: Planned
-    variant: caution
-depth: intuition
+depth: frontier
+readingTime: 45
+prereqs:
+  - label: "Encoder–Decoder Architectures"
+    slug: "encoders/encoder-decoder"
+papers:
+  - title: "Attention Is All You Need"
+    authors: "Vaswani et al."
+    year: 2017
+    url: "https://arxiv.org/abs/1706.03762"
+  - title: "On Layer Normalization in the Transformer Architecture"
+    authors: "Xiong et al."
+    year: 2020
+    url: "https://arxiv.org/abs/2002.04745"
+  - title: "RoFormer: Enhanced Transformer with Rotary Position Embedding"
+    authors: "Su, Lu, Pan, Murtadha, Wen, Liu"
+    year: 2021
+    url: "https://arxiv.org/abs/2104.09864"
+  - title: "Train Short, Test Long: Attention with Linear Biases Enables Input Length Extrapolation (ALiBi)"
+    authors: "Press, Smith, Lewis"
+    year: 2021
+    url: "https://arxiv.org/abs/2108.12409"
+  - title: "Fast Transformer Decoding: One Write-Head is All You Need (MQA)"
+    authors: "Noam Shazeer"
+    year: 2019
+    url: "https://arxiv.org/abs/1911.02150"
+  - title: "GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints"
+    authors: "Ainslie et al."
+    year: 2023
+    url: "https://arxiv.org/abs/2305.13245"
+  - title: "FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness"
+    authors: "Dao, Fu, Ermon, Rudra, Ré"
+    year: 2022
+    url: "https://arxiv.org/abs/2205.14135"
+  - title: "GLU Variants Improve Transformer (SwiGLU)"
+    authors: "Noam Shazeer"
+    year: 2020
+    url: "https://arxiv.org/abs/2002.05202"
+  - title: "Scaling Laws for Neural Language Models"
+    authors: "Kaplan et al."
+    year: 2020
+    url: "https://arxiv.org/abs/2001.08361"
+  - title: "Training Compute-Optimal Large Language Models (Chinchilla)"
+    authors: "Hoffmann et al."
+    year: 2022
+    url: "https://arxiv.org/abs/2203.15556"
+  - title: "Efficiently Modeling Long Sequences with Structured State Spaces (S4)"
+    authors: "Gu, Goel, Ré"
+    year: 2021
+    url: "https://arxiv.org/abs/2111.00396"
+  - title: "Mamba: Linear-Time Sequence Modeling with Selective State Spaces"
+    authors: "Gu, Dao"
+    year: 2023
+    url: "https://arxiv.org/abs/2312.00752"
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
 
-<Aside type="caution" title="Not written yet">
-This page is a placeholder so the navigation reflects the intended shape of the
-atlas. Copy `src/content/docs/_template.mdx` to start it, and see
-[How to read a page](/how-to-read/) for the authoring rules.
+<Abstract>
+A transformer is a stack of one idea: let every position look at every other
+position and decide, per position, what to pull in. That idea is
+*differentiable dictionary lookup*, it costs $O(n^2)$, and the entire
+engineering history since 2017 is a fight with that exponent. Almost nothing
+about the core has changed; almost everything around it has.
+</Abstract>
+
+<KeyPoints>
+
+- **Attention is a soft dictionary lookup.** Queries ask, keys advertise, values are returned — with a softmax deciding how much of each. Once you see it that way, multi-head, cross-attention, and causal masking are all trivial variations.
+- **The quadratic cost is not an implementation flaw.** Every position attending to every other is what gives transformers their power; it is also why context length is expensive. Techniques that beat $O(n^2)$ do so by giving something up, and it is always worth asking what.
+- **The 2017 architecture is not the 2026 architecture.** Post-norm → pre-norm, learned positions → RoPE, ReLU → SwiGLU, MHA → GQA. None of these were in the original paper and all of them are in every serious model today.
+- **FlashAttention changed nothing mathematically and everything practically.** It computes the same function. It just stops moving intermediate results to slow memory — a reminder that on modern hardware, memory traffic, not FLOPs, is usually the binding constraint.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## The problem attention solves
+
+Read this sentence: *"The trophy didn't fit in the suitcase because it was too big."*
+
+What does *it* refer to? The trophy. Now change one word: *"...because it was too
+small."* Now *it* is the suitcase.
+
+To resolve *it*, you had to look at a word seven positions away and let its
+meaning change how you interpret the pronoun. That is the whole problem. A model
+processing words strictly left to right, carrying a fixed-size memory, has to
+have *guessed in advance* that "trophy" would matter later and kept it around.
+Most of the time it guesses wrong, and information about distant words decays.
+
+**Attention removes the guessing.** At the moment the model processes *it*, it
+reaches back and looks at every other word directly, weighting each by how
+relevant it is right now. Nothing has to be predicted in advance and nothing
+decays with distance — position 1 and position 500 are equally reachable.
+
+## The lookup metaphor, which is exact rather than loose
+
+Think of a dictionary. You have a **key** you look up and you get a **value**
+back. `dictionary["cat"] → "a small furry animal"`. Exact match, one result.
+
+Attention is the soft version:
+
+- Every position emits a **query**: *what am I looking for?*
+- Every position emits a **key**: *what do I have on offer?*
+- Every position emits a **value**: *what I'll hand over if you pick me.*
+
+Instead of an exact match, you compare your query against every key, turn those
+similarities into percentages, and take a weighted blend of all the values. The
+pronoun *it* emits a query meaning roughly "I need a noun that could be big"; the
+key at *trophy* matches it better than the key at *suitcase*; so the returned
+value is mostly trophy-flavoured.
+
+<Aside type="tip" title="Why soft matters">
+Hard lookup is not differentiable — you cannot take a gradient through "pick
+entry 4". The softmax makes the choice a smooth blend, so the model can learn
+*what to look for* by gradient descent. Differentiability is the reason for the
+blend, not some deep claim about how meaning works.
 </Aside>
 
-## Planned coverage
+## The bill
 
-- Attention as differentiable dictionary lookup
-- Why quadratic cost is both the strength and the ceiling
-- Positional encoding schemes and what each assumes
-- Where transformers are still the wrong choice
+Every position compares itself against every other position. Ten words, a hundred
+comparisons. A thousand words, a million. A hundred thousand words, ten billion —
+per layer, per head.
+
+This is the single fact that shapes everything downstream: why context windows
+were tiny for years, why they got expensive rather than free, why there is an
+entire research industry in "efficient attention", and why state-space models
+keep getting a second look. Hold onto it.
+
+<Tier level="mechanics" />
+
+## One attention head, end to end
+
+<Figure
+  lead="Attention as three projections and a weighted sum."
+  caption="The input is projected three ways. Queries and keys meet in a similarity matrix, which is scaled, masked (for decoders), and softmaxed into attention weights — each row sums to one. Those weights blend the values. The learned parts are only the three projection matrices and the output projection; the middle of the diagram has no parameters at all."
+>
+<svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Data flow through a single attention head">
+  <defs>
+    <marker id="tf1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <rect class="f-grey" x="14" y="120" width="70" height="46" rx="5"/>
+  <text class="on-fill-sm" x="49" y="140" text-anchor="middle">input X</text>
+  <text class="on-fill-sm" x="49" y="156" text-anchor="middle">n × d</text>
+
+  <path class="ar" d="M88,132 L124,72" marker-end="url(#tf1)"/>
+  <path class="ar" d="M88,143 L124,143" marker-end="url(#tf1)"/>
+  <path class="ar" d="M88,154 L124,214" marker-end="url(#tf1)"/>
+
+  <rect class="f-blue" x="130" y="52" width="62" height="40" rx="5"/>
+  <text class="on-fill-sm" x="161" y="77" text-anchor="middle">Q = XW_Q</text>
+  <rect class="f-green" x="130" y="123" width="62" height="40" rx="5"/>
+  <text class="on-fill-sm" x="161" y="148" text-anchor="middle">K = XW_K</text>
+  <rect class="f-amber" x="130" y="194" width="62" height="40" rx="5"/>
+  <text class="on-fill-sm" x="161" y="219" text-anchor="middle">V = XW_V</text>
+  <text class="xs" x="161" y="252" text-anchor="middle">the only learned parts</text>
+
+  <path class="ar" d="M196,72 L236,100" marker-end="url(#tf1)"/>
+  <path class="ar" d="M196,143 L236,116" marker-end="url(#tf1)"/>
+
+  <rect class="f-purple" x="242" y="88" width="88" height="40" rx="5"/>
+  <text class="on-fill-sm" x="286" y="105" text-anchor="middle">QKᵀ / √d_k</text>
+  <text class="on-fill-sm" x="286" y="120" text-anchor="middle">n × n scores</text>
+
+  <path class="ar" d="M334,108 L374,108" marker-end="url(#tf1)"/>
+  <rect class="f-pink" x="380" y="88" width="76" height="40" rx="5"/>
+  <text class="on-fill-sm" x="418" y="105" text-anchor="middle">+ mask M</text>
+  <text class="on-fill-sm" x="418" y="120" text-anchor="middle">causal?</text>
+
+  <path class="ar" d="M460,108 L500,108" marker-end="url(#tf1)"/>
+  <rect class="f-purple" x="506" y="88" width="80" height="40" rx="5"/>
+  <text class="on-fill-sm" x="546" y="105" text-anchor="middle">softmax</text>
+  <text class="on-fill-sm" x="546" y="120" text-anchor="middle">rows sum to 1</text>
+
+  <path class="ar" d="M546,132 L546,180 L620,180" marker-end="url(#tf1)"/>
+  <path class="ar" d="M196,214 L600,214 L616,196" marker-end="url(#tf1)"/>
+
+  <rect class="f-grey" x="622" y="160" width="124" height="44" rx="5"/>
+  <text class="on-fill-sm" x="684" y="178" text-anchor="middle">weights · V</text>
+  <text class="on-fill-sm" x="684" y="194" text-anchor="middle">n × d_v output</text>
+
+  <text class="xs" x="286" y="152" text-anchor="middle">this n × n matrix is the</text>
+  <text class="xs" x="286" y="166" text-anchor="middle">whole memory problem</text>
+</svg>
+</Figure>
+
+<Steps>
+
+1. **Project.** Multiply the input by three learned matrices to get $Q$, $K$, $V$.
+   Same input, three different views of it.
+
+2. **Score.** $QK^\top$ — every query dotted with every key. This is the $n \times
+   n$ matrix, and it is where both the power and the cost live.
+
+3. **Scale.** Divide by $\sqrt{d_k}$. Not a tuned hyperparameter; see the formal
+   tier for why it is forced.
+
+4. **Mask.** Add $-\infty$ to positions a query is not allowed to see. In a
+   decoder that is everything in the future; in an encoder, nothing.
+
+5. **Normalise.** Softmax each row, so the weights for one query sum to 1.
+
+6. **Blend.** Multiply the weights by $V$. Each output position is a weighted
+   average of all value vectors.
+
+</Steps>
+
+## Why multiple heads
+
+One attention head produces one set of weights, so it can express one notion of
+relevance. But "relevant" is not one thing — a word might need to attend to its
+syntactic head, its coreferent, and the topic of the paragraph, all at once, and
+one softmax cannot do three things.
+
+Multi-head attention runs $h$ independent heads on lower-dimensional slices
+($d_k = d/h$) and concatenates. Total compute is roughly unchanged; expressive
+capacity is not. Interpretability work has found heads that do recognisable jobs —
+tracking previous occurrences of a token, attending to the immediately preceding
+word — though the tidy "one head, one function" story is much weaker than early
+papers suggested, and most heads are not cleanly interpretable at all.
+
+## What a block actually contains
+
+A transformer block is attention plus a position-wise MLP, each wrapped in a
+residual connection and a normalisation:
+
+```text
+x = x + Attention(Norm(x))     # pre-norm: normalise the branch input
+x = x + MLP(Norm(x))
+```
+
+Two things worth noticing:
+
+**The MLP holds most of the parameters.** With the standard $4\times$ expansion,
+the MLP is roughly two-thirds of a block's weights. Attention gets the attention;
+the MLP does much of the work, and interpretability research increasingly points
+at MLP layers as where factual knowledge lives.
+
+**The residual stream is the real object.** Every block *adds* to a running vector
+rather than replacing it. The modern mental model is a shared bus that blocks read
+from and write to, which is why you can often ablate a block with surprisingly
+little damage.
+
+<Aside type="caution" title="Pre-norm vs post-norm is not cosmetic">
+The 2017 paper put the normalisation *after* the residual add. Training deep
+post-norm transformers requires a learning-rate warmup, and without it they
+diverge. Xiong et al. (2020) showed pre-norm keeps gradient magnitudes stable at
+initialisation and removes the need for warmup entirely. Every large model since
+is pre-norm. If you read the original paper and implement it literally, you will
+hit this.
+</Aside>
+
+## What changed since 2017
+
+<Tabs>
+<TabItem label="Positions">
+
+Attention is permutation-equivariant — shuffle the input and the output shuffles
+identically. It has no idea what order anything is in. Position information has
+to be injected.
+
+- **Sinusoidal / learned absolute (2017).** Add a position vector to the input
+  embedding. Simple; extrapolates poorly beyond trained lengths.
+- **RoPE (2021).** *Rotate* the query and key vectors by an angle proportional to
+  position. Because a dot product between two rotated vectors depends only on the
+  difference of the angles, attention becomes naturally relative. This is the
+  current default in essentially every open LLM.
+- **ALiBi (2021).** Skip embeddings entirely; add a linear penalty to attention
+  scores proportional to distance. Extrapolates to longer sequences than trained
+  on, which was its selling point.
+
+RoPE won on quality; ALiBi's extrapolation argument was partly absorbed via RoPE
+scaling tricks.
+
+</TabItem>
+<TabItem label="KV cache & GQA">
+
+At generation time, each new token re-attends to every previous token. Recomputing
+their keys and values every step would be quadratic waste, so they are cached.
+
+The cache is the memory problem in deployment. Its size is
+
+$$
+2 \cdot n_{\text{layers}} \cdot n_{\text{heads}} \cdot d_{\text{head}} \cdot n_{\text{tokens}} \cdot \text{bytes}
+$$
+
+which for a large model at long context runs to tens of gigabytes — often more
+than the weights.
+
+- **MQA (Shazeer, 2019).** All heads share *one* key/value head. Cache shrinks by
+  a factor of $h$. Quality drops noticeably.
+- **GQA (2023).** Group heads; each group shares a K/V head. A middle setting
+  (say 8 groups for 64 heads) recovers most of the quality at most of the saving.
+  This is the standard today.
+
+</TabItem>
+<TabItem label="FlashAttention">
+
+The naive implementation materialises the full $n \times n$ attention matrix in
+GPU high-bandwidth memory, writes it, reads it back for the softmax, writes
+again. For long sequences that traffic dominates runtime — the arithmetic is not
+the bottleneck, the *memory movement* is.
+
+FlashAttention tiles the computation, keeps blocks in fast on-chip SRAM, and uses
+a streaming (online) softmax so it never needs the whole row at once. Memory goes
+from $O(n^2)$ to $O(n)$ and wall-clock drops several-fold.
+
+**It computes exactly the same function.** No approximation, no quality change.
+That is what makes it unusual: nearly every other efficiency technique on this
+page trades something away.
+
+</TabItem>
+<TabItem label="Activations">
+
+The 2017 MLP was `Linear → ReLU → Linear`. Modern models use a gated variant,
+usually SwiGLU:
+
+$$
+\text{SwiGLU}(x) = \big(\text{Swish}(xW_1) \odot xW_2\big)W_3 .
+$$
+
+The elementwise product is a multiplicative gate: one branch decides how much of
+the other to let through. It reliably beats ReLU at equal parameter count, which
+is why the hidden dimension is usually scaled by $\tfrac{2}{3}$ to keep the
+parameter count matched when comparing.
+
+Shazeer's paper is candid that there is no theory here — the abstract attributes
+the gains to "divine benevolence". It is empirical, it replicates, and it is
+universal now.
+
+</TabItem>
+</Tabs>
+
+<Tier level="formal" />
+
+## Scaled dot-product attention
+
+$$
+\operatorname{Attention}(Q,K,V) = \operatorname{softmax}\!\left(\frac{QK^{\top}}{\sqrt{d_k}} + M\right)V,
+$$
+
+with $Q \in \mathbb{R}^{n \times d_k}$, $K \in \mathbb{R}^{m \times d_k}$, $V \in
+\mathbb{R}^{m \times d_v}$, and $M$ the additive mask.
+
+**Why $\sqrt{d_k}$, derived.** Suppose the components of $q$ and $k$ are
+independent with mean 0 and variance 1. Then
+
+$$
+\mathbb{E}[q \cdot k] = 0, \qquad \operatorname{Var}(q \cdot k) = \sum_{i=1}^{d_k}\operatorname{Var}(q_i k_i) = d_k .
+$$
+
+So the logits have standard deviation $\sqrt{d_k}$. With $d_k = 128$ that is
+$\approx 11$ — large enough that the softmax saturates, putting nearly all mass on
+one entry. And a saturated softmax has vanishing gradient: for
+$p = \operatorname{softmax}(z)$ the Jacobian is $\operatorname{diag}(p) - pp^\top$,
+which goes to zero as $p$ approaches one-hot. Dividing by $\sqrt{d_k}$ restores
+unit variance and keeps the softmax in its responsive regime. The constant is
+forced by the algebra, not chosen.
+
+**Multi-head.**
+
+$$
+\operatorname{MHA}(X) = \operatorname{Concat}(\text{head}_1,\dots,\text{head}_h)W_O, \quad
+\text{head}_i = \operatorname{Attention}(XW_Q^i, XW_K^i, XW_V^i).
+$$
+
+With $d_k = d_v = d/h$, total parameters are $4d^2$ regardless of $h$ — heads are
+free in parameter count, and buy expressiveness by partitioning rather than
+adding.
+
+## Complexity, stated carefully
+
+Per layer, for sequence length $n$ and model width $d$:
+
+| | Time | Memory (naive) | Memory (Flash) | Sequential ops |
+|---|---|---|---|---|
+| Self-attention | $O(n^2 d)$ | $O(n^2)$ | $O(n)$ | $O(1)$ |
+| Recurrent | $O(n d^2)$ | $O(n)$ | — | $O(n)$ |
+| MLP | $O(n d^2)$ | $O(nd)$ | — | $O(1)$ |
+
+Two readings people often miss:
+
+**Attention is not always the dominant cost.** Comparing $O(n^2 d)$ against $O(n
+d^2)$, attention dominates only when $n > d$. For $d = 4096$ and $n = 2048$, the
+MLPs cost more. The quadratic term matters at long context, not universally.
+
+**The $O(1)$ sequential depth is the real 2017 contribution.** An RNN needs $n$
+sequential steps; a transformer needs one. That is what made training
+parallelisable across the sequence dimension, and parallelisability — not
+accuracy — is why transformers displaced RNNs.
+
+## RoPE, formally
+
+Rotate $q$ and $k$ by an angle proportional to absolute position. For a
+two-dimensional slice and rotation matrix $R_\theta$:
+
+$$
+\tilde{q}_m = R_{m\theta}\, q_m, \qquad \tilde{k}_n = R_{n\theta}\, k_n .
+$$
+
+Then, using $R_a^\top R_b = R_{b-a}$:
+
+$$
+\tilde{q}_m^\top \tilde{k}_n = q_m^\top R_{m\theta}^\top R_{n\theta} k_n = q_m^\top R_{(n-m)\theta}\, k_n .
+$$
+
+The score depends only on the **relative** offset $n - m$. Absolute position is
+injected but cancels in the dot product — you get relative-position behaviour
+without a relative-position bias term, and without changing the shape of anything.
+That elegance is why it won.
+
+The full scheme applies this to $d/2$ two-dimensional slices with geometrically
+spaced frequencies $\theta_i = 10000^{-2i/d}$, giving each slice a different
+wavelength — fast-rotating slices resolve nearby positions, slow ones carry
+long-range order.
+
+## Scaling laws, and the correction
+
+Kaplan et al. (2020) found test loss follows a power law in parameters $N$,
+data $D$, and compute $C$:
+
+$$
+L(N) \approx \left(\frac{N_c}{N}\right)^{\alpha_N}, \qquad \alpha_N \approx 0.076 .
+$$
+
+Their conclusion was that under a fixed compute budget you should mostly grow the
+model. Hoffmann et al. (2022) re-ran the analysis with a learning-rate schedule
+matched to each run's length and got a materially different answer: **parameters
+and tokens should scale roughly in proportion**, about 20 tokens per parameter.
+Chinchilla (70B, 1.4T tokens) beat Gopher (280B, 300B tokens) — a model four times
+smaller trained on nearly five times more data.
+
+<Aside type="note" title="The methodological lesson generalises">
+The Kaplan/Chinchilla discrepancy came down to a confound in the experimental
+setup, not to a disagreement about the data. Fixed-schedule sweeps
+systematically penalised the longer runs. This is worth remembering whenever you
+read a scaling result: the fitted exponents are only as good as the training
+protocol held constant beneath them.
+</Aside>
+
+<Tier level="frontier" />
+
+## Where things stand, as of 2026
+
+**The core is stable; the periphery is not.** Attention itself is unchanged from
+2017. What surrounds it — normalisation placement, position encoding, activation,
+KV-head sharing, kernel implementation — has turned over completely. If you learn
+transformers from the original paper alone, roughly half of what you learn is
+obsolete in the details while the central idea is exactly right.
+
+**State-space models are a real alternative, and have not displaced transformers.**
+Mamba (Gu & Dao, 2023) achieves linear-time sequence modelling with a *selective*
+state-space mechanism — the state update is input-dependent, which is what earlier
+SSMs like S4 lacked and what let Mamba close much of the quality gap on language.
+It matches or beats similarly sized transformers on several benchmarks with far
+better long-sequence scaling.
+
+The honest read as of 2026: SSMs are strong, genuinely better on very long
+sequences, and *weaker at exact retrieval from context*. A transformer can attend
+directly to any past token; a fixed-size recurrent state cannot store everything,
+so tasks that require copying specific distant content favour attention. This is
+why the most convincing results are **hybrids** that interleave a few attention
+layers into an SSM stack — the attention layers handle recall, the SSM layers
+handle bulk sequence processing. Anyone claiming attention is obsolete is ahead of
+the evidence.
+
+**Memory bandwidth is the binding constraint, not FLOPs.** FlashAttention's
+success made this explicit and it has shaped design since: the useful question
+about a new technique is usually "how much does it move between memory tiers?",
+not "how many multiplications?".
+
+## Open problems
+
+- **Long context is unsolved, not solved.** Models advertise million-token windows
+  but retrieval quality degrades in the middle of long contexts, and the KV cache
+  cost is brutal. The advertised number is a capacity, not a competence.
+
+- **Nobody knows what most attention heads do.** The tidy induction-head story
+  covers a small fraction. Superposition — features sharing dimensions — means
+  individual heads and neurons are usually not the right unit of analysis, which
+  is what motivates sparse-autoencoder approaches to interpretability.
+
+- **Position encoding remains unsatisfying.** RoPE works but extrapolates poorly
+  without ad-hoc scaling. There is no principled account of how positional
+  information *should* be represented.
+
+- **The MLP is under-theorised.** It holds most parameters and most knowledge, and
+  attracts a small fraction of the research attention. Why the $4\times$ expansion?
+  Why gating helps? Both open.
+
+## What to read next, in order
+
+1. **Vaswani et al. (2017)** — but read it as a historical document. Section 3.2.1
+   on $\sqrt{d_k}$ and Table 3's ablations are the durable parts.
+2. **Xiong et al. (2020)** — the pre-norm analysis. Short, and it changes how you
+   read every subsequent architecture diagram.
+3. **Dao et al. (2022), FlashAttention** — read it for the IO-awareness framing,
+   which generalises far beyond attention.
+4. **Hoffmann et al. (2022), Chinchilla** — read the methodology section, not the
+   headline number.
+5. **Gu & Dao (2023), Mamba** — the strongest current statement of the
+   non-attention position.
+
+<Papers papers={frontmatter.papers} />
