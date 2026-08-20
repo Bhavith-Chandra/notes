@@ -1,0 +1,445 @@
+---
+title: World Models
+description: What a world model is, why latent prediction beats pixel prediction, and how planning inside a learned model actually works — from zero background to the 2026 research frontier.
+sidebar:
+  order: 1
+  label: World Models
+depth: frontier
+readingTime: 35
+papers:
+  - title: "World Models"
+    authors: "David Ha, Jürgen Schmidhuber"
+    year: 2018
+    url: "https://arxiv.org/abs/1803.10122"
+  - title: "Learning Latent Dynamics for Planning from Pixels (PlaNet)"
+    authors: "Danijar Hafner et al."
+    year: 2019
+    url: "https://arxiv.org/abs/1811.04551"
+  - title: "Mastering Diverse Domains through World Models (DreamerV3)"
+    authors: "Danijar Hafner, Jurgis Pasukonis, Jimmy Ba, Timothy Lillicrap"
+    year: 2023
+    url: "https://arxiv.org/abs/2301.04104"
+  - title: "Mastering Atari, Go, Chess and Shogi by Planning with a Learned Model (MuZero)"
+    authors: "Julian Schrittwieser et al."
+    year: 2020
+    url: "https://arxiv.org/abs/1911.08265"
+  - title: "V-JEPA 2: Self-Supervised Video Models Enable Understanding, Prediction and Planning"
+    authors: "Mido Assran et al."
+    year: 2025
+    url: "https://arxiv.org/abs/2506.09985"
+  - title: "A Path Towards Autonomous Machine Intelligence"
+    authors: "Yann LeCun"
+    year: 2022
+    url: "https://openreview.net/forum?id=BZ5a1r-kVsf"
+  - title: "Hierarchical Planning with Latent World Models (HWM)"
+    authors: "Wancong Zhang et al."
+    year: 2026
+    url: "https://arxiv.org/abs/2604.03208"
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+<Abstract>
+A world model is a learned simulator. Instead of teaching an agent *what to do*,
+you teach it *what happens next* — and then let it search over imagined futures
+to decide. This page starts with no assumptions and ends at the open problems:
+why the field abandoned pixel prediction for latent prediction, what breaks when
+the horizon gets long, and why hierarchy is the current best answer.
+</Abstract>
+
+<KeyPoints>
+
+- **A world model is a learned transition function.** Given where you are and what you do, it predicts where you end up. Everything else on this page is a consequence of that one sentence.
+- **Predicting pixels is the wrong objective.** Most of the bits in an image are irrelevant to control. Modern models predict in a learned *latent* space instead, which is both cheaper and more accurate on the things that matter.
+- **Planning cost is exponential in the horizon.** This is the single constraint that shapes every design decision in the field, and the reason hierarchy keeps reappearing.
+- **Errors compound.** A model that is 99% accurate per step is 37% accurate after 100 steps. Long-horizon world modelling is fundamentally a problem of error accumulation, not of model capacity.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## The idea in one paragraph
+
+Before you reach for a cup, you have already imagined reaching for it. Not
+vividly, and not in pixels — but somewhere in your head there is a fast,
+approximate answer to the question *"if I move my arm like this, what happens?"*
+You use that answer to reject bad plans before your body executes them. A **world
+model** is the machine-learning version of that faculty: a neural network trained
+to answer "what happens next?", which an agent can then query thousands of times
+per second to decide what to do.
+
+## Why this is a big deal
+
+The dominant alternative is to learn a **policy** — a direct mapping from
+situation to action. Policies are trained by trial and error, and they work well,
+but they have three properties people find limiting:
+
+1. **They are task-specific.** A policy trained to stack blocks cannot open a
+   drawer. It has learned "what to do", and what to do changes with the task.
+2. **They need a reward signal.** Someone has to define what success means,
+   numerically, for every task.
+3. **They need enormous amounts of on-task experience**, usually collected by the
+   robot itself, which is slow and expensive in the real world.
+
+A world model has none of these properties, because it never learns what to do.
+It learns how the world behaves — which is the *same* whether you are stacking
+blocks or opening drawers. Then, at deployment, you tell it the goal ("here's a
+photo of the drawer open") and it searches for an action sequence that gets
+there. No reward function, no task-specific training. That capability is called
+**zero-shot planning**, and it is the reason the field cares.
+
+<Aside type="tip" title="The one-line summary">
+Policies learn *what to do*. World models learn *what happens*. The second is
+reusable across tasks; the first is not.
+</Aside>
+
+## The catch, stated plainly
+
+Everything good about world models comes from imagining futures. Everything hard
+about them comes from the same place:
+
+- **Imagined futures drift.** Each prediction step feeds the next, so small errors
+  compound into nonsense. Ten steps is usually fine. A hundred is usually not.
+- **There are too many futures to check.** If there are 10 plausible actions at
+  each step, then looking 10 steps ahead means 10 billion possible plans. You
+  cannot check them all, ever.
+
+Keep both of these in your head. Almost every technique in the rest of this page
+is an attack on one of them.
+
+<Tier level="mechanics" />
+
+## The three components
+
+Nearly every world-model system, from 2018 to now, decomposes the same way. Ha
+and Schmidhuber's original paper named the parts, and the names stuck:
+
+<Figure
+  lead="The V–M–C decomposition."
+  caption="Vision compresses the raw observation into a compact state. Memory predicts how that state evolves given an action. Controller chooses actions. The interesting design choices all live in how V and M are trained, and whether C is a learned policy or a search procedure."
+>
+{/*
+  Diagram classes (.bx .lb .sm .ar) are defined in src/styles/nerfies.css under
+  `.atlas-figure svg`. Do NOT put a <style> block inside an SVG in an .mdx file
+  — MDX parses the CSS braces as JSX expressions and the build fails.
+*/}
+<svg viewBox="0 0 720 190" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Diagram of vision, memory and controller components">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <rect class="bx" x="12" y="60" width="86" height="56" rx="6"/>
+  <text class="lb" x="55" y="84" text-anchor="middle">Observation</text>
+  <text class="sm" x="55" y="101" text-anchor="middle">image o_t</text>
+
+  <line class="ar" x1="104" y1="88" x2="152" y2="88"/>
+
+  <rect class="bx" x="158" y="60" width="96" height="56" rx="6"/>
+  <text class="lb" x="206" y="84" text-anchor="middle">V — Vision</text>
+  <text class="sm" x="206" y="101" text-anchor="middle">encoder</text>
+
+  <line class="ar" x1="260" y1="88" x2="308" y2="88"/>
+  <text class="sm" x="284" y="78" text-anchor="middle">z_t</text>
+
+  <rect class="bx" x="314" y="60" width="104" height="56" rx="6"/>
+  <text class="lb" x="366" y="84" text-anchor="middle">M — Memory</text>
+  <text class="sm" x="366" y="101" text-anchor="middle">predictor</text>
+
+  <line class="ar" x1="424" y1="88" x2="472" y2="88"/>
+  <text class="sm" x="448" y="78" text-anchor="middle">ẑ_t+1</text>
+
+  <rect class="bx" x="478" y="60" width="110" height="56" rx="6"/>
+  <text class="lb" x="533" y="84" text-anchor="middle">C — Controller</text>
+  <text class="sm" x="533" y="101" text-anchor="middle">policy or search</text>
+
+  <line class="ar" x1="594" y1="88" x2="642" y2="88"/>
+  <rect class="bx" x="648" y="60" width="60" height="56" rx="6"/>
+  <text class="lb" x="678" y="92" text-anchor="middle">a_t</text>
+
+  <path class="ar" d="M678,60 C678,20 366,20 366,54"/>
+  <text class="sm" x="522" y="30" text-anchor="middle">action fed back into the predictor</text>
+</svg>
+</Figure>
+
+<Steps>
+
+1. **Vision (V)** — an encoder that turns a high-dimensional observation (a
+   $224 \times 224 \times 3$ image, say — 150,000 numbers) into a compact state
+   vector $z_t$ (maybe 512 numbers). This is where almost all the compression
+   happens.
+
+2. **Memory (M)** — the predictor. Given the current state and an action, it
+   outputs the next state: $\hat{z}_{t+1} = f(z_t, a_t)$. Historically an RNN,
+   now usually a transformer. This *is* the world model, strictly speaking.
+
+3. **Controller (C)** — decides the action. This is either a small learned policy
+   (Dreamer-style) or a search procedure that rolls out many candidate action
+   sequences through $M$ and picks the best (MuZero-style, and the MPC family).
+
+</Steps>
+
+## Reconstruction versus latent prediction
+
+Here is the single most consequential design decision in the field, and it is
+worth being precise about it.
+
+**Reconstructive models** train the encoder and predictor so that the predicted
+latent can be *decoded back into the next image*. The loss is measured in pixel
+space. This is what the 2018 World Models paper, PlaNet, and the Dreamer line all
+do.
+
+**Joint-embedding predictive models (JEPAs)** never reconstruct anything. They
+train the predictor to match the *encoder's own output* on the future frame. The
+loss is measured entirely in latent space. V-JEPA 2 and DINO-WM are the current
+representatives.
+
+The argument for the second approach is an information argument, and it's clean:
+
+<Aside type="caution" title="Why pixel prediction wastes capacity">
+Consider a robot arm on a desk in front of a window. To predict the next frame in
+pixels, the model must predict the leaves moving on the tree outside — which is
+high-entropy, effectively random, and completely irrelevant to whether the gripper
+closes on the cup. A reconstruction loss spends model capacity and gradient signal
+on exactly the parts of the image that are hardest to predict *and* least useful.
+Latent prediction lets the encoder simply discard the tree.
+</Aside>
+
+The counter-argument, which you should also hold: latent-only objectives have a
+degenerate solution. If the encoder outputs a constant for every input, the
+predictor's job becomes trivial and the loss goes to zero. This is called
+**representation collapse**, and preventing it is the entire technical difficulty
+of the JEPA line — handled through asymmetric architectures, stop-gradients, EMA
+target encoders, and variance/covariance regularisation. Reconstruction has no
+such failure mode, which is precisely why it was tried first.
+
+|  | Reconstructive (Dreamer, PlaNet) | Latent-only (JEPA, DINO-WM) |
+|---|---|---|
+| Loss computed in | pixel space | embedding space |
+| Wastes capacity on irrelevant detail | yes | no |
+| Risk of collapse | none | central difficulty |
+| Human-inspectable rollouts | yes (decode to video) | only via a separate decoder |
+| Typical strength | sample efficiency, RL benchmarks | scaling to internet video, transfer |
+
+<Aside type="note">
+Note the last row of that table honestly: as of 2026 these two families are still
+strongest in different regimes. Dreamer-family models dominate low-data RL
+benchmarks; JEPA-family models dominate transfer from large-scale video. Anyone
+telling you the debate is settled is ahead of the evidence.
+</Aside>
+
+## How planning actually works
+
+Suppose you have a trained predictor and a goal. Planning by **Model Predictive
+Control (MPC)** is the standard recipe, and it is simpler than it sounds:
+
+<Steps>
+
+1. **Sample** a few hundred candidate action sequences, each maybe 10–30 steps long.
+
+2. **Roll out** each one through the world model, entirely in imagination. No robot
+   moves. This is a batched forward pass.
+
+3. **Score** each imagined trajectory by how close its final latent state is to the
+   goal latent state — typically $\ell_1$ or cosine distance in embedding space.
+
+4. **Refine.** Keep the best-scoring sequences, fit a distribution to them, resample
+   from it. Repeat a handful of times. (This is the Cross-Entropy Method; MPPI is
+   the other common choice.)
+
+5. **Execute only the first action** of the best sequence. Then observe what
+   actually happened and go back to step 1.
+
+</Steps>
+
+Step 5 is the part people miss, and it is what makes MPC robust. You plan 20 steps
+ahead but commit to one step, so model error only has one step to hurt you before
+you re-observe reality and re-plan. This is called the *receding horizon*, and it
+is why MPC works at all with imperfect models.
+
+<Aside type="danger" title="The exponential wall">
+Sampling fixes nothing about the underlying combinatorics. With $A$ plausible
+actions and horizon $H$, the space of plans is $A^H$. Doubling the horizon squares
+the search space. This is not an implementation problem you can engineer around —
+it is the reason flat planners fail on multi-stage tasks, and the reason the field
+keeps returning to hierarchy.
+</Aside>
+
+<Tier level="formal" />
+
+## The setup
+
+Model the environment as a partially observed Markov decision process. At time
+$t$ the agent receives observation $o_t$, emits action $a_t$. We learn:
+
+- an encoder $E_\theta: o_t \mapsto z_t$
+- a predictor $P_\phi: (z_t, a_t) \mapsto \hat{z}_{t+1}$
+
+For the **reconstructive** family we additionally learn a decoder $D_\psi$ and
+optimise a variational bound. PlaNet's Recurrent State-Space Model factorises the
+latent into a deterministic path $h_t$ and a stochastic path $s_t$, giving the
+ELBO
+
+$$
+\mathcal{L} = \mathbb{E}_q\Big[\sum_t \underbrace{\log p(o_t \mid h_t, s_t)}_{\text{reconstruction}} - \underbrace{\beta\, \mathrm{KL}\big(q(s_t \mid o_{\leq t}, a_{<t}) \,\|\, p(s_t \mid h_t)\big)}_{\text{consistency}}\Big].
+$$
+
+The deterministic path carries information reliably across many steps; the
+stochastic path models genuine environment uncertainty. Dropping either one
+measurably hurts — that ablation is the main empirical contribution of the PlaNet
+paper.
+
+For the **latent-only** family the objective collapses to a distance in embedding
+space, with the target produced by a stop-gradiented or EMA copy of the encoder:
+
+$$
+\mathcal{L}_{\text{JEPA}} = \sum_t \big\| P_\phi(z_t, a_t) - \operatorname{sg}\big[E_{\bar\theta}(o_{t+1})\big] \big\|_1 .
+$$
+
+The $\ell_1$ norm rather than $\ell_2$ is a deliberate choice — it is less
+dominated by a few large-magnitude dimensions, which matters when the embedding
+has no natural scale. The $\operatorname{sg}[\cdot]$ and the separate parameters
+$\bar\theta$ are what stop the trivial constant solution: the target cannot move
+to meet the prediction.
+
+## Planning as optimisation
+
+Given a goal observation $o_g$ with embedding $z_g = E_\theta(o_g)$, planning
+solves
+
+$$
+a^{\star}_{1:H} = \arg\min_{a_{1:H}} \; d\big(\hat{z}_{t+H},\, z_g\big), \qquad \hat{z}_{t+k+1} = P_\phi(\hat{z}_{t+k},\, a_{t+k}).
+$$
+
+Note what is *absent*: there is no reward function anywhere. The objective is
+entirely "get the latent state close to the goal latent state". This is why the
+approach is zero-shot — swapping the task means swapping $o_g$, nothing more.
+
+## Why long horizons break: the compounding-error argument
+
+Let $\epsilon$ be the per-step prediction error and assume the predictor is
+$L$-Lipschitz in its state argument. Rolling out $k$ steps, the error at the end
+is bounded by
+
+$$
+\|\hat{z}_{t+k} - z_{t+k}\| \;\leq\; \epsilon \sum_{i=0}^{k-1} L^{i} \;=\; \epsilon\,\frac{L^{k} - 1}{L - 1} \quad (L \neq 1).
+$$
+
+Read the two regimes off that expression:
+
+- If $L < 1$ the sum converges to $\epsilon/(1-L)$ — error stays bounded forever.
+  Contractive dynamics are forgiving.
+- If $L > 1$ error grows *geometrically*. This is the normal case for anything
+  interesting, because contact, collision and object interaction are locally
+  expansive.
+
+The practical consequence is that you cannot fix long-horizon planning by making
+$\epsilon$ smaller. Halving the per-step error buys you one extra step of horizon
+under geometric growth. You need to change $k$, not $\epsilon$ — which means
+changing the *temporal resolution* at which you plan.
+
+## Hierarchy, stated formally
+
+That last observation is the whole argument for hierarchical world models, and it
+is worth seeing why the numbers work.
+
+Train two predictors sharing one latent space:
+
+- a low-level predictor $P^{\text{lo}}(z_t, a_t)$ operating at primitive timestep
+  resolution;
+- a high-level predictor $P^{\text{hi}}(z_t, m_t)$ operating at stride $c$, where
+  $m_t$ is a **macro-action** — a latent compression of $c$ primitive actions,
+  produced by a learned action encoder $\Omega: a_{t:t+c} \mapsto m_t$.
+
+Because both operate in the *same* latent space, a state predicted by the
+high-level model is directly usable as a subgoal for the low-level model. No
+translation layer, no learned skill vocabulary, no task-specific reward. That
+shared-space property is the load-bearing idea.
+
+The search cost changes from $A^{H}$ to
+
+$$
+\underbrace{M^{H/c}}_{\text{high level}} \;+\; \underbrace{\tfrac{H}{c}\cdot A^{c}}_{\text{low level, once per segment}}
+$$
+
+where $M$ is the size of the macro-action space. For $H = 32$, $A = 10$, $c = 8$:
+flat search is $10^{32}$; hierarchical is roughly $M^{4} + 4 \cdot 10^{8}$. Even
+generously sized macro-action spaces leave you many orders of magnitude better
+off. And the compounding-error bound now applies with $k = c$ at the low level and
+$k = H/c$ at the high level, so neither exponent is the full horizon.
+
+<Aside type="note" title="This is not free">
+Hierarchy buys tractability by assuming the task *decomposes* — that a good plan
+can be described as a sequence of reachable intermediate states. Tasks where the
+intermediate states are not meaningful, or where the right subgoal spacing varies
+wildly within a single episode, do not benefit. Choosing $c$ is currently a
+hyperparameter, and a sensitive one.
+</Aside>
+
+<Tier level="frontier" />
+
+## Where the field actually is, as of 2026
+
+**Zero-shot manipulation works, at moderate reliability.** V-JEPA 2-AC was
+pre-trained on over a million hours of internet video, then adapted with fewer
+than 62 hours of *unlabelled* robot trajectories from the DROID dataset. Deployed
+on Franka arms in labs it had never seen, with no reward and no task-specific
+training, it reached roughly 65–80% success on reach, grasp, and pick-and-place
+from a single goal image. That is a genuine result and it was not possible three
+years earlier. It is also nowhere near reliable enough to deploy.
+
+**Flat planning fails on multi-stage tasks, and the failure is total, not
+graceful.** The HWM results are stark: a single-level V-JEPA2-AC planner scores 0%
+on end-to-end pick-and-place from a single goal image, and only succeeds when a
+human manually decomposes the task into greedy subgoals. The hierarchical version
+reaches 70% on the same task. A jump from 0 to 70 is not a tuning difference; it
+says the flat formulation is structurally unable to represent the problem.
+
+**Compute, not accuracy, is often the binding constraint.** Hierarchical planners
+in that same work match or exceed flat-planner success at roughly 3× lower
+planning cost. Planning-time compute is a first-class design axis now, in a way it
+was not when the benchmarks were Atari.
+
+## Open problems worth knowing about
+
+- **Uncertainty is mostly unmodelled.** Almost no deployed latent world model
+  represents *how confident* it is in a given prediction. Without that, a planner
+  cannot distinguish a genuinely good plan from one that exploits a region where
+  the model is simply wrong — the classic model-exploitation failure. This is, in
+  my reading, the largest gap between current systems and reliable ones.
+
+- **Subgoal spacing is hand-set.** The stride $c$ is a hyperparameter. Humans
+  adapt their planning granularity continuously — coarse when walking across a
+  room, fine when threading a needle. Nothing does this well yet.
+
+- **Evaluation is weak.** Success rate on a handful of tabletop tasks is a low-
+  resolution signal, and the benchmark suites differ enough between papers that
+  cross-paper comparison is genuinely unreliable. Be sceptical of leaderboard-style
+  claims in this subfield specifically.
+
+- **The reconstruct-versus-latent question is empirically open.** See the note in
+  Tier 2. The theoretical argument favours latent prediction; the benchmark
+  evidence is split by regime.
+
+- **Nobody has shown compositional generalisation.** Every current system plans
+  within the distribution of dynamics it was trained on. Reasoning about a novel
+  object with novel physics — the thing humans do effortlessly — remains out of
+  reach.
+
+## What to read next, in order
+
+1. Ha & Schmidhuber (2018) — read it for the framing, not the method. It is short.
+2. PlaNet (2019) — the RSSM ablations are the most instructive pages in the
+   literature for understanding why latents are split into deterministic and
+   stochastic parts.
+3. LeCun's position paper (2022) — the argument for why JEPAs *should* work, laid
+   out before they did.
+4. V-JEPA 2 (2025) — the current reference implementation of that argument.
+
+<Papers papers={frontmatter.papers} />

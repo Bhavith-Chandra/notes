@@ -1,0 +1,511 @@
+---
+title: Feature Encoding
+description: "One-hot, ordinal, target, hashing and learned embeddings for categorical data — how to choose, and the leakage trap that quietly ruins more models than anything else."
+sidebar:
+  order: 4
+depth: frontier
+readingTime: 30
+prereqs:
+  - label: "Encoders: overview"
+    slug: "encoders"
+papers:
+  - title: "A Preprocessing Scheme for High-Cardinality Categorical Attributes in Classification and Prediction Problems"
+    authors: "Daniele Micci-Barreca"
+    year: 2001
+    url: "https://doi.org/10.1145/507533.507538"
+  - title: "Feature Hashing for Large Scale Multitask Learning"
+    authors: "Weinberger, Dasgupta, Attenberg, Langford, Smola"
+    year: 2009
+    url: "https://arxiv.org/abs/0902.2206"
+  - title: "Entity Embeddings of Categorical Variables"
+    authors: "Cheng Guo, Felix Berkhahn"
+    year: 2016
+    url: "https://arxiv.org/abs/1604.06737"
+  - title: "CatBoost: unbiased boosting with categorical features"
+    authors: "Prokhorenkova, Gusev, Vorobev, Dorogush, Gulin"
+    year: 2017
+    url: "https://arxiv.org/abs/1706.09516"
+  - title: "Efficient Estimation of Word Representations in Vector Space (word2vec)"
+    authors: "Mikolov, Chen, Corrado, Dean"
+    year: 2013
+    url: "https://arxiv.org/abs/1301.3781"
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps, Code } from '@astrojs/starlight/components';
+
+<Abstract>
+Models consume numbers; a lot of real data is words. Feature encoding is the
+translation step, and it is the least glamorous and most consequential part of
+applied tabular ML. The methods have been stable for twenty years. What is *not*
+stable is practitioners' handling of target encoding, which leaks the label into
+the features unless computed inside a cross-validation fold — producing models
+that validate at 0.95 AUC and fail in production. That single failure mode is the
+reason this page exists.
+</Abstract>
+
+<KeyPoints>
+
+- **The only question that matters first is cardinality.** Under ~15 categories, one-hot and stop thinking. Over a few thousand, one-hot is not an option and the interesting trade-offs begin.
+- **Ordinal encoding asserts an ordering.** Encoding `{red, green, blue}` as `{0,1,2}` tells a linear model that green sits between red and blue. If that is false, you have injected a lie into your features, and tree models will happily exploit it.
+- **Target encoding is the strongest method and the most dangerous.** It leaks by construction. Computed correctly — out-of-fold, inside the pipeline — it is excellent. Computed on the full dataset, it produces a model that has memorised the answer.
+- **Tree models and linear models want different encodings.** Gradient-boosted trees handle ordinal integers fine and are hurt by one-hot's sparsity; linear models are the reverse. Choosing an encoding without knowing the model is choosing blind.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## The problem
+
+You have a table. One column is `city`, with values like `London`, `Mumbai`,
+`São Paulo`. Your model does arithmetic. `London` is not a number.
+
+So you need a rule for turning cities into numbers. The obvious rule — number
+them 1, 2, 3 in alphabetical order — creates a problem that is easy to miss:
+you have just told the model that Mumbai is *between* London and São Paulo, and
+that São Paulo is *three times* London. Neither statement means anything. A
+linear model will take both entirely seriously.
+
+**Feature encoding is the study of rules that don't accidentally assert things
+you didn't mean.**
+
+## The five rules people actually use
+
+<Figure
+  lead="Five ways to turn a category into numbers."
+  caption="Each row shows the same three-city column under a different encoding. Notice what each one preserves and destroys: one-hot preserves distinctness but not similarity; ordinal preserves compactness but invents an order; target preserves predictive signal but touches the label; hashing preserves compactness at the cost of collisions; embeddings learn similarity but require data to learn from."
+>
+<svg viewBox="0 0 760 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Five categorical encoding schemes compared on the same input column">
+  <text class="lb" x="14" y="18">Input column</text>
+  <rect class="f-grey" x="14" y="28" width="96" height="26" rx="4"/>
+  <text class="on-fill-sm" x="62" y="46" text-anchor="middle">London</text>
+  <rect class="f-grey" x="14" y="58" width="96" height="26" rx="4"/>
+  <text class="on-fill-sm" x="62" y="76" text-anchor="middle">Mumbai</text>
+  <rect class="f-grey" x="14" y="88" width="96" height="26" rx="4"/>
+  <text class="on-fill-sm" x="62" y="106" text-anchor="middle">London</text>
+
+  <text class="lb" x="160" y="18">One-hot</text>
+  <text class="sm" x="160" y="46">[1, 0, 0]</text>
+  <text class="sm" x="160" y="76">[0, 1, 0]</text>
+  <text class="sm" x="160" y="106">[1, 0, 0]</text>
+  <text class="xs" x="160" y="132">k columns for k categories</text>
+  <text class="xs" x="160" y="148">no false ordering · explodes</text>
+
+  <text class="lb" x="330" y="18">Ordinal</text>
+  <text class="sm" x="330" y="46">0</text>
+  <text class="sm" x="330" y="76">1</text>
+  <text class="sm" x="330" y="106">0</text>
+  <text class="xs" x="330" y="132">1 column, any cardinality</text>
+  <text class="xs" x="330" y="148">INVENTS an order</text>
+
+  <text class="lb" x="450" y="18">Target</text>
+  <text class="sm" x="450" y="46">0.31</text>
+  <text class="sm" x="450" y="76">0.67</text>
+  <text class="sm" x="450" y="106">0.31</text>
+  <text class="xs" x="450" y="132">mean of y for that category</text>
+  <text class="xs" x="450" y="148">strongest signal · LEAKS</text>
+
+  <text class="lb" x="600" y="18">Hashing</text>
+  <text class="sm" x="600" y="46">bucket 5</text>
+  <text class="sm" x="600" y="76">bucket 2</text>
+  <text class="sm" x="600" y="106">bucket 5</text>
+  <text class="xs" x="600" y="132">fixed width, no vocabulary</text>
+  <text class="xs" x="600" y="148">collisions, not invertible</text>
+
+  <line class="bx" x1="14" y1="172" x2="746" y2="172" opacity="0.3"/>
+
+  <text class="lb" x="14" y="196">Learned embeddings</text>
+  <rect class="f-purple" x="14" y="208" width="96" height="26" rx="4"/>
+  <text class="on-fill-sm" x="62" y="226" text-anchor="middle">London</text>
+  <path class="ar" d="M114,221 L164,221" marker-end="url(#ar5)"/>
+  <defs>
+    <marker id="ar5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+  <rect class="f-grey" x="170" y="204" width="150" height="34" rx="4"/>
+  <text class="on-fill-sm" x="245" y="226" text-anchor="middle">lookup table (k × d)</text>
+  <path class="ar" d="M324,221 L374,221" marker-end="url(#ar5)"/>
+  <rect class="f-green" x="380" y="204" width="170" height="34" rx="4"/>
+  <text class="on-fill-sm" x="465" y="226" text-anchor="middle">[0.21, -0.44, 0.08, ...]</text>
+  <path class="dash" d="M465,242 L465,272" marker-end="url(#ar5)"/>
+  <text class="xs" x="465" y="290" text-anchor="middle">trained by backprop with the rest of the model</text>
+  <text class="xs" x="465" y="308" text-anchor="middle">similar categories converge to nearby vectors</text>
+  <text class="xs" x="600" y="196">the only method that</text>
+  <text class="xs" x="600" y="210">learns similarity between</text>
+  <text class="xs" x="600" y="224">categories rather than</text>
+  <text class="xs" x="600" y="238">assuming or ignoring it</text>
+</svg>
+</Figure>
+
+## The trap, stated before you can fall into it
+
+Target encoding replaces each category with the average outcome for that
+category. `London → 0.31` means "31% of London rows were positive".
+
+Consider a category that appears exactly once, in a row where the label is 1. Its
+target encoding is 1.0. The feature now *contains the label for that row*. Your
+model does not need to learn anything — it can read the answer off the feature.
+Validation accuracy will look extraordinary. Production accuracy will be chance.
+
+<Aside type="danger" title="This is the single most common serious bug in applied tabular ML">
+If you compute target encoding on your full dataset and *then* split into train
+and test, every fold is contaminated. The fix is not optional and not subtle:
+**compute the encoding using only the training portion, inside the
+cross-validation loop.** In scikit-learn terms, it must be a step in a `Pipeline`,
+never a transformation applied to the dataframe beforehand.
+</Aside>
+
+<Tier level="mechanics" />
+
+## Choosing: a procedure
+
+<Steps>
+
+1. **Count the distinct values.** This single number drives most of the decision.
+
+2. **Under ~15 categories** → one-hot. It is unambiguous, it makes no false
+   assertions, and the dimensional cost is negligible. Do not overthink it.
+
+3. **15 to a few thousand** → depends on your model. Gradient-boosted trees:
+   native categorical handling if available (LightGBM, CatBoost), otherwise
+   ordinal. Linear or neural: target encoding done properly, or learned
+   embeddings.
+
+4. **Genuinely ordered categories** (`small < medium < large`, `bronze < silver <
+   gold`) → ordinal, with the codes reflecting the real order. This is the one
+   case where ordinal is not a lie, and it is strictly better than one-hot
+   because it hands the model a fact it would otherwise have to learn.
+
+5. **Tens of thousands or more** (user IDs, URLs, product SKUs) → hashing if you
+   need a fixed memory budget and streaming; learned embeddings if you have a
+   neural model and enough data per category.
+
+6. **Unseen categories at inference time** → hashing handles this natively;
+   everything else needs an explicit `unknown` bucket, decided in advance.
+
+</Steps>
+
+## Model-dependence, which people skip
+
+The right encoding depends on what consumes it, and the two dominant model
+families want opposite things.
+
+| | Linear / neural | Gradient-boosted trees |
+|---|---|---|
+| One-hot | good — each category gets its own weight | **poor** — sparse binary splits waste tree depth |
+| Ordinal | **bad** — imposes a false linear relationship | fine — trees split on thresholds, order is largely irrelevant |
+| Target | good | good — often the strongest option |
+| Embeddings | **best**, learned jointly | not applicable directly |
+
+The one-hot-hurts-trees result surprises people. The reason: a tree splitting on a
+one-hot column can only ask "is it London or not?", so isolating one of 100
+categories takes up to 100 sequential splits, and each split sees fewer samples
+than the last. Native categorical handling asks "is it in `{London, Paris,
+Berlin}`?" in a single split.
+
+## The leakage diagram
+
+This is the page's whole point, so it gets a picture. The difference between the
+two pipelines below is *where the encoding step sits relative to the split* — and
+that ordering, nothing else, decides whether your validation score means anything.
+
+<Figure
+  lead="Same method, two orderings, opposite outcomes."
+  caption="Top: the encoding is fitted on all rows, so the statistic computed for each category already contains the labels of the validation rows. The model then validates against data whose labels it has effectively already seen. Bottom: the encoding is refitted inside each fold using only that fold's training rows. The validation rows contribute nothing to their own encoded values, and the score is honest. In scikit-learn this is the difference between transforming the dataframe up front and putting the encoder in a Pipeline."
+>
+<svg viewBox="0 0 760 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Target encoding computed before versus inside the cross-validation split">
+  <defs>
+    <marker id="ar7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <text class="lb" x="14" y="18">✗ Leaky — encode, then split</text>
+
+  <rect class="f-grey" x="14" y="34" width="104" height="52" rx="5"/>
+  <text class="on-fill-sm" x="66" y="55" text-anchor="middle">full dataset</text>
+  <text class="on-fill-sm" x="66" y="71" text-anchor="middle">X and y</text>
+
+  <line class="ar" x1="122" y1="60" x2="158" y2="60" marker-end="url(#ar7)"/>
+
+  <rect class="f-pink" x="164" y="34" width="132" height="52" rx="5"/>
+  <text class="on-fill-sm" x="230" y="55" text-anchor="middle">target-encode</text>
+  <text class="on-fill-sm" x="230" y="71" text-anchor="middle">using ALL of y</text>
+
+  <line class="ar" x1="300" y1="60" x2="336" y2="60" marker-end="url(#ar7)"/>
+
+  <rect class="f-blue" x="342" y="30" width="96" height="26" rx="4"/>
+  <text class="on-fill-sm" x="390" y="48" text-anchor="middle">train fold</text>
+  <rect class="f-amber" x="342" y="62" width="96" height="26" rx="4"/>
+  <text class="on-fill-sm" x="390" y="80" text-anchor="middle">val fold</text>
+
+  <path class="dash" d="M230,90 C230,124 380,124 386,92" marker-end="url(#ar7)"/>
+  <text class="xs" x="300" y="140" text-anchor="middle">val labels already baked into the feature ↑</text>
+
+  <line class="ar" x1="442" y1="60" x2="478" y2="60" marker-end="url(#ar7)"/>
+  <rect class="f-pink" x="484" y="34" width="140" height="52" rx="5"/>
+  <text class="on-fill-sm" x="554" y="55" text-anchor="middle">AUC 0.95</text>
+  <text class="on-fill-sm" x="554" y="71" text-anchor="middle">and meaningless</text>
+  <text class="xs" x="646" y="56">production</text>
+  <text class="xs" x="646" y="70">performance:</text>
+  <text class="sm" x="646" y="86">chance</text>
+
+  <line class="bx" x1="14" y1="164" x2="746" y2="164" opacity="0.3"/>
+
+  <text class="lb" x="14" y="190">✓ Correct — split, then encode inside each fold</text>
+
+  <rect class="f-grey" x="14" y="206" width="104" height="52" rx="5"/>
+  <text class="on-fill-sm" x="66" y="227" text-anchor="middle">full dataset</text>
+  <text class="on-fill-sm" x="66" y="243" text-anchor="middle">X and y</text>
+
+  <line class="ar" x1="122" y1="232" x2="158" y2="232" marker-end="url(#ar7)"/>
+
+  <rect class="f-blue" x="164" y="202" width="96" height="26" rx="4"/>
+  <text class="on-fill-sm" x="212" y="220" text-anchor="middle">train fold</text>
+  <rect class="f-amber" x="164" y="234" width="96" height="26" rx="4"/>
+  <text class="on-fill-sm" x="212" y="252" text-anchor="middle">val fold</text>
+
+  <line class="ar" x1="264" y1="215" x2="300" y2="215" marker-end="url(#ar7)"/>
+  <rect class="f-green" x="306" y="196" width="150" height="38" rx="5"/>
+  <text class="on-fill-sm" x="381" y="212" text-anchor="middle">fit encoder</text>
+  <text class="on-fill-sm" x="381" y="227" text-anchor="middle">on train rows only</text>
+
+  <path class="ar" d="M381,238 L381,254 L300,254" marker-end="url(#ar7)"/>
+  <text class="xs" x="300" y="272" text-anchor="middle">apply (do not refit) to val ↑</text>
+
+  <line class="ar" x1="460" y1="215" x2="496" y2="215" marker-end="url(#ar7)"/>
+  <rect class="f-green" x="502" y="196" width="140" height="38" rx="5"/>
+  <text class="on-fill-sm" x="572" y="212" text-anchor="middle">AUC 0.78</text>
+  <text class="on-fill-sm" x="572" y="228" text-anchor="middle">and real</text>
+  <text class="xs" x="664" y="212">production</text>
+  <text class="xs" x="664" y="226">performance:</text>
+  <text class="sm" x="664" y="242">≈ 0.78</text>
+
+  <text class="xs" x="380" y="308" text-anchor="middle">The correct pipeline reports a LOWER number. That is the point — the lower number is the true one.</text>
+</svg>
+</Figure>
+
+## Regularising target encoding
+
+Raw category means are unusable for rare categories — one observation gives you a
+mean of 0 or 1 with no reliability. The standard fix is smoothing toward the
+global mean, with the weight determined by how much data the category has:
+
+$$
+\hat{y}_c = \frac{n_c \cdot \bar{y}_c + m \cdot \bar{y}}{n_c + m},
+$$
+
+where $n_c$ is the count for category $c$, $\bar{y}_c$ its mean, $\bar{y}$ the
+global mean, and $m$ a smoothing constant. A category seen once is pulled almost
+entirely to the global mean; a category seen ten thousand times keeps its own.
+
+This is Micci-Barreca's 2001 scheme and it remains the standard. But note what it
+does **not** fix: smoothing reduces variance, it does not remove leakage. You
+still need out-of-fold computation.
+
+<Tier level="formal" />
+
+## One-hot and the dummy-variable trap
+
+One-hot maps $c \in \{1,\dots,k\}$ to $e_c \in \{0,1\}^k$. Distances are
+uninformative by construction:
+
+$$
+\|e_i - e_j\|_2 = \sqrt{2} \quad \text{for all } i \neq j.
+$$
+
+Every pair of categories is equidistant. This is exactly right when you have no
+prior similarity information, and exactly wrong when you do — it is why one-hot
+cannot express that London and Manchester are more alike than London and Mumbai.
+
+**The dummy-variable trap.** The $k$ columns are linearly dependent — they sum to
+the all-ones vector. With an intercept, the design matrix is rank-deficient and
+$X^{\top}X$ is singular, so ordinary least squares has no unique solution. Drop
+one column (`drop_first=True`) to restore full rank.
+
+Two important caveats on that advice, both routinely mishandled:
+
+- **With $\ell_2$ regularisation, do not drop.** Ridge already handles the
+  singularity, and dropping a level makes the penalty asymmetric across
+  categories — the dropped level is treated differently from the rest for no
+  principled reason.
+- **For tree models, never drop.** There is no matrix inversion, and dropping a
+  level simply hides a category from the splitter.
+
+## Ordinal encoding, formally
+
+$$
+\phi_{\text{ord}}(c) = \pi(c), \qquad \pi: \{1,\dots,k\} \to \{0,\dots,k-1\}.
+$$
+
+For a linear model $f(x) = w\,\phi_{\text{ord}}(c) + b$, the encoding constrains
+the fitted effects to be *collinear in the assigned order*:
+
+$$
+f(c_{i+1}) - f(c_i) = w \quad \text{for all } i,
+$$
+
+i.e. the model is forced to believe every adjacent pair of categories differs by
+the same amount. When the ordering is real and roughly evenly spaced, this is a
+useful constraint that saves parameters. When it is arbitrary, it is a
+misspecification the model cannot escape.
+
+For trees the situation is different but not harmless. A tree can carve
+$\{0,\dots,k-1\}$ into arbitrary intervals, so it can recover any grouping that is
+*contiguous in $\pi$*. Groupings that are not contiguous require multiple splits.
+So the arbitrary ordering does not make the model wrong, but it does make some
+groupings cheaper to express than others — a real, if mild, inductive bias you did
+not intend.
+
+## Target encoding and the leakage bound
+
+$$
+\phi_{\text{tgt}}(c) = \mathbb{E}\big[Y \mid C = c\big], \quad \text{estimated as} \quad \hat{\phi}(c) = \frac{1}{n_c}\sum_{i : c_i = c} y_i .
+$$
+
+Consider the contribution of row $i$ to its own encoded value. Decompose:
+
+$$
+\hat{\phi}(c_i) = \frac{y_i}{n_c} + \frac{n_c - 1}{n_c}\cdot \hat{\phi}_{-i}(c_i),
+$$
+
+where $\hat{\phi}_{-i}$ excludes row $i$. The first term is direct label leakage,
+and its magnitude is $1/n_c$. So:
+
+- $n_c = 1$: the feature *is* the label. Complete leakage.
+- $n_c = 10$: 10% of the feature value is the row's own label.
+- $n_c = 10\,000$: negligible.
+
+**Leakage severity is inversely proportional to category frequency** — which is
+why the problem is worst exactly where target encoding is most attractive, on
+high-cardinality columns with long tails.
+
+The correct estimator is the leave-one-out or, better, out-of-fold version:
+
+$$
+\hat{\phi}^{\text{OOF}}(c_i) = \frac{1}{|\mathcal{S}_{c}^{\,\setminus k(i)}|} \sum_{j \in \mathcal{S}_{c}^{\,\setminus k(i)}} y_j,
+$$
+
+computed from folds other than the one containing row $i$. CatBoost goes further
+with *ordered target statistics*: impose a random permutation and encode each row
+using only rows earlier in that permutation, which mimics a time-ordered stream
+and removes the leakage exactly rather than approximately.
+
+<Aside type="caution" title="Leave-one-out is not as safe as it looks">
+Plain LOO target encoding removes the direct term but introduces a subtler
+problem: for a binary target within a small category, the LOO value is a
+deterministic decreasing function of $y_i$. A tree can invert it. Ordered target
+statistics or proper K-fold OOF are the safe options; LOO is not.
+</Aside>
+
+## Feature hashing
+
+$$
+\phi_{\text{hash}}(c)_j = \sum_{c' : h(c') = j} \xi(c'), \qquad h: \mathcal{C} \to \{1,\dots,b\}, \quad \xi: \mathcal{C} \to \{\pm 1\}.
+$$
+
+The signed variant $\xi$ is the part that makes the guarantee work. Weinberger et
+al. showed the hashed inner product is unbiased:
+
+$$
+\mathbb{E}\big[\langle \phi_{\text{hash}}(x), \phi_{\text{hash}}(x') \rangle\big] = \langle x, x' \rangle,
+$$
+
+because collisions contribute $+1$ and $-1$ with equal probability and cancel in
+expectation. Without the signs, collisions would add and the inner product would
+be systematically inflated.
+
+Collision probability for $k$ categories in $b$ buckets is approximately $1 -
+e^{-k^2/2b}$ — the birthday bound. Practical consequence: to keep pairwise
+collisions rare you need $b$ substantially larger than $k^2$, which is often
+infeasible. In practice one accepts collisions and relies on the unbiasedness, and
+the resulting model is genuinely worse than a collision-free encoding — hashing
+buys memory and streaming capability at a real accuracy cost.
+
+## Learned embeddings
+
+$$
+\phi_{\text{emb}}(c) = E_c, \qquad E \in \mathbb{R}^{k \times d}, \quad d \ll k,
+$$
+
+with $E$ trained by backpropagation alongside the model. Since the embedding
+layer is a matrix multiply against a one-hot vector, this is *exactly* a one-hot
+encoding followed by a linear layer — the difference is that the linear layer is
+learned end-to-end, so it discovers a similarity structure that one-hot alone
+cannot express.
+
+A common heuristic for dimensionality, from the entity-embeddings literature and
+the fast.ai defaults:
+
+$$
+d = \min\big(600,\; \lceil 1.6 \cdot k^{0.56} \rceil\big).
+$$
+
+Treat this as a starting point, not a result — it is empirical folklore, widely
+used, with no theoretical backing.
+
+The real requirement is data. Each category needs enough occurrences for its row
+of $E$ to receive meaningful gradient. Categories appearing a handful of times end
+up with essentially random vectors, which is worse than target encoding's
+smoothed estimate for those same categories. **Embeddings are the best method
+when data is plentiful per category and among the worst when it is not.**
+
+<Tier level="frontier" />
+
+## Where this stands, as of 2026
+
+**The methods are settled; the practice is not.** Nothing fundamental has changed
+since roughly 2017. What has changed is tooling: scikit-learn added a native
+`TargetEncoder` with internal cross-fitting in 1.3, which makes the safe path the
+default path for the first time. That is a bigger deal for real-world model
+quality than any new method would be.
+
+**Native categorical handling has largely won for trees.** LightGBM and CatBoost
+handle categorical features internally, using approaches that are both more
+accurate and less error-prone than manual preprocessing. If you are using
+gradient-boosted trees on tabular data in 2026, the default advice is to use the
+library's native support and not encode manually at all.
+
+**Tabular foundation models are the live question.** Approaches that pretrain a
+transformer across many tables and treat categorical values as text tokens
+sidestep the encoding question entirely — the model reads `London` as a string. On
+small datasets these are competitive with tuned gradient boosting. Whether they
+displace the classical pipeline at scale is genuinely unsettled, and I would not
+bet either way yet.
+
+## Open problems
+
+- **Extreme cardinality is unsolved.** A column with millions of categories and a
+  heavy tail defeats every method here: hashing collides badly, target encoding's
+  leakage scales as $1/n_c$ and the tail has $n_c$ of one or two, embeddings
+  starve. This is the norm for user and item IDs in recommendation, and it is
+  handled by domain-specific hacks rather than by any general method.
+
+- **No principled dimensionality rule for embeddings.** The $1.6 k^{0.56}$
+  heuristic is folklore. There is no derivation and no dataset-dependent theory.
+
+- **Encoding choice is not part of model selection.** It is treated as
+  preprocessing and tuned by hand, when it interacts strongly with model family,
+  regularisation, and cardinality. Joint search over encoding and model is rare
+  and expensive.
+
+- **Concept drift in target encodings is under-addressed.** A target encoding is a
+  statistic of the training distribution. When category-level base rates shift —
+  which they do, constantly, in production — the encoding silently becomes wrong,
+  and nothing in the standard pipeline detects it.
+
+## What to read next, in order
+
+1. **Micci-Barreca (2001)** — six pages, and the smoothing formula everyone still
+   uses. Read it for the derivation, not the results.
+2. **Weinberger et al. (2009)** — the unbiasedness argument for signed hashing is
+   short and worth seeing in full.
+3. **Prokhorenkova et al. (2017), CatBoost** — Section 3 on ordered target
+   statistics is the definitive treatment of the leakage problem.
+
+<Papers papers={frontmatter.papers} />

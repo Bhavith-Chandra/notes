@@ -1,0 +1,113 @@
+---
+title: Topic name
+description: One sentence, under 160 characters, that a search engine and a skimming reader both get value from.
+draft: true
+sidebar:
+  order: 99
+depth: frontier
+readingTime: 20
+prereqs: []
+papers:
+  - title: "Paper title"
+    authors: "First Author et al."
+    year: 2025
+    url: "https://arxiv.org/abs/0000.00000"
+---
+
+import Abstract from '../../components/Abstract.astro';
+import KeyPoints from '../../components/KeyPoints.astro';
+import Tier from '../../components/Tier.astro';
+import Figure from '../../components/Figure.astro';
+import Papers from '../../components/Papers.astro';
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+{/*
+  NOTE ON IMPORT PATHS: this template sits at src/content/docs/. If you copy it
+  into a subdirectory (e.g. docs/architectures/), add one more `../` to each
+  component import.
+
+  NOTE ON `draft: true`: drafts are excluded from production builds but visible
+  in `npm run dev`. Delete the line when the page is ready.
+*/}
+
+<Abstract>
+One paragraph. Assume this is the only thing most visitors read. It should say
+what the concept is, why it matters, and what the page's punchline is — not tease
+them.
+</Abstract>
+
+<KeyPoints>
+
+- **Bolded lead-in** — then the point. Three to five of these, no more.
+- **Second point** — each should be defensible on its own.
+- **Third point** — prefer the non-obvious ones. Skip anything a definition covers.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## The idea in one paragraph
+
+No maths. No jargon. An analogy is fine and usually better.
+
+## Why this matters
+
+What becomes possible that wasn't, or what problem this solves.
+
+## The catch
+
+Every technique has one. Name it here, in plain language, before the reader
+invests in the mechanics.
+
+<Tier level="mechanics" />
+
+## The components
+
+<Figure lead="Caption lead-in." caption="Rest of the caption, explaining what to look at and why.">
+  {/* inline <svg> here, or use <Figure src="/figures/x.svg" alt="..." /> */}
+</Figure>
+
+<Steps>
+
+1. First step.
+2. Second step.
+3. Third step.
+
+</Steps>
+
+## How it actually works
+
+Prose and pseudocode. Notation is allowed here; derivations are not.
+
+<Tier level="formal" />
+
+## The setup
+
+Define your symbols before using them. Every one.
+
+$$
+\mathcal{L} = \dots
+$$
+
+## The result that matters
+
+State the assumption, then the bound or the guarantee, then what it means in
+practice. A bound whose practical reading is not spelled out is decoration.
+
+<Tier level="frontier" />
+
+## Where the field is, as of 2026
+
+Real numbers, named systems, dated. Say which claims come from a single paper and
+have not been independently reproduced.
+
+## Open problems
+
+- **Problem one** — why it is hard, not just that it is.
+- **Problem two** — and what a solution would look like.
+
+## What to read next
+
+1. Paper — and specifically *why* to read it.
+
+<Papers papers={frontmatter.papers} />

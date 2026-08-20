@@ -1,0 +1,22 @@
+---
+/**
+ * KeyPoints.astro — the "Key Contributions" box from the reference template.
+ * Put it directly under the abstract. Keep it to 3–5 bullets, each with a
+ * bolded lead-in phrase.
+ *
+ * Usage:
+ *   <KeyPoints>
+ *     - **Bolded lead-in** — then the rest of the point.
+ *     - **Another** — and so on.
+ *   </KeyPoints>
+ */
+interface Props {
+  title?: string;
+}
+const { title = 'What you should walk away with' } = Astro.props;
+---
+
+<aside class="atlas-keypoints">
+  <p class="atlas-keypoints-title">{title}</p>
+  <slot />
+</aside>

@@ -1,0 +1,94 @@
+---
+title: How to read a page
+description: The four depth tiers, what each one assumes, and how to author a new page in the same format.
+---
+
+import Tier from '../../components/Tier.astro';
+import { Aside, FileTree } from '@astrojs/starlight/components';
+
+Every topic page in this atlas has the same four-tier spine. The tiers are
+cumulative: each one assumes you have read the ones above it, and nothing else.
+
+## The four tiers
+
+<Tier level="intuition" />
+
+No equations, no jargon, no prerequisites. Analogy and motivation only. If you
+have never heard the term before, everything you need to hold a conversation
+about it is here. Roughly 500–800 words.
+
+<Tier level="mechanics" />
+
+How the thing actually works — the components, the data flow, the algorithm in
+steps or pseudocode. Some notation, but no derivations. This is where most
+readers should stop if they want working knowledge rather than research
+knowledge. Roughly 1,000–1,500 words.
+
+<Tier level="formal" />
+
+The objective functions, the derivations that matter, the bounds and the
+assumptions they rest on. Assumes comfort with linear algebra, probability, and
+standard ML notation. Roughly 800–1,500 words.
+
+<Tier level="frontier" />
+
+Current results with real numbers, open problems, and disagreements in the
+literature. Assumes you have read at least the abstracts of the primary sources.
+This tier ages fastest — date your claims.
+
+<Aside type="tip" title="Stopping early is the point">
+Tier 1 alone should leave you with a correct mental model, not a misleading
+simplification. If a Tier 1 section only makes sense once you have read Tier 3,
+the Tier 1 section is badly written and should be fixed.
+</Aside>
+
+## Authoring rules
+
+These exist so pages stay comparable to each other.
+
+1. **One concept per page.** If a page needs two abstracts, it is two pages.
+2. **Never skip a tier.** A page that jumps from intuition to formal is missing
+   its most-read section.
+3. **The abstract must stand alone.** Assume most visitors read only the abstract
+   and the key-points box.
+4. **Bold the lead-in of every key point** and every figure caption. This is the
+   Nerfies convention and it is load-bearing for scannability.
+5. **Cite in frontmatter, not inline.** Papers go in the `papers:` array and are
+   rendered by `<Papers />` at the bottom. This keeps citations as structured data.
+6. **Date frontier claims.** Write "as of 2026" explicitly. Tier 4 is a snapshot,
+   not a fact.
+7. **State disagreements as disagreements.** If the literature is split, say so and
+   give the strongest form of each side. Do not resolve it by omission.
+
+## Page skeleton
+
+Copy `src/content/docs/_template.mdx` to start a new page. The structure is:
+
+<FileTree>
+- src/
+  - content/
+    - docs/
+      - _template.mdx        the file to copy
+      - index.mdx
+      - how-to-read.mdx
+      - foundations/
+      - world-models/
+        - **index.mdx**      the reference implementation of the format
+      - architectures/
+      - training/
+      - reference/
+  - components/
+    - Abstract.astro
+    - KeyPoints.astro
+    - Tier.astro
+    - Figure.astro
+    - Papers.astro
+  - styles/
+    - nerfies.css            all the visual styling
+</FileTree>
+
+## Adding a new section to the sidebar
+
+Create the directory under `src/content/docs/`, then add a group to the `sidebar`
+array in `astro.config.mjs` with `autogenerate: { directory: '<name>' }`. Order
+within a group is controlled by each page's `sidebar.order` frontmatter.

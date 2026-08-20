@@ -1,0 +1,36 @@
+---
+/**
+ * Papers.astro — numbered citation list, rendered from page frontmatter.
+ *
+ * Put the papers in frontmatter so they are structured data (and could later
+ * feed a site-wide bibliography page), then render with:
+ *
+ *   <Papers papers={frontmatter.papers} />
+ */
+interface Paper {
+  title: string;
+  authors: string;
+  year: number;
+  url: string;
+}
+interface Props {
+  papers: Paper[];
+  title?: string;
+}
+const { papers = [], title = 'Primary sources' } = Astro.props;
+---
+
+{papers.length > 0 && (
+  <section class="atlas-papers">
+    <h2>{title}</h2>
+    <ol>
+      {papers.map((p) => (
+        <li>
+          <a href={p.url} target="_blank" rel="noopener noreferrer">{p.title}</a>
+          {' — '}
+          <span class="atlas-paper-authors">{p.authors}, {p.year}</span>
+        </li>
+      ))}
+    </ol>
+  </section>
+)}

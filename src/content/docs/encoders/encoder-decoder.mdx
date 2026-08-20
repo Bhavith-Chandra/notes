@@ -1,0 +1,497 @@
+---
+title: Encoder–Decoder Architectures
+description: "Seq2seq, the information bottleneck, attention as its fix, and the encoder-only vs decoder-only vs encoder-decoder question as it actually stands in 2026."
+sidebar:
+  order: 3
+depth: frontier
+readingTime: 35
+prereqs:
+  - label: "Encoders: overview"
+    slug: "encoders"
+papers:
+  - title: "Learning Phrase Representations using RNN Encoder-Decoder for Statistical Machine Translation"
+    authors: "Cho et al."
+    year: 2014
+    url: "https://arxiv.org/abs/1406.1078"
+  - title: "Sequence to Sequence Learning with Neural Networks"
+    authors: "Sutskever, Vinyals, Le"
+    year: 2014
+    url: "https://arxiv.org/abs/1409.3215"
+  - title: "Neural Machine Translation by Jointly Learning to Align and Translate"
+    authors: "Bahdanau, Cho, Bengio"
+    year: 2014
+    url: "https://arxiv.org/abs/1409.0473"
+  - title: "Attention Is All You Need"
+    authors: "Vaswani et al."
+    year: 2017
+    url: "https://arxiv.org/abs/1706.03762"
+  - title: "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding"
+    authors: "Devlin, Chang, Lee, Toutanova"
+    year: 2018
+    url: "https://arxiv.org/abs/1810.04805"
+  - title: "BART: Denoising Sequence-to-Sequence Pre-training for Natural Language Generation, Translation, and Comprehension"
+    authors: "Lewis et al."
+    year: 2019
+    url: "https://arxiv.org/abs/1910.13461"
+  - title: "Exploring the Limits of Transfer Learning with a Unified Text-to-Text Transformer (T5)"
+    authors: "Raffel et al."
+    year: 2019
+    url: "https://arxiv.org/abs/1910.10683"
+  - title: "Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks"
+    authors: "Reimers, Gurevych"
+    year: 2019
+    url: "https://arxiv.org/abs/1908.10084"
+  - title: "Smarter, Better, Faster, Longer: A Modern Bidirectional Encoder (ModernBERT)"
+    authors: "Benjamin Warner et al."
+    year: 2024
+    url: "https://arxiv.org/abs/2412.13663"
+  - title: "Seq vs Seq: An Open Suite of Paired Encoders and Decoders"
+    authors: "Weller, Ricci, Marone, Chaffin, Lawrie, Van Durme"
+    year: 2025
+    url: "https://arxiv.org/abs/2507.11412"
+  - title: "Should We Still Pretrain Encoders with Masked Language Modeling?"
+    authors: "Gisserot-Boukhlef et al."
+    year: 2025
+    url: "https://arxiv.org/abs/2507.00994"
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+<Abstract>
+Here "encoder" names a *position*, not a technique: the half of a model that
+reads input and produces a representation, as opposed to the half that emits
+output one token at a time. The whole history of this design is one problem and
+its fixes — a fixed-size summary cannot carry a long input, attention removed that
+limit, and the field then spent a decade working out whether you need the encoder
+half at all. As of 2026 the answer is: for generation, no; for understanding and
+retrieval, yes.
+</Abstract>
+
+<KeyPoints>
+
+- **The encoder–decoder split exists because input and output are asymmetric.** The input is fully available and can be read in any order; the output must be produced left to right. Bidirectional attention on one side and causal masking on the other is the natural consequence.
+- **The bottleneck was the original sin, and attention was the fix.** Compressing an arbitrarily long sentence into one fixed vector degrades with length. Bahdanau et al. let the decoder look back at every input position — the single most consequential change in the lineage.
+- **Encoder-only and decoder-only differ by one thing: the attention mask.** Not by size, not by training data, not by architecture family. Bidirectional versus causal is the entire distinction, and everything else follows from it.
+- **Decoder-only won generation; encoder-only did not lose understanding.** The 2020–2023 consensus that decoders subsume encoders has partly reversed on the strength of matched-parameter comparisons published in 2024–2025.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## Reading versus writing
+
+Think about translating a sentence. You do two different things.
+
+First you **read** the whole source sentence. You can look at any word in any
+order, jump back to check whether *bank* meant a river or a vault, re-read the
+ending before deciding the tense. Nothing stops you, because the whole sentence is
+sitting there.
+
+Then you **write** the translation. Now you are constrained: you produce words in
+order, and when you choose word five you cannot consult word seven, because word
+seven doesn't exist yet.
+
+**Encoder = the reading half. Decoder = the writing half.** That's it. And the
+asymmetry in how you're allowed to look around is exactly the asymmetry that
+shows up in the architecture, as a difference in attention masking.
+
+## The original design and its flaw
+
+The 2014 systems worked like this: the encoder read the source sentence word by
+word, ending with a single fixed-size vector — the *thought vector* — meant to
+capture the whole meaning. The decoder then generated the translation from that
+vector alone.
+
+It worked, which was remarkable. But there was an obvious problem, and it showed
+up exactly where you'd expect: **long sentences**. One vector of 512 numbers has
+to hold a three-word sentence and a sixty-word sentence equally well. It cannot.
+Translation quality visibly degraded as sentences got longer, and the degradation
+was sharp rather than gradual.
+
+<Figure
+  lead="The bottleneck, and the fix."
+  caption="Top: the original design forces everything through a single fixed-size vector, so information about early words must survive the entire encoding process intact. Bottom: attention lets the decoder read from every encoder position directly, choosing a different weighted mixture at each output step. The bottleneck disappears because there is no longer a single place all information must pass through."
+>
+<svg viewBox="0 0 760 340" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Comparison of fixed-vector seq2seq and attention-based seq2seq">
+  <defs>
+    <marker id="ar4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <text class="lb" x="20" y="20">Without attention (Sutskever et al., 2014)</text>
+
+  <rect class="f-blue" x="20" y="34" width="52" height="34" rx="4"/>
+  <text class="on-fill-sm" x="46" y="56" text-anchor="middle">the</text>
+  <rect class="f-blue" x="78" y="34" width="52" height="34" rx="4"/>
+  <text class="on-fill-sm" x="104" y="56" text-anchor="middle">cat</text>
+  <rect class="f-blue" x="136" y="34" width="52" height="34" rx="4"/>
+  <text class="on-fill-sm" x="162" y="56" text-anchor="middle">sat</text>
+  <rect class="f-blue" x="194" y="34" width="52" height="34" rx="4"/>
+  <text class="on-fill-sm" x="220" y="56" text-anchor="middle">down</text>
+
+  <path class="ar" d="M46,68 L280,88" marker-end="url(#ar4)"/>
+  <path class="ar" d="M104,68 L280,90" marker-end="url(#ar4)"/>
+  <path class="ar" d="M162,68 L280,92" marker-end="url(#ar4)"/>
+  <path class="ar" d="M220,68 L280,94" marker-end="url(#ar4)"/>
+
+  <rect class="f-pink" x="286" y="72" width="96" height="40" rx="6"/>
+  <text class="on-fill-sm" x="334" y="89" text-anchor="middle">one vector</text>
+  <text class="on-fill-sm" x="334" y="105" text-anchor="middle">c ∈ R^512</text>
+  <text class="xs" x="334" y="128" text-anchor="middle">everything must fit here</text>
+
+  <path class="ar" d="M382,92 L440,92" marker-end="url(#ar4)"/>
+
+  <rect class="f-green" x="446" y="34" width="60" height="34" rx="4"/>
+  <text class="on-fill-sm" x="476" y="56" text-anchor="middle">le</text>
+  <rect class="f-green" x="512" y="34" width="60" height="34" rx="4"/>
+  <text class="on-fill-sm" x="542" y="56" text-anchor="middle">chat</text>
+  <rect class="f-green" x="578" y="34" width="60" height="34" rx="4"/>
+  <text class="on-fill-sm" x="608" y="56" text-anchor="middle">s'est</text>
+  <rect class="f-green" x="644" y="34" width="60" height="34" rx="4"/>
+  <text class="on-fill-sm" x="674" y="56" text-anchor="middle">assis</text>
+  <path class="ar" d="M446,92 L476,72" marker-end="url(#ar4)"/>
+  <path class="ar" d="M470,96 L542,72" marker-end="url(#ar4)"/>
+  <path class="ar" d="M470,100 L608,72" marker-end="url(#ar4)"/>
+  <path class="ar" d="M470,104 L674,72" marker-end="url(#ar4)"/>
+
+  <line class="bx" x1="20" y1="152" x2="740" y2="152" opacity="0.3"/>
+
+  <text class="lb" x="20" y="180">With attention (Bahdanau et al., 2014)</text>
+
+  <rect class="f-blue" x="20" y="196" width="52" height="34" rx="4"/>
+  <text class="on-fill-sm" x="46" y="218" text-anchor="middle">the</text>
+  <rect class="f-blue" x="78" y="196" width="52" height="34" rx="4"/>
+  <text class="on-fill-sm" x="104" y="218" text-anchor="middle">cat</text>
+  <rect class="f-blue" x="136" y="196" width="52" height="34" rx="4"/>
+  <text class="on-fill-sm" x="162" y="218" text-anchor="middle">sat</text>
+  <rect class="f-blue" x="194" y="196" width="52" height="34" rx="4"/>
+  <text class="on-fill-sm" x="220" y="218" text-anchor="middle">down</text>
+
+  <rect class="f-green" x="446" y="196" width="60" height="34" rx="4"/>
+  <text class="on-fill-sm" x="476" y="218" text-anchor="middle">le</text>
+  <rect class="f-green" x="512" y="196" width="60" height="34" rx="4"/>
+  <text class="on-fill-sm" x="542" y="218" text-anchor="middle">chat</text>
+  <rect class="f-green" x="578" y="196" width="60" height="34" rx="4"/>
+  <text class="on-fill-sm" x="608" y="218" text-anchor="middle">s'est</text>
+  <rect class="f-green" x="644" y="196" width="60" height="34" rx="4"/>
+  <text class="on-fill-sm" x="674" y="218" text-anchor="middle">assis</text>
+
+  <path class="thick" d="M104,230 C160,300 400,300 542,230" opacity="0.85"/>
+  <path class="ar" d="M46,230 C120,290 420,290 542,232" opacity="0.35"/>
+  <path class="ar" d="M162,230 C240,300 460,300 608,232" opacity="0.35"/>
+  <path class="ar" d="M220,230 C300,300 560,300 674,232" opacity="0.35"/>
+
+  <text class="xs" x="330" y="318" text-anchor="middle">each output token attends over ALL input positions — no single bottleneck</text>
+</svg>
+</Figure>
+
+<Aside type="tip" title="Why this history is worth knowing">
+Attention was not invented as a general-purpose mechanism. It was invented as a
+patch for one specific failure — long-sentence translation quality — and only
+later turned out to be the thing worth keeping. *Attention Is All You Need* is
+literally the observation that you could throw away the recurrent parts and keep
+only the patch.
+</Aside>
+
+## Three shapes, one difference
+
+Modern transformers come in three configurations, and people talk about them as
+if they were three different architectures. They are not. **They differ in the
+attention mask.**
+
+<Figure
+  lead="Encoder-only, decoder-only, encoder–decoder."
+  caption="Blue cells are attention connections that are allowed; grey are masked out. Encoder-only sees everything in both directions, which is why it produces good representations but cannot generate autoregressively. Decoder-only sees only the past, which is what makes generation well-defined. Encoder-decoder does both, with cross-attention joining them."
+>
+<svg viewBox="0 0 760 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Attention mask patterns for encoder-only, decoder-only and encoder-decoder models">
+  <text class="lb" x="110" y="20" text-anchor="middle">Encoder-only</text>
+  <text class="xs" x="110" y="36" text-anchor="middle">bidirectional mask</text>
+  <rect class="f-blue" x="40" y="46" width="140" height="140" rx="4"/>
+  <line class="bx" x1="40" y1="81" x2="180" y2="81" opacity="0.4"/>
+  <line class="bx" x1="40" y1="116" x2="180" y2="116" opacity="0.4"/>
+  <line class="bx" x1="40" y1="151" x2="180" y2="151" opacity="0.4"/>
+  <line class="bx" x1="75" y1="46" x2="75" y2="186" opacity="0.4"/>
+  <line class="bx" x1="110" y1="46" x2="110" y2="186" opacity="0.4"/>
+  <line class="bx" x1="145" y1="46" x2="145" y2="186" opacity="0.4"/>
+  <text class="sm" x="110" y="206" text-anchor="middle">BERT · ModernBERT</text>
+  <text class="xs" x="110" y="224" text-anchor="middle">classification, retrieval,</text>
+  <text class="xs" x="110" y="238" text-anchor="middle">NER, reranking</text>
+
+  <text class="lb" x="380" y="20" text-anchor="middle">Decoder-only</text>
+  <text class="xs" x="380" y="36" text-anchor="middle">causal mask</text>
+  <rect class="f-grey" x="310" y="46" width="140" height="140" rx="4"/>
+  <path class="f-purple" d="M310,46 L345,46 L345,81 L310,81 Z"/>
+  <path class="f-purple" d="M310,81 L380,81 L380,116 L310,116 Z"/>
+  <path class="f-purple" d="M310,116 L415,116 L415,151 L310,151 Z"/>
+  <path class="f-purple" d="M310,151 L450,151 L450,186 L310,186 Z"/>
+  <line class="bx" x1="310" y1="81" x2="450" y2="81" opacity="0.4"/>
+  <line class="bx" x1="310" y1="116" x2="450" y2="116" opacity="0.4"/>
+  <line class="bx" x1="310" y1="151" x2="450" y2="151" opacity="0.4"/>
+  <line class="bx" x1="345" y1="46" x2="345" y2="186" opacity="0.4"/>
+  <line class="bx" x1="380" y1="46" x2="380" y2="186" opacity="0.4"/>
+  <line class="bx" x1="415" y1="46" x2="415" y2="186" opacity="0.4"/>
+  <text class="sm" x="380" y="206" text-anchor="middle">GPT · Llama · Claude</text>
+  <text class="xs" x="380" y="224" text-anchor="middle">generation, chat,</text>
+  <text class="xs" x="380" y="238" text-anchor="middle">in-context learning</text>
+
+  <text class="lb" x="640" y="20" text-anchor="middle">Encoder–decoder</text>
+  <text class="xs" x="640" y="36" text-anchor="middle">both, plus cross-attention</text>
+  <rect class="f-blue" x="580" y="46" width="60" height="60" rx="4"/>
+  <text class="on-fill-sm" x="610" y="82" text-anchor="middle">enc</text>
+  <rect class="f-grey" x="650" y="126" width="60" height="60" rx="4"/>
+  <path class="f-purple" d="M650,126 L680,126 L680,156 L650,156 Z"/>
+  <path class="f-purple" d="M650,156 L710,156 L710,186 L650,186 Z"/>
+  <text class="sm" x="680" y="205" text-anchor="middle">dec</text>
+  <path class="ar" d="M640,76 C680,76 680,110 680,122" marker-end="url(#ar4)"/>
+  <text class="xs" x="700" y="100">cross-attn</text>
+  <text class="sm" x="640" y="224" text-anchor="middle">T5 · BART · Whisper</text>
+  <text class="xs" x="640" y="242" text-anchor="middle">translation, summarisation, ASR</text>
+</svg>
+</Figure>
+
+<Tier level="mechanics" />
+
+## What each shape can and cannot do
+
+<Steps>
+
+1. **Encoder-only.** Every token attends to every other token, in both
+   directions. To decide what *bank* means, the model can use the word three
+   positions later. This is why encoder representations are better: they are
+   genuinely contextual in both directions. It also means the model cannot be
+   used for autoregressive generation — there is no notion of "next token" when
+   every position already sees the future. Training is masked language modelling:
+   hide 15% of tokens, predict them from both sides.
+
+2. **Decoder-only.** Each token attends only to itself and earlier tokens. That
+   restriction is what makes next-token prediction a well-posed objective — the
+   model never sees the answer. Every position is simultaneously a training
+   example, which makes the objective extremely sample-efficient, and this is a
+   large part of why decoder-only scaled so well.
+
+3. **Encoder–decoder.** The encoder processes the input bidirectionally. The
+   decoder generates causally, but each decoder layer additionally runs
+   *cross-attention*: queries from the decoder, keys and values from the encoder
+   output. The input is read with full context; the output is produced in order.
+
+</Steps>
+
+## The case for and against each
+
+| | Encoder-only | Decoder-only | Encoder–decoder |
+|---|---|---|---|
+| Can generate text | no | yes | yes |
+| Bidirectional input context | yes | no | yes (input side) |
+| Training signal density | ~15% of tokens | 100% of tokens | ~100% (denoising) |
+| Parameter efficiency for understanding | **best** | weakest | middling |
+| Inference cost for seq2seq | n/a | reprocesses prompt each step | encoder runs once |
+| Prompting / in-context learning | no | **yes** | limited |
+| Typical use | embeddings, classification, reranking | chat, code, general assistants | translation, summarisation, ASR |
+
+<Aside type="caution" title="The training-signal asymmetry is underrated">
+Masked language modelling supervises only the ~15% of positions you masked.
+Next-token prediction supervises *every* position. For the same corpus, a
+decoder-only model gets roughly 6× more gradient signal per pass. This is a real
+efficiency advantage of decoders — and it is separate from, and often confused
+with, the question of which produces better representations per parameter.
+</Aside>
+
+## When to actually use which
+
+- **Semantic search, RAG retrieval, reranking, deduplication** → encoder-only.
+  You need one vector per document and cheap cosine comparison. A decoder-only
+  LLM can produce embeddings, but at matched quality it costs far more.
+- **Classification, NER, token tagging** → encoder-only, unless you need
+  zero-shot behaviour, in which case an LLM's prompting ability may outweigh its
+  inefficiency.
+- **Anything conversational, open-ended, or requiring in-context learning** →
+  decoder-only. Not close.
+- **Fixed input → fixed output transformations at scale** (translation,
+  summarisation, speech recognition) → encoder–decoder is still competitive and
+  often cheaper at inference, because the encoder runs once rather than being
+  reprocessed at every generated token.
+
+<Tier level="formal" />
+
+## Attention, and what the mask does
+
+Scaled dot-product attention:
+
+$$
+\operatorname{Attention}(Q,K,V) = \operatorname{softmax}\!\left(\frac{QK^{\top}}{\sqrt{d_k}} + M\right)V .
+$$
+
+Everything architectural on this page reduces to the choice of $M \in
+\mathbb{R}^{n\times n}$:
+
+$$
+M^{\text{enc}}_{ij} = 0 \;\;\forall i,j,
+\qquad
+M^{\text{dec}}_{ij} = \begin{cases} 0 & j \leq i \\ -\infty & j > i \end{cases}
+$$
+
+The $-\infty$ entries become zero after the softmax, severing those connections
+exactly. **Encoder-only and decoder-only transformers are the same function with
+different $M$.** Any claim that one is architecturally more expressive than the
+other has to route through this fact.
+
+**Why $\sqrt{d_k}$.** If $q$ and $k$ have i.i.d. zero-mean unit-variance
+components, then $q\cdot k$ has variance $d_k$. Without rescaling, the logits grow
+like $\sqrt{d_k}$, the softmax saturates, and gradients vanish. Dividing by
+$\sqrt{d_k}$ restores unit variance. It is not a tuned constant.
+
+**Cross-attention** is the same operation with the sources split:
+
+$$
+Q = H^{\text{dec}} W_Q, \qquad K = H^{\text{enc}} W_K, \qquad V = H^{\text{enc}} W_V,
+$$
+
+with no mask, since the decoder is permitted to see the entire input. This is
+the only structural difference between an encoder–decoder and two stacked
+transformers.
+
+## The bottleneck, quantified
+
+In the pre-attention design the decoder is conditioned on a single vector $c =
+h_T \in \mathbb{R}^{d}$:
+
+$$
+p(y_1,\dots,y_{T'} \mid x_1,\dots,x_T) = \prod_{t=1}^{T'} p\big(y_t \mid y_{<t},\, c\big).
+$$
+
+The mutual information the decoder can possibly exploit is bounded by the channel
+capacity of $c$, which is fixed at $O(d)$ regardless of $T$. Meanwhile the entropy
+of the source grows roughly linearly in $T$. So for $T$ beyond some threshold,
+information loss is not a modelling deficiency — it is forced by the architecture.
+
+Attention replaces the single $c$ with a per-step context vector:
+
+$$
+c_t = \sum_{i=1}^{T} \alpha_{ti}\, h_i, \qquad \alpha_{ti} = \frac{\exp(e_{ti})}{\sum_{j}\exp(e_{tj})}, \qquad e_{ti} = a(s_{t-1}, h_i).
+$$
+
+Now the decoder has access to $\{h_1,\dots,h_T\}$, whose total capacity scales
+with $T$. The bound disappears. Bahdanau et al.'s central empirical result is
+exactly this: BLEU no longer degrades with source length.
+
+## MLM versus CLM as objectives
+
+Masked language modelling, with $\mathcal{M}$ the masked index set:
+
+$$
+\mathcal{L}_{\text{MLM}} = -\sum_{i \in \mathcal{M}} \log p_\theta\big(x_i \mid x_{\setminus \mathcal{M}}\big).
+$$
+
+Causal language modelling:
+
+$$
+\mathcal{L}_{\text{CLM}} = -\sum_{i=1}^{n} \log p_\theta\big(x_i \mid x_{<i}\big).
+$$
+
+Two structural differences, both consequential:
+
+**Conditioning set.** MLM conditions on both sides; CLM on the left only. The MLM
+representation of token $i$ can encode information from token $i+5$; the CLM
+representation cannot. For any task where the answer depends on later context —
+which is most classification and retrieval — this is a genuine advantage, and it
+is not recoverable by scale.
+
+**Signal density.** MLM supervises $|\mathcal{M}| \approx 0.15n$ positions per
+sequence; CLM supervises all $n$. Per unit of compute, CLM extracts more gradient.
+
+These pull in opposite directions, which is precisely why the question "which is
+better?" has no unconditional answer and why the 2025 controlled comparisons
+matter more than the earlier informal consensus did.
+
+<Tier level="frontier" />
+
+## The encoder-only revival, as of 2026
+
+Between roughly 2020 and 2023 the field's working assumption was that
+decoder-only LLMs subsume encoders: if a model can do everything by prompting,
+why keep a specialised understanding architecture? Encoder-only research largely
+stopped, and BERT-family models stayed frozen at their 2019 recipes while
+decoders absorbed a decade of improvements.
+
+Three results have complicated that picture:
+
+**ModernBERT (Warner et al., 2024)** applied the accumulated decoder-side
+engineering — rotary position embeddings, 8192-token context, modern data mixtures
+and training recipes — to an encoder-only architecture. The result was
+substantially better than BERT and RoBERTa on classification and retrieval at
+comparable size. The finding is not that encoders are secretly superior; it is
+that the comparison everyone had been making was against an un-modernised
+baseline.
+
+**Seq vs Seq (Weller et al., 2025)** is the controlled experiment the debate
+needed: paired encoder and decoder models trained on identical data with identical
+recipes, differing only in objective and mask. At matched parameter counts,
+encoders led on classification and retrieval; decoders led on generation. Neither
+subsumed the other, and cross-objective adaptation did not close the gap.
+
+**Should We Still Pretrain Encoders with MLM? (Gisserot-Boukhlef et al., 2025)**
+examined whether the MLM objective itself is the source of the advantage or
+whether CLM pretraining followed by adaptation would do. The nuanced answer —
+that a CLM-then-MLM sequence can be compute-efficient — suggests the two
+objectives are complementary rather than competing.
+
+<Aside type="note" title="How to hold this">
+The honest summary is *"for retrieval and classification at a fixed parameter
+budget, encoder-only is currently the better default"* — not *"encoders beat
+decoders"*. The comparison is budget-dependent, and a sufficiently large
+decoder-only model will outperform a small encoder on almost anything. The claim
+is about efficiency, and efficiency claims have to state their budget.
+</Aside>
+
+## Where encoder–decoder still lives
+
+Largely outside text-to-text NLP, where the input is a different modality from the
+output and the asymmetry is unavoidable:
+
+- **Speech recognition** — Whisper is encoder–decoder, because audio frames and
+  text tokens are not the same kind of object.
+- **Any fixed-input, repeated-decode workload** — the encoder runs once and its
+  output is reused for every generated token, which is a real inference saving
+  over a decoder-only model that reprocesses the prompt.
+- **Diffusion conditioning** — text encoders feed cross-attention in image
+  generators. This is an encoder–decoder structure even though nobody calls it
+  one.
+
+## Open problems
+
+- **Nobody has cleanly separated objective from mask.** Encoder-only models are
+  bidirectional *and* MLM-trained; decoder-only are causal *and* CLM-trained. The
+  2025 work begins to disentangle these, but the four-way factorial comparison
+  does not exist at scale.
+
+- **Bidirectional generation remains unsolved.** Diffusion language models and
+  masked-generative approaches attempt it, and none currently match
+  autoregressive quality. If one did, the encoder/decoder distinction would
+  largely dissolve.
+
+- **Long context has not settled the bottleneck question, only moved it.**
+  Attention's quadratic cost means very long inputs are once again compressed —
+  now into KV caches, sparse patterns, or state-space summaries. The 2014
+  bottleneck argument applies to those compressions too, and it is not obvious
+  the field has internalised that.
+
+- **Encoder-only models cannot do in-context learning**, and there is no known
+  reason this must be so. It may be an artefact of the training objective rather
+  than of bidirectionality.
+
+## What to read next, in order
+
+1. **Bahdanau et al. (2014)** — read Figure 2, the BLEU-versus-length plot. It is
+   the clearest single piece of evidence in the whole lineage.
+2. **Vaswani et al. (2017)** — Section 3.2 on why $\sqrt{d_k}$, and Table 3's
+   ablations.
+3. **Weller et al. (2025), Seq vs Seq** — the controlled comparison. Read this
+   before forming an opinion on encoder versus decoder.
+
+<Papers papers={frontmatter.papers} />

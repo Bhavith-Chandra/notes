@@ -1,0 +1,49 @@
+---
+/**
+ * Tier.astro — a depth-tier divider.
+ *
+ * The four tiers are fixed across the whole atlas so a reader always knows how
+ * far down the page they are. Use them in order; never skip one.
+ *
+ *   intuition  — no jargon, no maths. Analogy and motivation only.
+ *   mechanics  — how the thing actually works, in words and pseudocode.
+ *   formal     — the equations, the objective, the results that matter.
+ *   frontier   — open problems, current numbers, what is still contested.
+ *
+ * IMPORTANT — this renders a styled band, NOT an <h2>. Starlight builds its
+ * "On this page" rail from Markdown headings only, so component output would
+ * be invisible to it. Write a real `## Heading` in Markdown right after each
+ * <Tier />; that heading is what shows up in the table of contents.
+ *
+ * Usage in .mdx:
+ *   <Tier level="intuition" sub="No maths. Start here if the term is new." />
+ *
+ *   ## The idea in one paragraph
+ */
+interface Props {
+  level: 'intuition' | 'mechanics' | 'formal' | 'frontier';
+  /** Optional one-line orientation for the reader. */
+  sub?: string;
+}
+
+const { level, sub } = Astro.props;
+
+const LABEL: Record<Props['level'], string> = {
+  intuition: 'Tier 1 · Intuition',
+  mechanics: 'Tier 2 · Mechanics',
+  formal: 'Tier 3 · Formal',
+  frontier: 'Tier 4 · Frontier',
+};
+
+const DEFAULT_SUB: Record<Props['level'], string> = {
+  intuition: 'Plain language. No equations, no prerequisites.',
+  mechanics: 'How it actually works. Pseudocode, no heavy maths.',
+  formal: 'The objective, the equations, the guarantees.',
+  frontier: 'Open problems, current results, and what is still contested.',
+};
+---
+
+<div class="atlas-tier" data-tier={level}>
+  <span class="atlas-tier-label">{LABEL[level]}</span>
+  <p class="atlas-tier-sub">{sub ?? DEFAULT_SUB[level]}</p>
+</div>

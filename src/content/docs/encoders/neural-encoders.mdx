@@ -1,0 +1,780 @@
+---
+title: Neural Encoders
+description: "Autoencoders, VAEs, VQ-VAE, CNN and ViT backbones, contrastive and joint-embedding encoders — what each one optimises, where it wins, and how each one fails."
+sidebar:
+  order: 2
+depth: frontier
+readingTime: 45
+prereqs:
+  - label: "Encoders: overview"
+    slug: "encoders"
+papers:
+  - title: "Reducing the Dimensionality of Data with Neural Networks"
+    authors: "G. E. Hinton, R. R. Salakhutdinov"
+    year: 2006
+    url: "https://doi.org/10.1126/science.1127647"
+  - title: "Extracting and Composing Robust Features with Denoising Autoencoders"
+    authors: "Vincent, Larochelle, Bengio, Manzagol"
+    year: 2008
+    url: "https://dl.acm.org/doi/10.1145/1390156.1390294"
+  - title: "Auto-Encoding Variational Bayes"
+    authors: "Diederik P. Kingma, Max Welling"
+    year: 2013
+    url: "https://arxiv.org/abs/1312.6114"
+  - title: "beta-VAE: Learning Basic Visual Concepts with a Constrained Variational Framework"
+    authors: "Higgins, Matthey, Pal, Burgess, Glorot, Botvinick, Mohamed, Lerchner"
+    year: 2017
+    url: "https://openreview.net/forum?id=Sy2fzU9gl"
+  - title: "Neural Discrete Representation Learning (VQ-VAE)"
+    authors: "van den Oord, Vinyals, Kavukcuoglu"
+    year: 2017
+    url: "https://arxiv.org/abs/1711.00937"
+  - title: "Generating Diverse High-Fidelity Images with VQ-VAE-2"
+    authors: "Razavi, van den Oord, Vinyals"
+    year: 2019
+    url: "https://arxiv.org/abs/1906.00446"
+  - title: "Deep Residual Learning for Image Recognition (ResNet)"
+    authors: "He, Zhang, Ren, Sun"
+    year: 2015
+    url: "https://arxiv.org/abs/1512.03385"
+  - title: "An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale (ViT)"
+    authors: "Dosovitskiy et al."
+    year: 2020
+    url: "https://arxiv.org/abs/2010.11929"
+  - title: "A Simple Framework for Contrastive Learning of Visual Representations (SimCLR)"
+    authors: "Chen, Kornblith, Norouzi, Hinton"
+    year: 2020
+    url: "https://arxiv.org/abs/2002.05709"
+  - title: "Learning Transferable Visual Models From Natural Language Supervision (CLIP)"
+    authors: "Radford et al."
+    year: 2021
+    url: "https://arxiv.org/abs/2103.00020"
+  - title: "Emerging Properties in Self-Supervised Vision Transformers (DINO)"
+    authors: "Caron et al."
+    year: 2021
+    url: "https://arxiv.org/abs/2104.14294"
+  - title: "Masked Autoencoders Are Scalable Vision Learners (MAE)"
+    authors: "He, Chen, Xie, Li et al."
+    year: 2021
+    url: "https://arxiv.org/abs/2111.06377"
+  - title: "Self-Supervised Learning from Images with a Joint-Embedding Predictive Architecture (I-JEPA)"
+    authors: "Assran et al."
+    year: 2023
+    url: "https://arxiv.org/abs/2301.08243"
+  - title: "Understanding Contrastive Representation Learning through Alignment and Uniformity on the Hypersphere"
+    authors: "Tongzhou Wang, Phillip Isola"
+    year: 2020
+    url: "https://arxiv.org/abs/2005.10242"
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+<Abstract>
+A neural encoder is a learned function from raw data to a vector. Everything
+interesting about one is determined not by its architecture but by the objective
+that trained it — which is why a ResNet trained on ImageNet and the same ResNet
+trained with SimCLR share every weight shape and almost no useful behaviour. This
+page walks the six families in the order they were invented, because each one
+exists to fix a specific, nameable failure of the one before it.
+</Abstract>
+
+<KeyPoints>
+
+- **The objective is the encoder.** Architecture determines what *can* be represented; the training signal determines what *is*. When choosing an encoder, read the loss function first and the architecture second.
+- **Each family fixes the previous family's failure.** AE overfits to identity → DAE adds noise. DAE's space has holes → VAE adds a prior. VAE blurs → VQ-VAE discretises. All of them waste capacity on pixels → contrastive and JEPA move the loss into latent space.
+- **Reconstruction prevents collapse for free, and that is its real value.** Not fidelity — collapse-resistance. Every non-reconstructive method has to buy that resistance some other way, and that purchase is the hard part of modern SSL.
+- **Normalise before you use cosine distance.** Contrastive encoders produce spaces where cosine similarity is meaningful; reconstructive ones generally do not. Using the wrong metric on the wrong space is a silent, extremely common error.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## The compression game
+
+Here is a game. I show you a photograph. You have to describe it to a friend in
+exactly 32 numbers, and your friend — who has never seen the photo — has to draw
+it back. You both practise on a million photographs until you get good.
+
+To win, you are forced to discover structure. Wasting numbers on individual pixel
+values is hopeless; there are millions of pixels and you have 32 slots. So you
+start encoding *concepts*: how bright overall, is there a face, roughly where, is
+it outdoors. Nobody told you to find those concepts. The bottleneck did.
+
+**That bottleneck-forces-abstraction effect is the entire foundation of neural
+encoders.** Everything that follows is a refinement of it.
+
+## The six families, and the complaint that produced each
+
+You can learn this whole page as a chain of complaints.
+
+<Steps>
+
+1. **Autoencoder.** Squeeze data through a narrow layer, reconstruct it.
+   *Complaint: with enough capacity it just memorises — it learns to copy, not to
+   understand.*
+
+2. **Denoising autoencoder.** Corrupt the input, reconstruct the clean original.
+   Copying no longer works, because the thing to output is not the thing you were
+   given. *Complaint: the latent space is full of holes. Points between two valid
+   encodings decode to garbage.*
+
+3. **Variational autoencoder.** Encode to a *distribution* rather than a point,
+   and pull all those distributions toward a common shape. Now the space is
+   smooth and you can sample from it. *Complaint: averaging over a distribution
+   makes outputs blurry.*
+
+4. **VQ-VAE.** Snap each encoding to the nearest entry in a learned codebook —
+   discrete tokens instead of a continuous blur. *Complaint: still reconstructing
+   pixels, so still spending capacity on texture nobody cares about.*
+
+5. **Contrastive encoders.** Stop reconstructing. Just require that two views of
+   the same thing land close together and two different things land far apart.
+   *Complaint: "far apart from what?" requires enormous batches of negative
+   examples.*
+
+6. **Joint-embedding predictive (JEPA).** Drop the negatives. Predict one part's
+   representation from another part's, and prevent the trivial constant solution
+   architecturally. *Complaint: preventing collapse is now the whole difficulty,
+   and it is not well understood.*
+
+</Steps>
+
+<Aside type="tip" title="If you only remember one thing">
+Reconstruction-based encoders answer *"can you rebuild it?"*. Embedding-based
+encoders answer *"can you tell these two apart?"*. The second question is closer
+to what almost every downstream task actually needs, and that single observation
+explains the last eight years of the field.
+</Aside>
+
+<Tier level="mechanics" />
+
+## The shared skeleton
+
+<Figure
+  lead="Where the loss is computed determines the family."
+  caption="All neural encoders share the top path — data in, encoder, latent out. What differs is the dashed training-only machinery on the right, and specifically whether the loss is evaluated in data space (reconstructive) or in latent space (contrastive and predictive). That one choice drives every practical difference in the table below."
+>
+<svg viewBox="0 0 760 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Shared skeleton of neural encoders showing reconstructive versus embedding losses">
+  <defs>
+    <marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <rect class="f-grey" x="20" y="102" width="76" height="46" rx="6"/>
+  <text class="on-fill-sm" x="58" y="129" text-anchor="middle">input x</text>
+
+  <line class="ar" x1="100" y1="125" x2="140" y2="125" marker-end="url(#ar3)"/>
+
+  <rect class="f-blue" x="146" y="96" width="96" height="58" rx="6"/>
+  <text class="on-fill" x="194" y="120" text-anchor="middle">Encoder</text>
+  <text class="on-fill-sm" x="194" y="138" text-anchor="middle">E θ</text>
+
+  <line class="ar" x1="246" y1="125" x2="292" y2="125" marker-end="url(#ar3)"/>
+  <text class="sm" x="269" y="115" text-anchor="middle">z</text>
+
+  <rect class="f-green" x="298" y="102" width="84" height="46" rx="6"/>
+  <text class="on-fill-sm" x="340" y="129" text-anchor="middle">latent z</text>
+
+  <text class="xs" x="340" y="168" text-anchor="middle">↓ this is what you keep</text>
+
+  <line class="bx" x1="410" y1="24" x2="410" y2="256" opacity="0.25"/>
+  <text class="xs" x="418" y="20">training-only machinery</text>
+
+  <rect class="f-amber" x="446" y="42" width="128" height="44" rx="6"/>
+  <text class="on-fill-sm" x="510" y="62" text-anchor="middle">Decoder</text>
+  <text class="on-fill-sm" x="510" y="78" text-anchor="middle">reconstruct x̂</text>
+  <path class="dash" d="M382,116 L414,116 L414,64 L442,64" marker-end="url(#ar3)"/>
+  <text class="sm" x="600" y="58">AE · DAE</text>
+  <text class="sm" x="600" y="76">VAE · VQ-VAE · MAE</text>
+  <text class="xs" x="600" y="94">loss in DATA space</text>
+
+  <rect class="f-purple" x="446" y="122" width="128" height="44" rx="6"/>
+  <text class="on-fill-sm" x="510" y="142" text-anchor="middle">Negatives</text>
+  <text class="on-fill-sm" x="510" y="158" text-anchor="middle">push apart</text>
+  <path class="dash" d="M382,132 L414,132 L414,144 L442,144" marker-end="url(#ar3)"/>
+  <text class="sm" x="600" y="138">SimCLR · MoCo</text>
+  <text class="sm" x="600" y="156">CLIP · SBERT</text>
+  <text class="xs" x="600" y="174">loss in LATENT space</text>
+
+  <rect class="f-pink" x="446" y="202" width="128" height="44" rx="6"/>
+  <text class="on-fill-sm" x="510" y="222" text-anchor="middle">EMA target enc.</text>
+  <text class="on-fill-sm" x="510" y="238" text-anchor="middle">+ stop-gradient</text>
+  <path class="dash" d="M382,140 L414,140 L414,224 L442,224" marker-end="url(#ar3)"/>
+  <text class="sm" x="600" y="218">BYOL · DINO</text>
+  <text class="sm" x="600" y="236">I-JEPA · V-JEPA</text>
+  <text class="xs" x="600" y="254">loss in LATENT space</text>
+</svg>
+</Figure>
+
+## Family by family
+
+<Tabs>
+<TabItem label="AE / DAE">
+
+**What it does.** Encoder squeezes to a bottleneck, decoder rebuilds. Loss is
+pixel-wise reconstruction error. The denoising variant corrupts the input first
+(masking, Gaussian noise, dropout) and asks for the *clean* original back.
+
+**Why the denoising trick matters more than it looks.** A plain autoencoder with
+a wide enough bottleneck can learn the identity function and score perfectly
+while learning nothing. Corruption breaks that shortcut: to fill in a masked
+region you must know what usually goes there, which is a statement about
+structure, not about copying. This single idea — corrupt, then restore — is the
+direct ancestor of BERT's masked language modelling and of MAE.
+
+**Use it when.** Anomaly detection (train on normal data; high reconstruction
+error signals an outlier), denoising, and as a pretraining step when you have
+lots of unlabelled data and no better idea.
+
+**Don't use it when.** You need a smooth or samplable latent space. AE latents
+are an arbitrary point cloud with gaps.
+
+</TabItem>
+<TabItem label="VAE">
+
+**What it does.** The encoder outputs a mean and a variance rather than a point.
+You sample from that Gaussian, decode, and add a KL penalty pulling every
+per-input Gaussian toward a standard normal.
+
+**Why.** The KL term is what fills the holes. It forces the aggregate of all
+encodings to cover the prior, so any point you sample decodes to something
+plausible. That is what makes a VAE *generative* where an AE is not.
+
+**The knob that matters.** $\beta$ scales the KL term. Raise it and you get more
+disentangled, more sample-able latents but blurrier reconstructions; lower it and
+you approach a plain autoencoder. There is no setting that gives you both, and
+this trade-off is intrinsic rather than a tuning failure.
+
+**Use it when.** You need to generate, interpolate, or sample. Also when you want
+an explicit density-ish model for detecting distribution shift.
+
+**Don't use it when.** You want sharp outputs, or you only want features. For
+pure representation quality, contrastive and predictive methods beat VAEs
+decisively.
+
+</TabItem>
+<TabItem label="VQ-VAE">
+
+**What it does.** Between encoder and decoder, replace each continuous latent
+vector with its nearest neighbour from a learned codebook of $K$ entries. The
+latent becomes a grid of discrete integer tokens.
+
+**Why this fixes blur.** A VAE's decoder averages over a continuous distribution,
+and averaging images produces blur. Snapping to a codebook entry removes the
+averaging — each token has a definite decoded meaning.
+
+**Why it mattered historically.** Discrete tokens let you model images and audio
+with the same autoregressive machinery used for text. Almost every image-token
+generative system descends from this idea.
+
+**The characteristic failure.** *Codebook collapse* — most entries go unused and
+the effective vocabulary is a fraction of $K$. Mitigations include EMA codebook
+updates, restarting dead codes from encoder outputs, and $\ell_2$-normalising the
+codebook.
+
+**Use it when.** You want discrete tokens for a downstream sequence model, or
+you need sharp reconstructions with a compact latent.
+
+</TabItem>
+<TabItem label="CNN / ViT">
+
+These are *backbones* — the architectural substrate — rather than objectives, and
+you can train either with any of the objectives on this page.
+
+**CNN (e.g. ResNet).** Builds in translation equivariance and locality. A cat is
+a cat wherever it appears, and nearby pixels matter more than distant ones. Those
+priors are correct for natural images, which is why CNNs are far more
+sample-efficient on small datasets.
+
+**ViT.** Splits the image into patches and runs self-attention. Assumes almost
+nothing about images — which is a liability at small scale and an asset at large
+scale, because the model can learn priors from data rather than inheriting ones
+that may be wrong.
+
+**The crossover.** ViTs underperform CNNs on ImageNet-scale data and overtake
+them given roughly 100M+ images. If your dataset is small and you are not
+starting from pretrained weights, a CNN is very likely the better choice, and
+this is still true in 2026.
+
+</TabItem>
+<TabItem label="Contrastive">
+
+**What it does.** Take two augmented views of the same image (crop, colour jitter,
+blur). Require their embeddings to be close. Require embeddings of *different*
+images to be far. That is the whole method.
+
+**What the augmentations really are.** They are your specification of what should
+be ignored. Crop-invariance says position doesn't matter; colour-jitter says hue
+doesn't matter. **Choosing augmentations is choosing what the encoder will be
+blind to** — which is a feature for object recognition and a catastrophe for a
+task where colour is the label. SimCLR's ablations showed augmentation choice
+dominates architecture choice, and that finding has held up.
+
+**The cost.** Negatives. You need many, and they must be in the same batch (SimCLR
+used batches up to 8192) or in a maintained queue (MoCo). This is the practical
+barrier to using contrastive methods without a lot of hardware.
+
+**Use it when.** Retrieval, search, deduplication, matching, or anything where you
+will compare embeddings with cosine similarity. CLIP-style cross-modal training is
+the same recipe with image/text pairs as the positive.
+
+</TabItem>
+<TabItem label="JEPA / self-distill">
+
+**What it does.** Two encoders — a student and an EMA copy of it called the
+teacher. Show the student a partial or augmented view, ask it to predict the
+teacher's embedding of another view. Gradients flow only through the student
+(`stop-gradient` on the teacher).
+
+**Why no negatives are needed.** The asymmetry does the work. Because the teacher
+updates slowly and receives no gradient, the student cannot reach the trivial
+constant solution by dragging the target to meet it. The target is, in effect, a
+moving but non-cooperative goalpost.
+
+**Why this is unsatisfying.** It empirically works and there is no theory that
+predicts in advance whether a given asymmetry suffices. This is stated plainly in
+the literature and remains true.
+
+**I-JEPA specifically.** Rather than augmenting, it masks: predict the
+representations of several target blocks from a single context block, in latent
+space. No hand-designed augmentations at all, which removes the "you chose the
+invariances" objection that dogs contrastive methods.
+
+**Use it when.** You want general-purpose features for unknown downstream tasks
+and you have a lot of unlabelled data. This is the current best answer for that
+situation.
+
+</TabItem>
+</Tabs>
+
+## What the latent space actually looks like
+
+The abstract differences above have a concrete geometric consequence, and seeing
+it is worth more than another paragraph of prose.
+
+<Figure
+  lead="Three latent geometries."
+  caption="Left: a plain autoencoder places encodings wherever it likes. The gaps are real — sample a point in one and the decoder produces nonsense, because it was never trained on anything nearby. Middle: the VAE's KL term pulls the aggregate posterior toward the prior, filling the space; every point now decodes to something plausible, which is what makes sampling and interpolation work. Right: a contrastive encoder normalises to the unit sphere, so only direction carries meaning — which is exactly why cosine similarity is the correct metric there and is not correct on the left two."
+>
+<svg viewBox="0 0 760 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Latent space geometry of autoencoder, VAE and contrastive encoder">
+  <text class="lb" x="120" y="18" text-anchor="middle">Autoencoder</text>
+  <text class="xs" x="120" y="34" text-anchor="middle">arbitrary point cloud, with holes</text>
+  <rect class="bx" x="30" y="44" width="180" height="150" rx="4" opacity="0.4"/>
+  <circle class="f-blue" cx="62" cy="76" r="6"/>
+  <circle class="f-blue" cx="80" cy="66" r="6"/>
+  <circle class="f-blue" cx="70" cy="94" r="6"/>
+  <circle class="f-blue" cx="96" cy="86" r="6"/>
+  <circle class="f-green" cx="164" cy="150" r="6"/>
+  <circle class="f-green" cx="178" cy="166" r="6"/>
+  <circle class="f-green" cx="152" cy="170" r="6"/>
+  <circle class="f-amber" cx="172" cy="66" r="6"/>
+  <circle class="f-amber" cx="186" cy="80" r="6"/>
+  <circle class="f-purple" cx="56" cy="164" r="6"/>
+  <circle class="f-purple" cx="72" cy="176" r="6"/>
+  <ellipse class="bx" cx="120" cy="120" rx="34" ry="26" stroke-dasharray="4 4" opacity="0.75"/>
+  <text class="xs" x="120" y="124" text-anchor="middle">hole</text>
+  <text class="xs" x="120" y="212" text-anchor="middle">sampling here → garbage</text>
+
+  <text class="lb" x="380" y="18" text-anchor="middle">VAE</text>
+  <text class="xs" x="380" y="34" text-anchor="middle">KL pulls everything toward the prior</text>
+  <rect class="bx" x="290" y="44" width="180" height="150" rx="4" opacity="0.4"/>
+  <circle class="f-grey" cx="380" cy="119" r="66" opacity="0.5"/>
+  <text class="xs" x="380" y="60" text-anchor="middle">N(0, I)</text>
+  <ellipse class="f-blue" cx="352" cy="96" rx="20" ry="15" opacity="0.85"/>
+  <ellipse class="f-green" cx="404" cy="142" rx="20" ry="15" opacity="0.85"/>
+  <ellipse class="f-amber" cx="410" cy="94" rx="18" ry="14" opacity="0.85"/>
+  <ellipse class="f-purple" cx="350" cy="146" rx="18" ry="14" opacity="0.85"/>
+  <text class="xs" x="380" y="212" text-anchor="middle">overlapping densities, no holes</text>
+
+  <text class="lb" x="640" y="18" text-anchor="middle">Contrastive</text>
+  <text class="xs" x="640" y="34" text-anchor="middle">projected onto the unit sphere</text>
+  <rect class="bx" x="550" y="44" width="180" height="150" rx="4" opacity="0.4"/>
+  <circle class="bx" cx="640" cy="119" r="62"/>
+  <circle class="f-blue" cx="640" cy="57" r="6"/>
+  <circle class="f-blue" cx="668" cy="64" r="6"/>
+  <circle class="f-green" cx="698" cy="140" r="6"/>
+  <circle class="f-green" cx="688" cy="163" r="6"/>
+  <circle class="f-amber" cx="588" cy="167" r="6"/>
+  <circle class="f-purple" cx="580" cy="86" r="6"/>
+  <line class="ar" x1="640" y1="119" x2="640" y2="61"/>
+  <line class="ar" x1="640" y1="119" x2="694" y2="137"/>
+  <path class="dash" d="M640,73 A 46 46 0 0 1 682,105"/>
+  <text class="xs" x="700" y="100">angle = similarity</text>
+  <text class="xs" x="640" y="212" text-anchor="middle">only direction carries meaning</text>
+</svg>
+</Figure>
+
+## The reparameterisation trick, visually
+
+<Figure
+  lead="Why sampling has to be moved out of the gradient path."
+  caption="Left: sampling inside the network severs the gradient — there is no derivative of 'draw a sample' with respect to the distribution's parameters, so backpropagation stops at the sampler. Right: rewriting the sample as mu plus sigma times a parameter-free noise draw puts the randomness on a branch that carries no parameters. The gradient now flows through mu and sigma as ordinary arithmetic. This is a reformulation of the same distribution, not an approximation."
+>
+<svg viewBox="0 0 760 220" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Reparameterisation trick, before and after">
+  <defs>
+    <marker id="ar6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <text class="lb" x="14" y="18">Naive: gradient blocked</text>
+  <rect class="f-blue" x="14" y="40" width="70" height="40" rx="5"/>
+  <text class="on-fill-sm" x="49" y="64" text-anchor="middle">μ, σ</text>
+  <line class="ar" x1="88" y1="60" x2="126" y2="60" marker-end="url(#ar6)"/>
+  <rect class="f-pink" x="132" y="40" width="96" height="40" rx="5"/>
+  <text class="on-fill-sm" x="180" y="58" text-anchor="middle">z ~ N(μ, σ²)</text>
+  <text class="on-fill-sm" x="180" y="73" text-anchor="middle">stochastic node</text>
+  <line class="ar" x1="232" y1="60" x2="270" y2="60" marker-end="url(#ar6)"/>
+  <rect class="f-grey" x="276" y="40" width="70" height="40" rx="5"/>
+  <text class="on-fill-sm" x="311" y="64" text-anchor="middle">decoder</text>
+  <path class="dash" d="M276,92 L236,92" marker-end="url(#ar6)"/>
+  <text class="xs" x="252" y="110">∇ flows back…</text>
+  <line class="bx" x1="222" y1="84" x2="196" y2="102" stroke-width="2.5"/>
+  <line class="bx" x1="196" y1="84" x2="222" y2="102" stroke-width="2.5"/>
+  <text class="xs" x="132" y="124">…and stops here. No ∂z/∂μ exists.</text>
+
+  <line class="bx" x1="380" y1="14" x2="380" y2="200" opacity="0.3"/>
+
+  <text class="lb" x="410" y="18">Reparameterised: gradient flows</text>
+  <rect class="f-blue" x="410" y="40" width="70" height="40" rx="5"/>
+  <text class="on-fill-sm" x="445" y="64" text-anchor="middle">μ, σ</text>
+  <rect class="f-amber" x="410" y="126" width="70" height="34" rx="5"/>
+  <text class="on-fill-sm" x="445" y="147" text-anchor="middle">ε ~ N(0, I)</text>
+  <text class="xs" x="410" y="176">no parameters here</text>
+  <line class="ar" x1="484" y1="60" x2="524" y2="76" marker-end="url(#ar6)"/>
+  <line class="ar" x1="484" y1="142" x2="524" y2="112" marker-end="url(#ar6)"/>
+  <rect class="f-green" x="530" y="72" width="112" height="44" rx="5"/>
+  <text class="on-fill-sm" x="586" y="90" text-anchor="middle">z = μ + σ ⊙ ε</text>
+  <text class="on-fill-sm" x="586" y="106" text-anchor="middle">deterministic</text>
+  <line class="ar" x1="646" y1="94" x2="682" y2="94" marker-end="url(#ar6)"/>
+  <rect class="f-grey" x="688" y="74" width="58" height="40" rx="5"/>
+  <text class="on-fill-sm" x="717" y="98" text-anchor="middle">dec</text>
+  <path class="thick" d="M700,124 C640,150 520,120 470,88" marker-end="url(#ar6)"/>
+  <text class="xs" x="560" y="152">∇ reaches μ and σ as ordinary arithmetic</text>
+</svg>
+</Figure>
+
+## Straight comparison
+
+| Family | Loss computed in | Needs negatives | Latent geometry | Sharp reconstructions | Collapse risk | Best at |
+|---|---|---|---|---|---|---|
+| AE / DAE | data space | no | arbitrary, gappy | moderate | none | anomaly detection, denoising |
+| VAE | data space | no | smooth, samplable | no (blurry) | posterior collapse | generation, interpolation |
+| VQ-VAE | data space | no | discrete grid | yes | codebook collapse | tokenising for sequence models |
+| Supervised CNN/ViT | label space | no | class-clustered | n/a | none | one known task, many labels |
+| Contrastive | latent space | **yes** | hypersphere, cosine-valid | n/a | prevented by negatives | retrieval, matching, cross-modal |
+| JEPA / self-distill | latent space | no | cosine-valid | n/a | **central difficulty** | general transfer features |
+
+<Aside type="danger" title="The metric mismatch">
+Cosine similarity is meaningful in contrastive and JEPA spaces because the
+objective explicitly shapes angular geometry, usually on a normalised sphere. It
+is **not** automatically meaningful in AE or VAE latent spaces, where nothing
+constrained the norms or angles. Running a cosine-similarity nearest-neighbour
+search over VAE latents is a real and common mistake — it returns something, it
+just doesn't mean what you think.
+</Aside>
+
+<Tier level="formal" />
+
+## Autoencoder and the PCA connection
+
+For an encoder $E_\theta$ and decoder $D_\psi$:
+
+$$
+\mathcal{L}_{\text{AE}} = \mathbb{E}_{x\sim\mathcal{D}}\big[\|x - D_\psi(E_\theta(x))\|_2^2\big].
+$$
+
+A result worth knowing because it calibrates expectations: **a linear
+autoencoder with squared loss recovers the principal subspace of the data.** With
+$E(x)=Wx$, $D(z)=W^{\top}z$ and $W \in \mathbb{R}^{k\times d}$, the optimum spans
+the same subspace as the top-$k$ eigenvectors of the covariance — though not
+necessarily the eigenvectors themselves, since any rotation within the subspace
+is equally optimal.
+
+The practical reading: **the non-linearity is doing all the work.** If your
+autoencoder isn't beating PCA on your problem, it has not learned anything a
+linear method couldn't, and you should check your training rather than your
+architecture.
+
+The denoising variant replaces $x$ at the input with a corrupted $\tilde{x} \sim
+q(\tilde{x} \mid x)$ while keeping the clean $x$ as the target:
+
+$$
+\mathcal{L}_{\text{DAE}} = \mathbb{E}_{x}\,\mathbb{E}_{\tilde{x}\sim q(\cdot\mid x)}\big[\|x - D_\psi(E_\theta(\tilde{x}))\|_2^2\big].
+$$
+
+Vincent et al. showed this is equivalent to learning the score of the data
+distribution in the small-noise limit — the same object that modern diffusion
+models estimate. The lineage from DAE to diffusion is direct.
+
+## VAE: the ELBO, derived
+
+We want $\log p_\psi(x)$ but cannot compute it, because it requires marginalising
+the latent. Introduce a variational posterior $q_\theta(z \mid x)$ — this is the
+encoder — and apply Jensen:
+
+$$
+\log p_\psi(x) = \log \int p_\psi(x \mid z)\,p(z)\,dz
+= \log \mathbb{E}_{q_\theta(z\mid x)}\!\left[\frac{p_\psi(x\mid z)\,p(z)}{q_\theta(z\mid x)}\right]
+\;\geq\; \mathcal{L}_{\text{ELBO}},
+$$
+
+$$
+\mathcal{L}_{\text{ELBO}}(x) = \underbrace{\mathbb{E}_{q_\theta(z\mid x)}\big[\log p_\psi(x \mid z)\big]}_{\text{reconstruction}} \;-\; \underbrace{\mathrm{KL}\big(q_\theta(z\mid x)\,\|\,p(z)\big)}_{\text{regularisation}}.
+$$
+
+The gap between $\log p_\psi(x)$ and the bound is exactly
+$\mathrm{KL}(q_\theta(z\mid x)\,\|\,p_\psi(z\mid x))$ — the bound is tight
+precisely when the encoder matches the true posterior.
+
+**The reparameterisation trick.** Sampling $z \sim q_\theta(z\mid x)$ is not
+differentiable in $\theta$. Rewrite it as a deterministic function of a
+parameter-free noise variable:
+
+$$
+z = \mu_\theta(x) + \sigma_\theta(x) \odot \epsilon, \qquad \epsilon \sim \mathcal{N}(0, I).
+$$
+
+Now the randomness sits in $\epsilon$, which carries no parameters, and gradients
+pass straight through $\mu_\theta$ and $\sigma_\theta$. Without this the variance
+of the gradient estimator is so high that training is impractical — this trick,
+not the ELBO, is the reason VAEs work.
+
+For diagonal Gaussians against a standard normal prior the KL is closed-form:
+
+$$
+\mathrm{KL} = -\tfrac{1}{2}\sum_{j=1}^{k}\Big(1 + \log \sigma_j^2 - \mu_j^2 - \sigma_j^2\Big).
+$$
+
+**Posterior collapse.** If the decoder is powerful enough to model $x$ without
+using $z$, the optimiser drives $q_\theta(z\mid x) \to p(z)$, sending the KL to
+zero and making the latent carry no information. Look at the expression above: an
+encoder that outputs $\mu_j = 0, \sigma_j = 1$ for every input scores perfectly on
+the KL term. Collapse is not a bug; it is a local optimum the objective actively
+rewards. Mitigations — KL annealing, free bits, weakening the decoder — all amount
+to preventing the optimiser from taking that shortcut early.
+
+## Beta-VAE and the rate–distortion reading
+
+$$
+\mathcal{L}_{\beta} = \mathbb{E}_{q}\big[\log p_\psi(x\mid z)\big] - \beta\,\mathrm{KL}\big(q_\theta(z\mid x)\,\|\,p(z)\big).
+$$
+
+The KL term is the *rate* — bits per sample the latent carries. The
+reconstruction term is negative *distortion*. So $\beta$ is a position on a
+rate–distortion curve, and you cannot be at two positions at once. This reframing
+is why "$\beta$-VAE gives disentanglement" is better stated as "$\beta$-VAE
+restricts the rate, and under some conditions the surviving bits align with
+generative factors" — the disentanglement claim has been contested, and the
+rate–distortion claim has not.
+
+## VQ-VAE: quantisation and the straight-through estimator
+
+Given a codebook $\mathbf{e} \in \mathbb{R}^{K\times D}$, quantise:
+
+$$
+z_q(x) = \mathbf{e}_k, \qquad k = \arg\min_j \big\|z_e(x) - \mathbf{e}_j\big\|_2.
+$$
+
+The $\arg\min$ has zero gradient almost everywhere, so the decoder's gradient
+cannot reach the encoder. VQ-VAE simply **copies the gradient across the
+quantisation step** — the straight-through estimator — and adds two terms to keep
+the two sides from drifting apart:
+
+$$
+\mathcal{L} = \underbrace{\log p(x \mid z_q(x))}_{\text{reconstruction}}
++ \underbrace{\big\|\operatorname{sg}[z_e(x)] - \mathbf{e}\big\|_2^2}_{\text{codebook loss}}
++ \beta \underbrace{\big\|z_e(x) - \operatorname{sg}[\mathbf{e}]\big\|_2^2}_{\text{commitment loss}}.
+$$
+
+Read the two $\operatorname{sg}$ placements carefully — they are the whole design.
+The codebook loss moves *codebook entries* toward encoder outputs; the commitment
+loss moves *encoder outputs* toward codebook entries. Splitting them lets the two
+move at different rates, with $\beta$ (typically 0.25) controlling how strongly
+the encoder is held to its assigned code.
+
+<Figure
+  lead="Quantisation and the gradient detour."
+  caption="Forward pass (solid): the encoder output is replaced by its nearest codebook entry, which is a hard argmax and therefore has zero gradient. Backward pass (dashed): the decoder's gradient is copied straight past the quantiser onto the encoder output, as if quantisation were the identity. This is a deliberate lie about the derivative — it is biased, and it works. The two auxiliary loss terms exist to keep the encoder output and its assigned code from drifting apart, which is what stops the lie from becoming too large."
+>
+<svg viewBox="0 0 760 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="VQ-VAE quantisation with straight-through gradient estimator">
+  <defs>
+    <marker id="ar8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <rect class="f-blue" x="14" y="70" width="86" height="44" rx="5"/>
+  <text class="on-fill-sm" x="57" y="88" text-anchor="middle">encoder</text>
+  <text class="on-fill-sm" x="57" y="104" text-anchor="middle">z_e(x)</text>
+
+  <line class="ar" x1="104" y1="92" x2="146" y2="92" marker-end="url(#ar8)"/>
+
+  <rect class="f-amber" x="152" y="52" width="150" height="80" rx="5"/>
+  <text class="on-fill-sm" x="227" y="72" text-anchor="middle">nearest-neighbour</text>
+  <text class="on-fill-sm" x="227" y="88" text-anchor="middle">lookup in codebook</text>
+  <text class="on-fill-sm" x="227" y="110" text-anchor="middle">k = argmin ‖z_e − e_j‖</text>
+  <text class="xs" x="227" y="148" text-anchor="middle">∂k/∂z_e = 0 almost everywhere</text>
+
+  <rect class="f-grey" x="152" y="176" width="150" height="52" rx="5"/>
+  <text class="on-fill-sm" x="227" y="195" text-anchor="middle">codebook e ∈ R^(K×D)</text>
+  <text class="xs" x="227" y="214" text-anchor="middle">e₁ e₂ e₃ … e_K</text>
+  <path class="ar" d="M227,172 L227,138" marker-end="url(#ar8)"/>
+
+  <line class="ar" x1="306" y1="92" x2="348" y2="92" marker-end="url(#ar8)"/>
+  <text class="sm" x="327" y="82" text-anchor="middle">z_q</text>
+
+  <rect class="f-green" x="354" y="70" width="86" height="44" rx="5"/>
+  <text class="on-fill-sm" x="397" y="88" text-anchor="middle">decoder</text>
+  <text class="on-fill-sm" x="397" y="104" text-anchor="middle">x̂</text>
+
+  <path class="dash" d="M397,64 C397,26 57,26 57,64" marker-end="url(#ar8)"/>
+  <text class="xs" x="227" y="20" text-anchor="middle">straight-through: gradient copied over the quantiser unchanged</text>
+
+  <line class="bx" x1="470" y1="20" x2="470" y2="234" opacity="0.3"/>
+
+  <text class="lb" x="490" y="44">The two auxiliary terms</text>
+  <rect class="f-purple" x="490" y="58" width="250" height="50" rx="5"/>
+  <text class="on-fill-sm" x="504" y="78">codebook loss</text>
+  <text class="xs" x="504" y="96">moves e toward z_e · sg on z_e</text>
+  <rect class="f-pink" x="490" y="118" width="250" height="50" rx="5"/>
+  <text class="on-fill-sm" x="504" y="138">commitment loss (β)</text>
+  <text class="xs" x="504" y="156">moves z_e toward e · sg on e</text>
+  <text class="xs" x="490" y="192">Splitting them lets the two sides</text>
+  <text class="xs" x="490" y="208">move at different rates. Without the</text>
+  <text class="xs" x="490" y="224">split, encoder and codebook chase</text>
+  <text class="xs" x="490" y="240">each other and neither settles.</text>
+</svg>
+</Figure>
+
+## Contrastive: InfoNCE
+
+For an anchor $x$, a positive $x^+$, and $N-1$ negatives $x_i^-$:
+
+$$
+\mathcal{L}_{\text{InfoNCE}} = -\log \frac{\exp\!\big(\operatorname{sim}(z, z^+)/\tau\big)}{\exp\!\big(\operatorname{sim}(z, z^+)/\tau\big) + \sum_{i=1}^{N-1}\exp\!\big(\operatorname{sim}(z, z_i^-)/\tau\big)},
+$$
+
+with $\operatorname{sim}$ the cosine similarity and $\tau$ a temperature.
+
+Two facts about this loss that are worth carrying around:
+
+**It bounds mutual information.** $I(z; z^+) \geq \log N - \mathcal{L}_{\text{InfoNCE}}$.
+Note the $\log N$: the bound is capped by batch size, which is the formal reason
+large batches help and small ones plateau. It also means the bound is loose at
+practical $N$, so don't over-read it.
+
+**Temperature controls how hard the hard negatives hit.** Small $\tau$ sharpens
+the softmax so gradient concentrates on the most similar negatives; large $\tau$
+spreads it. $\tau$ is a genuinely sensitive hyperparameter, not a formality —
+typical values sit around 0.07–0.2.
+
+And the decomposition from Wang & Isola, which is the most useful practical
+handle on this loss:
+
+$$
+\mathcal{L}_{\text{align}} = \mathbb{E}_{(x,x^+)}\big[\|z - z^+\|_2^{\alpha}\big], \qquad
+\mathcal{L}_{\text{unif}} = \log \mathbb{E}_{(x,y)}\big[e^{-t\|z_x - z_y\|_2^2}\big].
+$$
+
+Asymptotically InfoNCE optimises exactly these two, and measuring them separately
+diagnoses a failing encoder far better than the loss value does — good alignment
+with bad uniformity means you are collapsing; the reverse means your positives
+are too weak.
+
+## JEPA: prediction with an asymmetric target
+
+$$
+\mathcal{L}_{\text{JEPA}} = \sum_{i} \Big\| P_\phi\big(E_\theta(x_{\text{ctx}}),\, m_i\big) - \operatorname{sg}\big[E_{\bar\theta}(x_{\text{tgt}}^{(i)})\big] \Big\|_1,
+\qquad \bar\theta \leftarrow \lambda\bar\theta + (1-\lambda)\theta .
+$$
+
+Here $m_i$ positions the $i$-th target block and $\bar\theta$ is the EMA teacher,
+typically with $\lambda \approx 0.996 \to 1.0$ on a schedule.
+
+**Why this does not collapse.** Consider the degenerate solution $E_\theta \equiv
+c$. For the loss to be zero the *teacher* must also output $c$ — but the teacher
+is a lagged average, so it arrives at $c$ only after the student has already been
+constant for many steps, during which the loss is non-zero and gradients push
+away. The stop-gradient means the student can never shortcut this by pulling the
+target down. That is the mechanism, and it is an argument about dynamics, not a
+proof: there is no guarantee, and collapse does occur when $\lambda$ is set too
+low.
+
+<Aside type="note" title="Read this as three anti-collapse strategies">
+Reconstruction forces $I(Z;X)$ above a floor by requiring invertibility.
+Contrastive learning adds an explicit repulsive term. Self-distillation uses
+temporal asymmetry. Every method on this page uses exactly one of these three,
+and knowing which tells you immediately what its failure mode is.
+</Aside>
+
+<Tier level="frontier" />
+
+## Where things stand, as of 2026
+
+**Masked reconstruction did not die, and that is genuinely awkward for the
+latent-prediction thesis.** MAE reconstructs raw pixels with a 75% mask ratio and
+remains a strong pretraining method. The theoretical argument says it should waste
+capacity on irrelevant detail; the benchmarks say it is competitive. The
+reconciliation people generally offer — that an aggressive mask ratio makes the
+task semantic enough that pixel-level detail stops dominating the gradient — is
+plausible but not established. Anyone presenting this as settled is overstating.
+
+**Encoder-only text models were prematurely written off.** After 2020 the field
+moved to decoder-only LLMs for nearly everything. ModernBERT (Warner et al., 2024)
+showed encoder-only architectures had simply not received the same modernisation
+— rotary embeddings, longer context, better data — rather than being fundamentally
+inferior. Controlled 2025 comparisons at matched parameter counts found encoders
+still ahead on classification and retrieval. For embeddings specifically,
+encoder-only remains the better default.
+
+**Vision encoders have consolidated around self-distillation.** DINO-family
+features are the practical default for general-purpose visual representation, and
+they exhibit properties nobody trained for — attention maps that segment objects
+without any segmentation supervision. That emergent behaviour is the strongest
+qualitative evidence that the objective is capturing something structural.
+
+## Open problems
+
+- **No good evaluation.** Linear probing rewards linearly accessible information
+  and is blind to structure a non-linear head could exploit; full fine-tuning
+  measures the fine-tuning recipe as much as the encoder. Alignment/uniformity is
+  better but is defined relative to a chosen augmentation family, which begs the
+  question.
+
+- **Anti-collapse is empirical.** We have three strategies that work and no theory
+  that says in advance whether a proposed asymmetry is sufficient. Every new
+  method's collapse-resistance is established by running it.
+
+- **Augmentation choice is unprincipled.** Contrastive methods require you to
+  specify invariances up front, and getting that wrong silently destroys
+  information you needed. I-JEPA's masking sidesteps it; whether masking
+  introduces its own implicit invariances is not well characterised.
+
+- **Encoder spaces are not interoperable.** Same data, same objective, different
+  seed produces incomparable spaces. This blocks modular reuse and forces
+  hierarchical systems to train levels jointly in a shared space rather than
+  composing independently trained parts.
+
+- **Scaling laws for encoders are poorly mapped** compared to generative models.
+  We know roughly that more data helps; we do not have the clean
+  compute-optimal curves that exist for language modelling.
+
+## What to read next, in order
+
+1. **Kingma & Welling (2013)** — for the reparameterisation trick specifically.
+   Section 2.4 is the part that matters.
+2. **van den Oord et al. (2017)** — read it for the straight-through estimator and
+   the two-term loss split; it is short and the design is unusually legible.
+3. **Chen et al. (2020), SimCLR** — read the augmentation ablations, not the
+   method. They are the most transferable finding in the paper.
+4. **Assran et al. (2023), I-JEPA** — the current reference point for
+   augmentation-free representation learning.
+
+<Papers papers={frontmatter.papers} />

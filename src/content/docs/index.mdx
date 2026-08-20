@@ -1,0 +1,66 @@
+---
+title: ML Atlas
+description: Machine learning and AI research concepts explained from first principles through to the research frontier.
+template: splash
+hero:
+  tagline: One concept per page. Four depth tiers per concept. Start at zero, finish at the frontier.
+  # NOTE: hero action links are frontmatter, so they are neither JSX nor part of
+  # the Markdown AST — Starlight leaves them exactly as written and the
+  # rehype-base-links plugin never sees them. They must include the base path
+  # (/notes) literally. If you change `base` in astro.config.mjs, change these
+  # by hand too; they are the only links in the project that don't follow
+  # automatically.
+  actions:
+    - text: Start with Encoders
+      link: /notes/encoders/
+      icon: right-arrow
+      variant: primary
+    - text: How to read a page
+      link: /notes/how-to-read/
+      icon: open-book
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+<CardGrid stagger>
+  <Card title="Encoders" icon="seti:plan">
+    What an encoder is in all three senses of the word — neural, architectural,
+    and preprocessing — with a page for each. The most complete section.
+  </Card>
+  <Card title="World Models & Planning" icon="rocket">
+    Learned simulators, latent dynamics, model-predictive control, hierarchy.
+  </Card>
+  <Card title="Foundations" icon="seti:notebook">
+    The prerequisites everything else assumes. Probability for ML, gradients and
+    optimisation, what "representation" actually means.
+  </Card>
+  <Card title="Architectures" icon="puzzle">
+    Transformers, attention variants, state-space models, joint-embedding
+    predictive architectures.
+  </Card>
+  <Card title="Training & Objectives" icon="setting">
+    Self-supervision, contrastive versus predictive objectives, collapse and how
+    it is prevented, RLHF and its successors.
+  </Card>
+</CardGrid>
+
+## What this is
+
+A reference for ML and AI research concepts where every page is written to be
+read by someone who has never heard the term *and* by someone who works on it.
+That is not a compromise between the two — it is a **layered** page. Tier 1 has no
+maths at all. Tier 4 assumes you have read the papers.
+
+You can stop at any tier. The page is designed so that stopping early still
+leaves you with something correct, just less complete.
+
+## What this is not
+
+- **Not a tutorial series.** There is no code you run to build a thing. It
+  explains; it does not walk you through an implementation.
+- **Not comprehensive.** Coverage is deliberately narrow and deep. A page exists
+  only when there is something to say beyond what a definition would give you.
+- **Not neutral where the evidence is not.** Where a question is genuinely open,
+  pages say so and give both sides. Where one position is better supported, pages
+  say that instead of hedging.

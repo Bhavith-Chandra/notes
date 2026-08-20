@@ -1,0 +1,434 @@
+/* ==========================================================================
+   nerfies.css — Starlight theme styled after the Nerfies academic project page
+   (https://nerfies.github.io, https://kevinghst.github.io/HWM/)
+
+   The reference template is Bulma-based and single-column. We keep its
+   typographic voice — Google Sans headings, Noto Sans body, generous line
+   height, centered figure-with-caption blocks, pill buttons — but layer it
+   onto Starlight so we still get sidebar nav, search, and dark mode.
+   ========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Google+Sans:wght@400;500;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&display=swap');
+
+/* --------------------------------------------------------------------------
+   1. Design tokens
+   -------------------------------------------------------------------------- */
+
+:root {
+  /* Nerfies uses a near-black on off-white with a single blue accent. */
+  --sl-font: 'Noto Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    sans-serif;
+  --sl-font-system-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo,
+    monospace;
+
+  --atlas-display: 'Google Sans', 'Noto Sans', sans-serif;
+  --atlas-serif: 'Newsreader', Georgia, serif;
+
+  /* Accent — the Nerfies link blue, tuned for AA contrast on white. */
+  --sl-color-accent-low: #d6e4ff;
+  --sl-color-accent: #3273dc;
+  --sl-color-accent-high: #1f4f9e;
+
+  /* Content column. Nerfies is ~800px; we allow a touch more for code. */
+  --sl-content-width: 52rem;
+  --sl-text-code: 0.9em;
+
+  /* Custom tokens used by the depth-tier components below. */
+  --atlas-tier-1: #2f9e44; /* intuition  */
+  --atlas-tier-2: #1971c2; /* mechanics  */
+  --atlas-tier-3: #6741d9; /* formal     */
+  --atlas-tier-4: #c2255c; /* frontier   */
+  --atlas-rule: var(--sl-color-gray-5);
+  --atlas-figure-bg: var(--sl-color-gray-7);
+}
+
+:root[data-theme='light'] {
+  --sl-color-bg: #ffffff;
+  --sl-color-text: #363636; /* Bulma's default body colour */
+  --sl-color-white: #0a0a0a;
+  --atlas-rule: var(--sl-color-gray-5);
+  --atlas-figure-bg: #fafafa;
+}
+
+:root[data-theme='dark'] {
+  --sl-color-accent: #74a7f5;
+  --sl-color-accent-high: #cfe0fb;
+  --atlas-tier-1: #69db7c;
+  --atlas-tier-2: #74c0fc;
+  --atlas-tier-3: #b197fc;
+  --atlas-tier-4: #faa2c1;
+  --atlas-figure-bg: rgba(255, 255, 255, 0.03);
+}
+
+/* --------------------------------------------------------------------------
+   2. Typography — the part that actually makes it "feel" like Nerfies
+   -------------------------------------------------------------------------- */
+
+.sl-markdown-content {
+  font-size: 1.0625rem;
+  line-height: 1.75;
+  letter-spacing: 0.005em;
+}
+
+/* Nerfies titles: Google Sans, tight tracking, heavy weight, centered hero. */
+.sl-markdown-content :is(h1, h2, h3, h4, h5, h6),
+.content-header h1 {
+  font-family: var(--atlas-display);
+  letter-spacing: -0.02em;
+  font-weight: 700;
+}
+
+h1 {
+  font-size: 2.35rem !important;
+  line-height: 1.18 !important;
+}
+
+/* Section headings sit above a hairline rule, as in the paper template. */
+.sl-markdown-content h2 {
+  font-size: 1.6rem;
+  margin-top: 3rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--atlas-rule);
+}
+
+.sl-markdown-content h3 {
+  font-size: 1.2rem;
+  margin-top: 2.25rem;
+  color: var(--sl-color-white);
+}
+
+/* The abstract: Nerfies renders it in a narrower, slightly serif block. */
+.atlas-abstract {
+  font-family: var(--atlas-serif);
+  font-size: 1.125rem;
+  line-height: 1.7;
+  max-width: 44rem;
+  margin: 1.5rem auto 2.5rem;
+  padding: 0 0.5rem;
+  color: var(--sl-color-gray-2);
+}
+
+.atlas-abstract p:first-of-type::first-line {
+  font-variant: small-caps;
+}
+
+/* --------------------------------------------------------------------------
+   3. Hero block — author-row / button-row analogue
+   -------------------------------------------------------------------------- */
+
+.atlas-hero {
+  text-align: center;
+  padding: 0.5rem 0 2rem;
+  border-bottom: 1px solid var(--atlas-rule);
+  margin-bottom: 2.5rem;
+}
+
+.atlas-hero .atlas-meta {
+  font-size: 0.9rem;
+  color: var(--sl-color-gray-3);
+  margin-top: 0.75rem;
+}
+
+/* Pill buttons, straight from the Nerfies "Paper / Code" row. */
+.atlas-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  justify-content: center;
+  margin-top: 1.25rem;
+}
+
+.atlas-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: #363636;
+  color: #fff !important;
+  border-radius: 999px;
+  padding: 0.45rem 1.15rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-decoration: none !important;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.atlas-links a:hover {
+  background: #000;
+  transform: translateY(-1px);
+}
+
+:root[data-theme='dark'] .atlas-links a {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+:root[data-theme='dark'] .atlas-links a:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+/* --------------------------------------------------------------------------
+   4. Depth tiers — the noob → advanced ladder
+   -------------------------------------------------------------------------- */
+
+.atlas-tier {
+  --tier-color: var(--atlas-tier-2);
+  margin: 2.75rem 0 1rem;
+  padding-left: 0.9rem;
+  border-left: 3px solid var(--tier-color);
+}
+
+.atlas-tier[data-tier='intuition'] { --tier-color: var(--atlas-tier-1); }
+.atlas-tier[data-tier='mechanics'] { --tier-color: var(--atlas-tier-2); }
+.atlas-tier[data-tier='formal']    { --tier-color: var(--atlas-tier-3); }
+.atlas-tier[data-tier='frontier']  { --tier-color: var(--atlas-tier-4); }
+
+.atlas-tier .atlas-tier-label {
+  display: block;
+  font-family: var(--atlas-display);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tier-color);
+  margin-bottom: 0.2rem;
+}
+
+.atlas-tier .atlas-tier-title {
+  font-family: var(--atlas-display);
+  font-size: 1.45rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0;
+  color: var(--sl-color-white);
+}
+
+.atlas-tier .atlas-tier-sub {
+  font-size: 0.9rem;
+  color: var(--sl-color-gray-3);
+  margin: 0.3rem 0 0;
+}
+
+/* Small inline badge, e.g. in the page header or sidebar. */
+.atlas-badge {
+  display: inline-block;
+  font-family: var(--atlas-display);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  vertical-align: middle;
+}
+
+/* --------------------------------------------------------------------------
+   5. Figures — centered image + small grey caption, the Nerfies signature
+   -------------------------------------------------------------------------- */
+
+.atlas-figure {
+  margin: 2.25rem auto;
+  text-align: center;
+  background: var(--atlas-figure-bg);
+  border: 1px solid var(--atlas-rule);
+  border-radius: 8px;
+  padding: 1.25rem;
+}
+
+.atlas-figure img,
+.atlas-figure svg,
+.atlas-figure video {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+}
+
+.atlas-figure figcaption {
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--sl-color-gray-3);
+  margin-top: 0.9rem;
+  text-align: left;
+  max-width: 42rem;
+  margin-inline: auto;
+}
+
+.atlas-figure figcaption strong {
+  color: var(--sl-color-white);
+}
+
+/* Shared classes for hand-drawn SVG diagrams inside <Figure>.
+   These live here rather than in a <style> block inside the SVG because MDX
+   parses `{` in an inline <style> as a JSX expression and the build fails. */
+.atlas-figure svg .bx { fill: none; stroke: currentColor; stroke-width: 1.5; }
+.atlas-figure svg .lb { font: 600 13px var(--atlas-display), sans-serif; fill: currentColor; }
+.atlas-figure svg .sm { font: 400 11px sans-serif; fill: currentColor; opacity: 0.65; }
+.atlas-figure svg .ar { stroke: currentColor; stroke-width: 1.5; fill: none; }
+.atlas-figure svg { color: var(--sl-color-text); max-width: 100%; }
+
+/* Extended diagram palette. Muted, print-safe, and distinguishable in
+   greyscale — these are figure fills, not UI colours. */
+.atlas-figure svg .f-blue   { fill: var(--dg-blue);   stroke: var(--dg-blue-s);   stroke-width: 1.2; }
+.atlas-figure svg .f-green  { fill: var(--dg-green);  stroke: var(--dg-green-s);  stroke-width: 1.2; }
+.atlas-figure svg .f-purple { fill: var(--dg-purple); stroke: var(--dg-purple-s); stroke-width: 1.2; }
+.atlas-figure svg .f-amber  { fill: var(--dg-amber);  stroke: var(--dg-amber-s);  stroke-width: 1.2; }
+.atlas-figure svg .f-pink   { fill: var(--dg-pink);   stroke: var(--dg-pink-s);   stroke-width: 1.2; }
+.atlas-figure svg .f-grey   { fill: var(--dg-grey);   stroke: var(--atlas-rule);  stroke-width: 1.2; }
+
+/* Dashed connector, for "optional" or "training-only" paths. */
+.atlas-figure svg .dash { stroke: currentColor; stroke-width: 1.4; fill: none; stroke-dasharray: 5 4; opacity: .75; }
+/* Emphasised connector. */
+.atlas-figure svg .thick { stroke: currentColor; stroke-width: 2.4; fill: none; }
+/* Tiny caption text inside a diagram. */
+.atlas-figure svg .xs { font: 400 9.5px sans-serif; fill: currentColor; opacity: .6; }
+/* Bold label on a coloured fill — always dark, since fills are pale. */
+.atlas-figure svg .on-fill { font: 600 12px var(--atlas-display), sans-serif; fill: #1a1a1a; }
+.atlas-figure svg .on-fill-sm { font: 400 10px sans-serif; fill: #1a1a1a; opacity: .8; }
+
+:root {
+  --dg-blue: #dbeafe;   --dg-blue-s: #60a5fa;
+  --dg-green: #dcfce7;  --dg-green-s: #4ade80;
+  --dg-purple: #ede9fe; --dg-purple-s: #a78bfa;
+  --dg-amber: #fef3c7;  --dg-amber-s: #fbbf24;
+  --dg-pink: #fce7f3;   --dg-pink-s: #f472b6;
+  --dg-grey: #f1f5f9;
+}
+
+/* In dark mode keep the same hues but drop the luminance, and lighten the
+   on-fill text so it stays legible. */
+:root[data-theme='dark'] {
+  --dg-blue: #1e3a5f;   --dg-blue-s: #3b82f6;
+  --dg-green: #14432a;  --dg-green-s: #22c55e;
+  --dg-purple: #2e1f57; --dg-purple-s: #8b5cf6;
+  --dg-amber: #453110;  --dg-amber-s: #d97706;
+  --dg-pink: #4a1d35;   --dg-pink-s: #db2777;
+  --dg-grey: #1e293b;
+}
+
+:root[data-theme='dark'] .atlas-figure svg .on-fill,
+:root[data-theme='dark'] .atlas-figure svg .on-fill-sm { fill: #e8eef6; }
+
+/* Three-across GIF/result grid, as used for the robot demos. */
+.atlas-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  margin: 1.75rem 0;
+}
+
+.atlas-grid img {
+  width: 100%;
+  border-radius: 6px;
+  border: 1px solid var(--atlas-rule);
+}
+
+/* --------------------------------------------------------------------------
+   6. Key-contributions block
+   -------------------------------------------------------------------------- */
+
+.atlas-keypoints {
+  border: 1px solid var(--atlas-rule);
+  border-radius: 8px;
+  padding: 1.25rem 1.5rem;
+  margin: 2rem 0;
+  background: var(--atlas-figure-bg);
+}
+
+.atlas-keypoints > .atlas-keypoints-title {
+  font-family: var(--atlas-display);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--sl-color-gray-3);
+  margin: 0 0 0.75rem;
+}
+
+.atlas-keypoints ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.atlas-keypoints li {
+  margin-bottom: 0.55rem;
+}
+
+.atlas-keypoints li:last-child {
+  margin-bottom: 0;
+}
+
+/* --------------------------------------------------------------------------
+   7. Citations
+   -------------------------------------------------------------------------- */
+
+.atlas-papers {
+  margin: 2.5rem 0 0;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--atlas-rule);
+  font-size: 0.9rem;
+}
+
+.atlas-papers h2 {
+  font-size: 0.72rem !important;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--sl-color-gray-3);
+  border: 0 !important;
+  margin: 0 0 0.75rem !important;
+  padding: 0 !important;
+}
+
+.atlas-papers ol {
+  padding-left: 1.4rem;
+  margin: 0;
+}
+
+.atlas-papers li {
+  margin-bottom: 0.5rem;
+  line-height: 1.55;
+}
+
+.atlas-papers .atlas-paper-authors {
+  color: var(--sl-color-gray-3);
+}
+
+/* --------------------------------------------------------------------------
+   8. Misc polish
+   -------------------------------------------------------------------------- */
+
+/* KaTeX display equations get room to breathe, like the paper template. */
+.sl-markdown-content .katex-display {
+  margin: 1.75rem 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.25rem 0;
+}
+
+/* Tables read as result tables, not as UI. */
+.sl-markdown-content table {
+  font-size: 0.9rem;
+}
+
+.sl-markdown-content th {
+  font-family: var(--atlas-display);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+/* Blockquotes as margin-notes. */
+.sl-markdown-content blockquote {
+  border-inline-start-color: var(--sl-color-accent);
+  font-style: normal;
+  color: var(--sl-color-gray-2);
+}
+
+/* Sidebar: quieter, so the content column stays the hero. */
+.sidebar-content {
+  font-size: 0.875rem;
+}
+
+/* Print: strip nav so a page prints like a handout. */
+@media print {
+  .atlas-hero { border-bottom: 1px solid #ccc; }
+  nav, .right-sidebar, .sidebar-pane, header.header { display: none !important; }
+  .main-frame { padding: 0 !important; }
+}

@@ -1,0 +1,447 @@
+---
+title: Encoders
+description: "What an encoder is, the three different things the word means, and how to choose between them. The entry point to the encoder section."
+sidebar:
+  order: 1
+  label: "Encoders: overview"
+depth: frontier
+readingTime: 25
+papers:
+  - title: "Reducing the Dimensionality of Data with Neural Networks"
+    authors: "G. E. Hinton, R. R. Salakhutdinov"
+    year: 2006
+    url: "https://doi.org/10.1126/science.1127647"
+  - title: "Efficient Estimation of Word Representations in Vector Space (word2vec)"
+    authors: "Mikolov, Chen, Corrado, Dean"
+    year: 2013
+    url: "https://arxiv.org/abs/1301.3781"
+  - title: "Attention Is All You Need"
+    authors: "Vaswani et al."
+    year: 2017
+    url: "https://arxiv.org/abs/1706.03762"
+  - title: "A Preprocessing Scheme for High-Cardinality Categorical Attributes"
+    authors: "Daniele Micci-Barreca"
+    year: 2001
+    url: "https://doi.org/10.1145/507533.507538"
+  - title: "Understanding Contrastive Representation Learning through Alignment and Uniformity on the Hypersphere"
+    authors: "Tongzhou Wang, Phillip Isola"
+    year: 2020
+    url: "https://arxiv.org/abs/2005.10242"
+  - title: "Smarter, Better, Faster, Longer: A Modern Bidirectional Encoder (ModernBERT)"
+    authors: "Benjamin Warner et al."
+    year: 2024
+    url: "https://arxiv.org/abs/2412.13663"
+  - title: "Seq vs Seq: An Open Suite of Paired Encoders and Decoders"
+    authors: "Orion Weller et al."
+    year: 2025
+    url: "https://arxiv.org/abs/2507.11412"
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+{/*
+  LinkCard's `href` is a component prop, so it is a JSX expression and never
+  reaches the rehype-base-links plugin that rewrites Markdown links. Component
+  hrefs must be prefixed explicitly. BASE_URL already ends in '/', hence the
+  paths below have no leading slash.
+*/}
+export const base = import.meta.env.BASE_URL;
+
+<Abstract>
+"Encoder" is one word doing three jobs. It names a *neural component* that
+compresses data into a vector, a *position in an architecture* that reads input
+rather than producing output, and a *preprocessing step* that turns categories
+into numbers. These are related but not the same, and conflating them is the most
+common source of confusion in this corner of ML. This page defines the shared
+idea, separates the three senses, and tells you which of the three child pages
+you actually want.
+</Abstract>
+
+<KeyPoints>
+
+- **Every encoder does the same thing: it maps data into a space where the next step's job is easier.** The three senses differ only in what "easier" means and who consumes the output.
+- **The output space is the whole design.** An encoder is not judged by reconstruction quality but by whether distances, directions, and linear separability in its output space mean something useful.
+- **Compression is a side effect, not the goal.** A good encoder discards information — but it must discard the *right* information, and which information is right depends entirely on the downstream task.
+- **The three senses have genuinely different failure modes.** Neural encoders collapse; architectural encoders bottleneck; feature encoders leak. Knowing which family you are in tells you what to watch for.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## The one idea underneath all of it
+
+Imagine describing a house to someone over the phone so they can decide whether
+to buy it. You do not read out the position of every brick. You say: three
+bedrooms, south-facing garden, twenty minutes from the station, needs a new roof.
+
+You have just encoded the house. You took something enormous and messy and
+produced a short list of numbers and facts — deliberately throwing away almost
+everything — such that the *specific decision* your listener has to make is still
+possible. Read out the brick positions instead and you would have preserved far
+more information while making the decision much harder.
+
+That is an encoder. **A function that maps something big and awkward into
+something small and structured, chosen so that the thing you want to do next
+becomes easy.**
+
+The two halves of that sentence matter equally, and beginners usually only hear
+the first. Compression alone is trivial — you could hash the house to eight bytes
+and lose nothing about uniqueness, while making every downstream question
+impossible. The skill is in *what you keep*.
+
+## Why "the space" is the point
+
+Here is where encoders become genuinely powerful rather than merely tidy.
+
+If you encode houses well, then two houses with similar encodings really are
+similar houses. You can measure distance. You can cluster. You can draw a
+straight line that separates "houses I'd buy" from "houses I wouldn't", when no
+such line existed in the raw data. The famous demonstration of this is word2vec,
+where the encoded vector for *king*, minus *man*, plus *woman*, lands near the
+vector for *queen* — a relationship that has no counterpart whatsoever in the raw
+spelling of the words.
+
+Nobody programmed that. It fell out of training an encoder on a task that had
+nothing to do with analogies. **This is the recurring promise of encoders: train
+one on a cheap, abundant objective, and get a space where hard problems become
+easy.**
+
+<Aside type="caution" title="A caveat you'll want later">
+The `king - man + woman ≈ queen` result is real but heavily cherry-picked, and
+later analyses showed the arithmetic often only works because the query vectors
+are excluded from the nearest-neighbour search. Treat it as an illustration of
+the *idea*, not as evidence of how reliably it holds.
+</Aside>
+
+## The three things people mean
+
+<Figure
+  lead="One word, three meanings."
+  caption="These overlap — BERT is simultaneously an architectural encoder and a neural encoder, and its embedding layer is a feature encoder — but the design questions, the papers, and the failure modes are different in each column. Work out which column you are in before you start reading."
+>
+<svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Three senses of the word encoder, side by side">
+  <defs>
+    <marker id="ar1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <text class="lb" x="380" y="18" text-anchor="middle">"Encoder" means one of three things</text>
+
+  <rect class="f-blue" x="14" y="38" width="232" height="240" rx="8"/>
+  <text class="on-fill" x="130" y="62" text-anchor="middle">1 · Neural encoder</text>
+  <text class="on-fill-sm" x="130" y="80" text-anchor="middle">a learned function</text>
+  <line class="bx" x1="34" y1="92" x2="226" y2="92"/>
+  <text class="sm" x="30" y="112">data → vector</text>
+  <text class="sm" x="30" y="132">AE · VAE · VQ-VAE</text>
+  <text class="sm" x="30" y="150">CNN · ViT · CLIP</text>
+  <text class="sm" x="30" y="168">SimCLR · DINO · JEPA</text>
+  <text class="xs" x="30" y="196">Question: what does the</text>
+  <text class="xs" x="30" y="210">latent space need to support?</text>
+  <text class="xs" x="30" y="240">Failure mode:</text>
+  <text class="sm" x="30" y="258">representation collapse</text>
+
+  <rect class="f-purple" x="264" y="38" width="232" height="240" rx="8"/>
+  <text class="on-fill" x="380" y="62" text-anchor="middle">2 · Architectural role</text>
+  <text class="on-fill-sm" x="380" y="80" text-anchor="middle">a position in a model</text>
+  <line class="bx" x1="284" y1="92" x2="476" y2="92"/>
+  <text class="sm" x="280" y="112">reads input, emits state</text>
+  <text class="sm" x="280" y="132">seq2seq · attention</text>
+  <text class="sm" x="280" y="150">BERT (encoder-only)</text>
+  <text class="sm" x="280" y="168">T5 · BART (enc–dec)</text>
+  <text class="xs" x="280" y="196">Question: does the decoder</text>
+  <text class="xs" x="280" y="210">see all of the input, or a summary?</text>
+  <text class="xs" x="280" y="240">Failure mode:</text>
+  <text class="sm" x="280" y="258">the information bottleneck</text>
+
+  <rect class="f-amber" x="514" y="38" width="232" height="240" rx="8"/>
+  <text class="on-fill" x="630" y="62" text-anchor="middle">3 · Feature encoding</text>
+  <text class="on-fill-sm" x="630" y="80" text-anchor="middle">a preprocessing step</text>
+  <line class="bx" x1="534" y1="92" x2="726" y2="92"/>
+  <text class="sm" x="530" y="112">category → number</text>
+  <text class="sm" x="530" y="132">one-hot · ordinal</text>
+  <text class="sm" x="530" y="150">target · hashing</text>
+  <text class="sm" x="530" y="168">learned embeddings</text>
+  <text class="xs" x="530" y="196">Question: how much cardinality,</text>
+  <text class="xs" x="530" y="210">and does order mean anything?</text>
+  <text class="xs" x="530" y="240">Failure mode:</text>
+  <text class="sm" x="530" y="258">target leakage</text>
+</svg>
+</Figure>
+
+<Card title="Which page do you want?" icon="right-arrow">
+If you are training a model to *learn* a representation → **Neural encoders**.
+If you are choosing between BERT-style and GPT-style for a task → **Encoder–decoder architectures**.
+If you have a spreadsheet with a `country` column → **Feature encoding**.
+</Card>
+
+<CardGrid>
+  <LinkCard
+    title="Neural Encoders"
+    href={`${base}encoders/neural-encoders/`}
+    description="Autoencoders, VAEs, VQ-VAE, CNN and ViT backbones, contrastive and joint-embedding encoders. The deepest of the three pages."
+  />
+  <LinkCard
+    title="Encoder–Decoder Architectures"
+    href={`${base}encoders/encoder-decoder/`}
+    description="Seq2seq, the bottleneck problem, attention as its fix, and the encoder-only vs decoder-only vs encoder–decoder question as it stands in 2026."
+  />
+  <LinkCard
+    title="Feature Encoding"
+    href={`${base}encoders/feature-encoding/`}
+    description="One-hot, ordinal, target, hashing and learned embeddings — with the leakage trap that ruins more models than any other single mistake."
+  />
+</CardGrid>
+
+<Tier level="mechanics" />
+
+## The shared anatomy
+
+Strip away the differences and every encoder has the same four parts. Being able
+to name them for any given encoder is most of what "understanding" it means.
+
+| Part | What it is | Example (CLIP image encoder) |
+|---|---|---|
+| **Input domain** | what it accepts | 224×224 RGB images |
+| **Output space** | where it maps to, and its geometry | 512-dim unit hypersphere |
+| **Training signal** | what defines "good" | agreement with the paired text encoder |
+| **Inductive bias** | what structure is assumed | translation equivariance (CNN) or patch permutation (ViT) |
+
+The training signal is the one that determines everything. Two encoders with
+identical architectures trained on different signals produce spaces with entirely
+different properties — a ResNet trained on ImageNet classification and the same
+ResNet trained with SimCLR share every weight shape and almost no behaviour.
+
+## The taxonomy, by training signal
+
+This is the organising axis worth internalising, because it predicts what an
+encoder will be good at better than architecture does.
+
+<Figure
+  lead="Encoders organised by what trains them."
+  caption="Reading left to right is roughly historical, and roughly in order of how much unlabelled data each family can exploit. The rightmost two branches are where nearly all current research sits, for the reason given below the diagram."
+>
+<svg viewBox="0 0 780 340" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Taxonomy of encoders by training signal">
+  <defs>
+    <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor" opacity="0.55"/>
+    </marker>
+  </defs>
+
+  <rect class="f-grey" x="300" y="10" width="180" height="34" rx="6"/>
+  <text class="on-fill" x="390" y="32" text-anchor="middle">Encoder</text>
+
+  <path class="ar" d="M390,44 L390,60 L110,60 L110,78" marker-end="url(#ar2)"/>
+  <path class="ar" d="M390,44 L390,60 L300,60 L300,78" marker-end="url(#ar2)"/>
+  <path class="ar" d="M390,44 L390,60 L490,60 L490,78" marker-end="url(#ar2)"/>
+  <path class="ar" d="M390,44 L390,60 L680,60 L680,78" marker-end="url(#ar2)"/>
+
+  <rect class="f-amber" x="34" y="78" width="152" height="30" rx="5"/>
+  <text class="on-fill-sm" x="110" y="97" text-anchor="middle">Supervised</text>
+  <text class="xs" x="110" y="126" text-anchor="middle">needs labels</text>
+  <text class="sm" x="110" y="150" text-anchor="middle">ResNet / ViT</text>
+  <text class="sm" x="110" y="168" text-anchor="middle">classification</text>
+  <text class="xs" x="110" y="196" text-anchor="middle">strong when labels</text>
+  <text class="xs" x="110" y="210" text-anchor="middle">are plentiful and the</text>
+  <text class="xs" x="110" y="224" text-anchor="middle">task is known upfront</text>
+
+  <rect class="f-green" x="224" y="78" width="152" height="30" rx="5"/>
+  <text class="on-fill-sm" x="300" y="97" text-anchor="middle">Reconstructive</text>
+  <text class="xs" x="300" y="126" text-anchor="middle">no labels</text>
+  <text class="sm" x="300" y="150" text-anchor="middle">AE · DAE</text>
+  <text class="sm" x="300" y="168" text-anchor="middle">VAE · VQ-VAE · MAE</text>
+  <text class="xs" x="300" y="196" text-anchor="middle">generative, invertible,</text>
+  <text class="xs" x="300" y="210" text-anchor="middle">but spends capacity on</text>
+  <text class="xs" x="300" y="224" text-anchor="middle">perceptually irrelevant detail</text>
+
+  <rect class="f-blue" x="414" y="78" width="152" height="30" rx="5"/>
+  <text class="on-fill-sm" x="490" y="97" text-anchor="middle">Contrastive</text>
+  <text class="xs" x="490" y="126" text-anchor="middle">no labels</text>
+  <text class="sm" x="490" y="150" text-anchor="middle">SimCLR · MoCo</text>
+  <text class="sm" x="490" y="168" text-anchor="middle">CLIP · SBERT</text>
+  <text class="xs" x="490" y="196" text-anchor="middle">excellent geometry for</text>
+  <text class="xs" x="490" y="210" text-anchor="middle">retrieval; needs negatives</text>
+  <text class="xs" x="490" y="224" text-anchor="middle">and large batches</text>
+
+  <rect class="f-purple" x="604" y="78" width="152" height="30" rx="5"/>
+  <text class="on-fill-sm" x="680" y="97" text-anchor="middle">Predictive</text>
+  <text class="xs" x="680" y="126" text-anchor="middle">no labels</text>
+  <text class="sm" x="680" y="150" text-anchor="middle">BERT (MLM)</text>
+  <text class="sm" x="680" y="168" text-anchor="middle">DINO · I-JEPA</text>
+  <text class="xs" x="680" y="196" text-anchor="middle">predicts in latent space;</text>
+  <text class="xs" x="680" y="210" text-anchor="middle">no negatives needed but</text>
+  <text class="xs" x="680" y="224" text-anchor="middle">collapse must be prevented</text>
+
+  <line class="bx" x1="34" y1="252" x2="756" y2="252" opacity="0.3"/>
+  <text class="xs" x="34" y="274">label cost</text>
+  <text class="sm" x="110" y="292" text-anchor="middle">high</text>
+  <text class="sm" x="300" y="292" text-anchor="middle">none</text>
+  <text class="sm" x="490" y="292" text-anchor="middle">none</text>
+  <text class="sm" x="680" y="292" text-anchor="middle">none</text>
+  <text class="xs" x="34" y="316">scales with</text>
+  <text class="sm" x="110" y="316" text-anchor="middle">labelled data</text>
+  <text class="sm" x="300" y="316" text-anchor="middle">raw data</text>
+  <text class="sm" x="490" y="316" text-anchor="middle">raw data + batch size</text>
+  <text class="sm" x="680" y="316" text-anchor="middle">raw data</text>
+</svg>
+</Figure>
+
+The reason the right-hand branches dominate current research is simply arithmetic:
+labelled data is bounded by human effort, unlabelled data is bounded by storage.
+Once a self-supervised objective works *at all*, it inherits a data supply curve
+that supervised learning cannot match.
+
+## Choosing one, practically
+
+<Aside type="tip" title="A decision procedure that is right most of the time">
+
+1. **Do you need to generate or reconstruct the input?** → reconstructive (VAE,
+   VQ-VAE, MAE). Nothing else gives you an invertible map.
+2. **Do you need to search or match items?** → contrastive (CLIP, SBERT).
+   Cosine distance in these spaces is directly meaningful, which is not true of
+   most others.
+3. **Do you need general-purpose features for many unknown downstream tasks?** →
+   predictive self-supervision (DINO, I-JEPA, BERT). These transfer best.
+4. **Do you have abundant labels and exactly one task?** → supervised. It will
+   still beat everything else in that narrow setting, and it is much simpler.
+5. **Is it a categorical column in a table?** → you are in sense 3; go to
+   [Feature encoding](/encoders/feature-encoding/) and mostly stop worrying
+   about neural anything.
+
+</Aside>
+
+<Tier level="formal" />
+
+## Definition
+
+An encoder is a parameterised map
+
+$$
+E_\theta : \mathcal{X} \longrightarrow \mathcal{Z}, \qquad \dim(\mathcal{Z}) \ll \dim(\mathcal{X}),
+$$
+
+trained so that some downstream functional $g$ composed with $E_\theta$ achieves
+low risk:
+
+$$
+\theta^\star = \arg\min_\theta \; \mathbb{E}_{(x,y)\sim\mathcal{D}} \big[\ell\big(g(E_\theta(x)),\, y\big)\big].
+$$
+
+The subtlety, and the reason encoders are interesting rather than trivial, is
+that in self-supervised settings $y$ is *unavailable at training time* and $g$ is
+*unknown*. You are optimising a proxy objective and hoping the resulting space
+serves a family of $g$'s you have not seen yet. Everything difficult about
+encoder design follows from that gap.
+
+## The information-theoretic frame
+
+The cleanest formalisation is the information bottleneck. Write $X$ for the
+input, $Y$ for the (possibly hypothetical) downstream target, $Z = E_\theta(X)$.
+We want
+
+$$
+\max_\theta \; I(Z; Y) - \beta\, I(Z; X),
+$$
+
+which says: keep everything about $X$ that predicts $Y$, discard everything else.
+The Lagrange multiplier $\beta$ sets the exchange rate.
+
+This single expression organises the whole field:
+
+- **$\beta \to 0$** — keep everything. The identity function is optimal. Useless,
+  because the downstream problem is exactly as hard as before.
+- **$\beta \to \infty$** — keep nothing. A constant is optimal. This is
+  **representation collapse**, and note that it is not a bug in an
+  implementation: it is the global optimum of a badly balanced objective.
+- **Intermediate $\beta$** — the useful regime, and every encoder family is a
+  different bet about how to find it without knowing $Y$.
+
+<Aside type="note" title="Where each family's bet lies">
+Reconstructive objectives set a floor on $I(Z;X)$ by requiring $X$ be recoverable
+— which prevents collapse for free, but forces $Z$ to retain detail that no
+plausible $Y$ needs. Contrastive objectives estimate a lower bound on $I(Z;Y)$
+using augmentations as a stand-in for $Y$-invariance, with negatives supplying
+the repulsive force that keeps $I(Z;X)$ from collapsing. Predictive objectives
+drop the negatives and must therefore impose the anti-collapse constraint
+architecturally — via stop-gradients, EMA targets, or explicit
+variance/covariance penalties.
+</Aside>
+
+## Why compression is not the objective
+
+A common misreading: "an encoder compresses, so more compression is better."
+
+Formally this is false, and the counterexample is immediate. Let $h$ be a perfect
+hash into 64 bits. Then $I(h(X); X)$ is essentially maximal — $h(X)$ determines
+$X$ within the dataset — while $I(h(X); Y)$ is zero for any non-trivial $Y$,
+because the hash destroys all metric structure. Compression is extreme; utility
+is nil.
+
+What actually matters is that the *geometry* of $\mathcal{Z}$ aligns with the
+semantics of the task. Two standard measurements:
+
+$$
+\text{alignment} = \mathbb{E}_{(x,x^+)}\big[\|E(x) - E(x^+)\|^2\big], \qquad
+\text{uniformity} = \log \mathbb{E}_{(x,x^-)}\big[e^{-2\|E(x)-E(x^-)\|^2}\big].
+$$
+
+Alignment says semantically equivalent inputs land close together; uniformity says
+the embeddings spread out over the space rather than clumping. Wang & Isola
+showed these two quantities essentially *are* what the InfoNCE loss optimises, and
+that measuring them separately predicts downstream performance better than the
+loss value does. If you only remember one diagnostic for an encoder, make it this
+pair.
+
+<Tier level="frontier" />
+
+## Where the three senses stand, as of 2026
+
+**Neural encoders — predictive self-supervision has won the argument, not yet the
+benchmarks.** The theoretical case against reconstruction (it spends capacity on
+irrelevant high-entropy detail) is broadly accepted. But masked *autoencoders*
+remain extremely competitive, and the JEPA family's advantage is clearest at
+large scale and on transfer, less so on small-data benchmarks. Treat "latent
+prediction is strictly better" as a directional claim, not a settled one.
+
+**Architectural encoders — the encoder-only obituary was premature.** Between
+2020 and 2023 the field largely abandoned encoder-only models for decoder-only
+LLMs. That has partly reversed: ModernBERT (Warner et al., 2024) demonstrated
+that encoder-only models had simply been left un-modernised rather than
+superseded, and controlled comparisons in 2025 — notably the paired
+encoder/decoder suite in *Seq vs Seq* — found encoders still ahead on
+classification and retrieval at matched parameter counts. For embeddings and
+reranking specifically, encoder-only is currently the better default.
+
+**Feature encoding — solved in theory, still routinely botched in practice.** The
+methods have been stable for two decades. The failure is procedural: target
+encoding computed before the train/test split leaks the label, and the resulting
+model validates beautifully and fails in production. This is, by a wide margin,
+the most common serious bug in applied tabular ML.
+
+## Open problems
+
+- **No task-agnostic metric for encoder quality.** Linear probing is the standard
+  proxy and it is known to be a poor one — it rewards linearly accessible
+  information and is blind to structure a non-linear head could use. Alignment and
+  uniformity are better but only defined relative to a chosen augmentation family.
+
+- **Collapse is prevented empirically, not understood.** Stop-gradients and EMA
+  targets demonstrably work. Why they work is still debated, and there is no
+  theory that predicts in advance whether a given asymmetry is sufficient.
+
+- **Encoder spaces are not interoperable.** Two encoders trained on the same data
+  with the same objective and different seeds produce spaces that are not
+  comparable without an alignment procedure. This blocks modular reuse, and it is
+  the reason systems like HWM must train their levels in a *shared* latent space
+  rather than stitching two independently trained encoders together.
+
+- **Cardinality still breaks tabular encoding.** No categorical-encoding method
+  handles a million-category column well. Hashing collides, target encoding
+  overfits, embeddings need more data than the tail categories have.
+
+<Papers papers={frontmatter.papers} />

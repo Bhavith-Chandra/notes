@@ -1,0 +1,36 @@
+---
+/**
+ * Figure.astro — centered image with a small grey caption underneath.
+ * This is the Nerfies signature block: figure, then a caption whose first
+ * few words are bolded as a mini-title.
+ *
+ * Usage:
+ *   <Figure src="/figures/vae.svg" alt="VAE schematic"
+ *           lead="Encoder / decoder split."
+ *           caption="The encoder maps x to a distribution over z; ..." />
+ *
+ * Or wrap arbitrary content (an SVG you inlined, a video, a table):
+ *   <Figure lead="Results." caption="...">
+ *     <svg>...</svg>
+ *   </Figure>
+ */
+interface Props {
+  src?: string;
+  alt?: string;
+  /** Bolded first phrase of the caption. */
+  lead?: string;
+  caption?: string;
+}
+
+const { src, alt = '', lead, caption } = Astro.props;
+const hasSlot = Astro.slots.has('default');
+---
+
+<figure class="atlas-figure">
+  {hasSlot ? <slot /> : src && <img src={src} alt={alt} loading="lazy" />}
+  {(lead || caption) && (
+    <figcaption>
+      {lead && <strong>{lead}</strong>} {caption}
+    </figcaption>
+  )}
+</figure>
