@@ -1,0 +1,407 @@
+---
+title: Fine-Tuning and PEFT
+description: "LoRA, QLoRA and the low-rank hypothesis — how to adapt a large model on one GPU, and what fine-tuning can and cannot teach it."
+sidebar:
+  order: 4
+depth: frontier
+readingTime: 30
+prereqs:
+  - label: "Optimization"
+    slug: "training/optimization"
+papers:
+  - title: "LoRA: Low-Rank Adaptation of Large Language Models"
+    authors: "Edward J. Hu et al."
+    year: 2021
+    url: "https://arxiv.org/abs/2106.09685"
+  - title: "QLoRA: Efficient Finetuning of Quantized LLMs"
+    authors: "Tim Dettmers et al."
+    year: 2023
+    url: "https://arxiv.org/abs/2305.14314"
+  - title: "Training language models to follow instructions with human feedback (InstructGPT)"
+    authors: "Long Ouyang et al."
+    year: 2022
+    url: "https://arxiv.org/abs/2203.02155"
+  - title: "Direct Preference Optimization (DPO)"
+    authors: "Rafael Rafailov et al."
+    year: 2023
+    url: "https://arxiv.org/abs/2305.18290"
+  - title: "Decoupled Weight Decay Regularization (AdamW)"
+    authors: "Ilya Loshchilov, Frank Hutter"
+    year: 2017
+    url: "https://arxiv.org/abs/1711.05101"
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+<Abstract>
+Full fine-tuning of a 70B model needs roughly a terabyte of GPU memory, almost
+none of it for the weights themselves — the optimizer states dominate. LoRA
+sidesteps this by freezing the model and training a low-rank update, cutting
+trainable parameters by three to four orders of magnitude with little quality
+loss. The reason it works is a hypothesis about adaptation being intrinsically
+low-rank, and that hypothesis also explains what fine-tuning cannot do.
+</Abstract>
+
+<KeyPoints>
+
+- **Optimizer state, not weights, is what makes full fine-tuning expensive.** Adam keeps two fp32 moments per parameter. For a 70B model that is roughly 560 GB before you have stored a single activation.
+- **LoRA trains $BA$ instead of $\Delta W$.** With rank 16 on a 4096×4096 matrix you train 131k parameters instead of 16.8M — a 128× reduction — and merge them back at inference for zero added latency.
+- **Fine-tuning changes behaviour far more readily than knowledge.** It is excellent at format, tone, and task framing; it is an unreliable and expensive way to install facts. For facts, retrieval usually wins.
+- **Catastrophic forgetting is proportional to how much you move the weights.** LoRA's constrained update is partly why it forgets less than full fine-tuning — a side benefit that is often the deciding factor.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## Where the memory actually goes
+
+The intuition that a 70B model needs 140 GB (at fp16) to fine-tune is wrong by
+roughly a factor of eight. The accounting:
+
+| Component | Bytes per parameter | 70B model |
+|---|---|---|
+| Weights (fp16) | 2 | 140 GB |
+| Gradients (fp16) | 2 | 140 GB |
+| Adam first moment (fp32) | 4 | 280 GB |
+| Adam second moment (fp32) | 4 | 280 GB |
+| **Total** | **12** | **~840 GB** |
+
+Plus activations. The optimizer alone is four times the size of the model, and
+this is the number that decides whether fine-tuning is possible on your hardware.
+
+**So the useful question is not "how do we shrink the model?" but "how do we shrink
+the set of parameters we optimise?"** Freeze the weights and only a small trainable
+set carries gradients and optimizer state.
+
+## The low-rank bet
+
+Here is the hypothesis LoRA rests on.
+
+A pretrained model already knows an enormous amount. Adapting it to summarise legal
+documents does not require rebuilding that knowledge — it requires a comparatively
+small adjustment. So the weight *change* $\Delta W$, though it has the same shape
+as $W$, should be much simpler in structure than $W$ itself.
+
+Concretely: express $\Delta W$ as the product of two thin matrices, $B$ ($d \times
+r$) and $A$ ($r \times d$), with $r$ tiny — 8, 16, 64. Their product has the full
+shape but rank at most $r$. You train $B$ and $A$; $W$ never moves.
+
+For $d = 4096$ and $r = 16$ that is 131,072 trainable parameters where full
+fine-tuning would have 16,777,216. And since only those carry optimizer state, the
+memory problem largely evaporates.
+
+<Aside type="tip" title="Two properties that make LoRA practical rather than merely clever">
+**No inference cost.** $BA$ can be added into $W$ after training, giving a single
+merged weight matrix. Unlike adapter layers, there is nothing extra to run.
+
+**Swappable.** A rank-16 LoRA is a few megabytes. You can keep dozens for different
+tasks and hot-swap them against one base model in memory — which is why the entire
+open-source fine-tuning ecosystem is built on it.
+</Aside>
+
+## What fine-tuning is good and bad at
+
+Worth stating early, because it is the most common misconception in applied work.
+
+**Good at:** output format, tone and persona, task framing, following a specific
+schema, domain-specific style, refusing or not refusing particular categories.
+
+**Bad at:** installing new facts. It can be done with enough data and epochs, and
+it is unreliable — the model may reproduce the fact in the training format and fail
+to use it in conversation, or overwrite adjacent knowledge in the process.
+
+**If you want the model to know your documents, retrieve them.** If you want the
+model to *behave* differently, fine-tune. Reaching for fine-tuning to inject
+knowledge is the standard expensive mistake.
+
+<Tier level="mechanics" />
+
+## The LoRA layer
+
+<Figure
+  lead="A frozen path and a trainable bypass."
+  caption="The pretrained weight matrix is frozen and still does all the heavy lifting. Alongside it, a down-projection to rank r and an up-projection back sum into the output. B is initialised to zero so the adapter starts as a no-op — the model at step zero is exactly the pretrained model, which is what makes training stable. After training, BA can be folded into W, leaving nothing extra at inference time."
+>
+<svg viewBox="0 0 760 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="LoRA layer structure with frozen weights and a trainable low-rank bypass">
+  <defs>
+    <marker id="ft1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <rect class="f-grey" x="20" y="104" width="60" height="42" rx="5"/>
+  <text class="on-fill-sm" x="50" y="130" text-anchor="middle">x</text>
+
+  <path class="ar" d="M84,116 L146,74" marker-end="url(#ft1)"/>
+  <path class="ar" d="M84,134 L146,176" marker-end="url(#ft1)"/>
+
+  <rect class="f-grey" x="152" y="48" width="180" height="52" rx="5"/>
+  <text class="on-fill" x="242" y="70" text-anchor="middle">W  (frozen)</text>
+  <text class="xs" x="242" y="88" text-anchor="middle">d × d — no gradient, no optimizer state</text>
+
+  <rect class="f-blue" x="152" y="152" width="76" height="44" rx="5"/>
+  <text class="on-fill-sm" x="190" y="172" text-anchor="middle">A</text>
+  <text class="xs" x="190" y="188" text-anchor="middle">r × d, N(0,σ)</text>
+
+  <path class="ar" d="M232,174 L262,174" marker-end="url(#ft1)"/>
+  <text class="xs" x="247" y="166" text-anchor="middle">r</text>
+
+  <rect class="f-purple" x="268" y="152" width="76" height="44" rx="5"/>
+  <text class="on-fill-sm" x="306" y="172" text-anchor="middle">B</text>
+  <text class="xs" x="306" y="188" text-anchor="middle">d × r, ZERO</text>
+
+  <path class="ar" d="M336,74 L412,110" marker-end="url(#ft1)"/>
+  <path class="ar" d="M348,174 L412,138" marker-end="url(#ft1)"/>
+  <text class="xs" x="380" y="160">× α/r</text>
+
+  <rect class="f-green" x="418" y="102" width="90" height="46" rx="5"/>
+  <text class="on-fill-sm" x="463" y="130" text-anchor="middle">+</text>
+
+  <path class="ar" d="M512,125 L556,125" marker-end="url(#ft1)"/>
+  <rect class="f-grey" x="562" y="104" width="60" height="42" rx="5"/>
+  <text class="on-fill-sm" x="592" y="130" text-anchor="middle">h</text>
+
+  <text class="xs" x="242" y="120" text-anchor="middle">16.8M params — untouched</text>
+  <text class="xs" x="248" y="218" text-anchor="middle">2 × d × r = 131k params — the only thing you train</text>
+
+  <text class="lb" x="660" y="76">At inference:</text>
+  <text class="xs" x="660" y="96">W′ ← W + (α/r)BA</text>
+  <text class="xs" x="660" y="114">one matrix, zero</text>
+  <text class="xs" x="660" y="130">added latency</text>
+  <text class="xs" x="660" y="158">Adapter file:</text>
+  <text class="xs" x="660" y="174">a few MB, swappable</text>
+</svg>
+</Figure>
+
+## Choices that matter
+
+<Steps>
+
+1. **Which matrices.** The original paper adapted only attention $W_Q$ and $W_V$.
+   Later practice found adapting **all** linear layers — including the MLP — works
+   better, and the MLP layers matter more than the attention ones for most tasks.
+   Default to all.
+
+2. **Rank $r$.** 8–16 handles style and format. 64–128 for harder domain shifts.
+   Beyond that the returns are thin and you should ask whether full fine-tuning is
+   the honest answer.
+
+3. **Alpha.** The update is scaled by $\alpha/r$. Setting $\alpha = 2r$ is a common
+   default. The scaling exists so that changing $r$ does not change the effective
+   learning rate — which means you should *not* re-tune the learning rate every
+   time you change rank.
+
+4. **Learning rate.** LoRA tolerates and wants much higher rates than full
+   fine-tuning — typically 1e-4 to 3e-4 versus 1e-5. Using a full-fine-tuning
+   learning rate is the most common reason a LoRA run underperforms.
+
+5. **Initialisation.** $A$ random, $B$ **zero**. So $BA = 0$ at step zero and the
+   model is exactly the pretrained one. Initialising both randomly injects noise
+   into a well-trained model and degrades the start.
+
+</Steps>
+
+## QLoRA
+
+Three ideas stacked, which together put 65B fine-tuning on a single 48 GB GPU.
+
+**4-bit NormalFloat (NF4).** A quantisation format whose levels are the quantiles
+of a normal distribution. Since pretrained weights are approximately normally
+distributed, this is information-theoretically closer to optimal than uniform
+4-bit levels for the same bit budget.
+
+**Double quantisation.** The quantisation constants themselves are quantised,
+saving roughly another 0.37 bits per parameter. Small, and it adds up at 65B.
+
+**Paged optimizers.** Optimizer state pages to CPU memory on GPU pressure, using
+unified memory, which prevents the out-of-memory crashes that otherwise occur at
+long sequence lengths.
+
+The base model is stored in 4-bit and dequantised to bf16 *on the fly* for each
+matmul. LoRA adapters remain in bf16. Gradients flow through the dequantised
+weights to the adapters; the 4-bit weights never update.
+
+<Aside type="caution" title="QLoRA's real cost is speed, not quality">
+Dequantising on every forward pass costs compute. QLoRA is typically noticeably
+slower per step than LoRA on a model that already fits. It is a *memory* solution.
+If your model fits in bf16, use plain LoRA.
+</Aside>
+
+## The PEFT family
+
+| Method | What it trains | Merges at inference | Notes |
+|---|---|---|---|
+| Full FT | everything | n/a | best quality, worst memory, most forgetting |
+| LoRA | low-rank $\Delta W$ | **yes** | the default |
+| QLoRA | LoRA over 4-bit base | yes | memory win, speed cost |
+| DoRA | magnitude + direction separately | yes | small consistent gain over LoRA |
+| Prefix / prompt tuning | virtual tokens | no | very few params, consumes context |
+| Adapters (Houlsby) | inserted bottleneck layers | no | adds inference latency |
+| BitFit | biases only | n/a | tiny; surprisingly effective for simple tasks |
+
+The "merges at inference" column is why LoRA displaced adapters. Any method adding
+layers adds latency to every request forever; LoRA's cost is zero once merged.
+
+<Tier level="formal" />
+
+## The parameterisation
+
+For a pretrained weight $W_0 \in \mathbb{R}^{d \times k}$, constrain the update to
+rank $r \ll \min(d,k)$:
+
+$$
+W = W_0 + \Delta W = W_0 + \frac{\alpha}{r}BA, \qquad B \in \mathbb{R}^{d\times r},\ A \in \mathbb{R}^{r\times k}.
+$$
+
+Forward pass:
+
+$$
+h = W_0 x + \frac{\alpha}{r}B(Ax).
+$$
+
+Note the association: computing $Ax$ first ($r \times k$ times $k$) then $B(\cdot)$
+costs $O(r(d+k))$, against $O(dk)$ for the frozen path. For $r=16$, $d=k=4096$
+that is 131k multiply-adds against 16.8M — about 0.8% overhead during training,
+and zero after merging.
+
+**Parameter count.** $|\Delta W|_{\text{trainable}} = r(d+k)$ versus $dk$ for full
+fine-tuning. The compression ratio is
+
+$$
+\frac{dk}{r(d+k)} \;\xrightarrow{d=k}\; \frac{d}{2r},
+$$
+
+so 128× at $d=4096$, $r=16$.
+
+## Why $\alpha/r$
+
+Without the scaling, changing $r$ changes the magnitude of a typical update, and
+you would have to re-tune the learning rate. With $B=0$ initially, early updates
+give $\Delta W \approx \frac{\alpha}{r}\,\Delta B\, A$, and since $A$ has $r$ rows
+contributing to each output, the sum over the rank index grows like $r$ under
+standard initialisation. Dividing by $r$ cancels that growth, so the effective step
+size on $\Delta W$ is approximately $r$-independent.
+
+Practical consequence: **$\alpha$ and the learning rate are redundant knobs.** Fix
+$\alpha = 2r$ and tune the learning rate only. Tuning both is a common waste of a
+sweep.
+
+## The intrinsic dimension argument
+
+LoRA's justification is the *intrinsic dimensionality* hypothesis: the minimum
+number of parameters needed to reach within $\epsilon$ of full fine-tuning
+performance is far smaller than the parameter count. Empirically, for many tasks a
+few thousand well-chosen directions suffice.
+
+If adaptation lives in a low-dimensional manifold, then restricting $\Delta W$ to
+rank $r$ loses little — provided the manifold is *approximately linear* in weight
+space, which is the assumption that can fail.
+
+**Where it fails.** Tasks requiring genuinely new capability — a new language, a
+new modality, substantially new knowledge — need higher rank, sometimes ranks where
+LoRA's advantage disappears. The rank at which LoRA stops matching full fine-tuning
+is a rough measure of how far the task sits from the pretraining distribution, and
+it is a useful diagnostic: if you need $r = 512$, the low-rank assumption is telling
+you it does not hold for your task.
+
+## NF4 quantisation
+
+For weights assumed $\sim \mathcal{N}(0,\sigma^2)$, NF4 places its $2^4$ levels at
+the quantiles of the standard normal, so that each bin holds equal probability
+mass:
+
+$$
+q_i = \frac{1}{2}\left(\Phi^{-1}\!\left(\frac{i}{17}\right) + \Phi^{-1}\!\left(\frac{i+1}{17}\right)\right), \quad i = 1,\dots,16,
+$$
+
+normalised to $[-1,1]$. This is an information-theoretically optimal quantisation
+for normally-distributed data under a fixed level count — as opposed to uniform
+levels, which waste resolution in the tails where few weights live.
+
+Quantisation is applied **block-wise** (typically 64 weights per block) with a
+per-block scale, so local variation in weight magnitude is handled. Double
+quantisation then quantises those per-block scales, saving roughly
+
+$$
+\frac{32}{64} - \frac{8}{64} - \frac{32}{256} \approx 0.37 \text{ bits/parameter}.
+$$
+
+## Catastrophic forgetting
+
+Fine-tuning on a narrow distribution degrades performance elsewhere. A useful
+frame: the loss on the original distribution grows roughly with the distance moved
+through weight space, to second order,
+
+$$
+\mathcal{L}_{\text{orig}}(W_0 + \Delta W) \approx \mathcal{L}_{\text{orig}}(W_0) + \tfrac{1}{2}\,\Delta W^{\top} H\, \Delta W,
+$$
+
+since $\nabla\mathcal{L}_{\text{orig}}(W_0) \approx 0$ at convergence. Damage is
+therefore quadratic in $\|\Delta W\|$ weighted by the Hessian.
+
+LoRA constrains $\Delta W$ to a rank-$r$ subspace, bounding how far you can travel
+and — more importantly — restricting *which* directions you can travel in. This is
+a large part of why LoRA forgets less than full fine-tuning, and it is a benefit
+that rarely appears in the headline comparison but often decides the choice in
+practice.
+
+<Tier level="frontier" />
+
+## Where this stands, as of 2026
+
+**LoRA is the default and the "adapt all layers" correction is settled.** The
+original attention-only recommendation is outdated; adapting MLP layers matters
+more for most tasks. Any implementation still defaulting to $W_Q, W_V$ only is
+leaving quality on the table.
+
+**The LoRA-versus-full-fine-tuning question depends on task distance.** For
+instruction tuning, style, and format — near the pretraining distribution — LoRA
+matches full fine-tuning at a fraction of the cost. For new languages or genuinely
+new capabilities, full fine-tuning still wins, and the required rank tells you
+which regime you are in.
+
+**Serving many adapters concurrently is solved.** Batched multi-LoRA serving lets a
+single base model handle requests for different adapters in one batch, which is
+what makes per-customer fine-tuning economically viable.
+
+**Fine-tuning is losing ground to prompting and retrieval for knowledge tasks**,
+and gaining ground for behaviour. Long context and good retrieval removed most of
+the "fine-tune it on our documents" use case; what remains is genuinely about
+changing how the model acts.
+
+## Open problems
+
+- **No principled way to pick the rank.** It is swept. The relationship between
+  task difficulty, dataset size, and required rank is not characterised.
+
+- **LoRA on MoE models is unreliable.** Adapting a routed model can shift routing
+  in ways that destabilise it, and the interaction is poorly understood.
+
+- **Composing adapters does not work well.** Adding two LoRAs trained separately
+  rarely gives you both behaviours; they interfere. Methods to merge them exist and
+  none is robust.
+
+- **Knowledge injection remains unreliable.** The mechanism by which fine-tuning
+  installs a fact — and why it often fails to generalise beyond the training
+  phrasing — is not understood. Retrieval is the pragmatic answer and it is a
+  workaround, not an explanation.
+
+- **The alignment tax is real and under-measured.** Fine-tuning on a narrow task
+  measurably degrades safety behaviours, including when the fine-tuning data is
+  benign. This has direct deployment consequences and is not routinely checked.
+
+## What to read next, in order
+
+1. **Hu et al. (2021), LoRA** — Section 4 and the rank ablations in Section 7.2,
+   which are the empirical core of the low-rank claim.
+2. **Dettmers et al. (2023), QLoRA** — Section 3 for NF4. The quantile-quantisation
+   argument is a nice piece of applied information theory.
+3. **Ouyang et al. (2022), InstructGPT** — for the alignment-tax discussion, which
+   is the honest counterweight to fine-tuning enthusiasm.
+
+<Papers papers={frontmatter.papers} />

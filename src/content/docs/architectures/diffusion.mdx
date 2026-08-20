@@ -1,0 +1,547 @@
+---
+title: Diffusion Models
+description: "Destroy data with noise, learn to reverse it. Score matching, DDIM, classifier-free guidance, latent diffusion, and why flow matching is replacing the whole framing."
+sidebar:
+  order: 3
+depth: frontier
+readingTime: 45
+prereqs:
+  - label: "Probability for ML"
+    slug: "foundations/probability-for-ml"
+papers:
+  - title: "Deep Unsupervised Learning using Nonequilibrium Thermodynamics"
+    authors: "Sohl-Dickstein, Weiss, Maheswaranathan, Ganguli"
+    year: 2015
+    url: "https://arxiv.org/abs/1503.03585"
+  - title: "Generative Modeling by Estimating Gradients of the Data Distribution (NCSN)"
+    authors: "Yang Song, Stefano Ermon"
+    year: 2019
+    url: "https://arxiv.org/abs/1907.05600"
+  - title: "Denoising Diffusion Probabilistic Models (DDPM)"
+    authors: "Jonathan Ho, Ajay Jain, Pieter Abbeel"
+    year: 2020
+    url: "https://arxiv.org/abs/2006.11239"
+  - title: "Denoising Diffusion Implicit Models (DDIM)"
+    authors: "Jiaming Song, Chenlin Meng, Stefano Ermon"
+    year: 2020
+    url: "https://arxiv.org/abs/2010.02502"
+  - title: "Score-Based Generative Modeling through Stochastic Differential Equations"
+    authors: "Song, Sohl-Dickstein, Kingma, Kumar, Ermon, Poole"
+    year: 2020
+    url: "https://arxiv.org/abs/2011.13456"
+  - title: "High-Resolution Image Synthesis with Latent Diffusion Models"
+    authors: "Rombach, Blattmann, Lorenz, Esser, Ommer"
+    year: 2021
+    url: "https://arxiv.org/abs/2112.10752"
+  - title: "Classifier-Free Diffusion Guidance"
+    authors: "Jonathan Ho, Tim Salimans"
+    year: 2022
+    url: "https://arxiv.org/abs/2207.12598"
+  - title: "Elucidating the Design Space of Diffusion-Based Generative Models (EDM)"
+    authors: "Karras, Aittala, Aila, Laine"
+    year: 2022
+    url: "https://arxiv.org/abs/2206.00364"
+  - title: "Scalable Diffusion Models with Transformers (DiT)"
+    authors: "William Peebles, Saining Xie"
+    year: 2022
+    url: "https://arxiv.org/abs/2212.09748"
+  - title: "Flow Matching for Generative Modeling"
+    authors: "Lipman, Chen, Ben-Hamu, Nickel, Le"
+    year: 2022
+    url: "https://arxiv.org/abs/2210.02747"
+  - title: "Flow Straight and Fast: Learning to Generate and Transfer Data with Rectified Flow"
+    authors: "Xingchao Liu, Chengyue Gong, Qiang Liu"
+    year: 2022
+    url: "https://arxiv.org/abs/2209.03003"
+  - title: "Consistency Models"
+    authors: "Yang Song, Prafulla Dhariwal, Mark Chen, Ilya Sutskever"
+    year: 2023
+    url: "https://arxiv.org/abs/2303.01469"
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+<Abstract>
+Take an image and add noise until it is indistinguishable from static. That
+direction is trivial. Now learn to undo one step of it — that is a small,
+well-posed regression problem — and chain the learned inverse a thousand times to
+turn static into an image. The genius is not in the model; it is in having
+decomposed an impossibly hard generative problem into a sequence of easy denoising
+problems.
+</Abstract>
+
+<KeyPoints>
+
+- **The hard problem was split, not solved.** Mapping noise to images in one shot is what GANs attempted, and it is unstable. Diffusion asks for a thousand tiny corrections instead, each of which is an ordinary supervised regression.
+- **The network predicts the noise, and that turns out to be the score.** Up to a scale factor, predicting $\epsilon$ is estimating $\nabla_x \log p(x)$ — the direction of increasing data density. The denoiser and the score function are the same object seen two ways.
+- **Sampling cost is the defining weakness, and every recent advance attacks it.** DDIM, distillation, consistency models, and rectified flow all exist to reduce a thousand network evaluations toward one.
+- **Guidance is a knob that trades diversity for fidelity, and it is not principled.** Classifier-free guidance extrapolates beyond the conditional prediction. It works spectacularly and it is sampling from a distribution nobody trained.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## Sculpting from static
+
+Imagine a photograph slowly dissolving into television static — a bit more noise
+each second, until after a thousand seconds nothing remains but grain. Filming
+that is easy; you just add noise.
+
+Now play the film backwards. Static resolves into an image. That reversed film is
+exactly what a diffusion model produces, and the way you get it is almost absurdly
+direct: **show a network single frames of the forward film and ask it to guess
+what the previous frame looked like.**
+
+Each individual guess is easy. The frame at $t=500$ and the frame at $t=499$ are
+nearly identical — the difference is one small step of noise. A network can learn
+that. Chain five hundred such small corrections together, starting from pure
+static, and you have generated an image.
+
+## Why splitting the problem is the whole idea
+
+A GAN tries to jump from a random vector to a finished image in one forward pass.
+That is a violently hard function to learn, and the training procedure — a
+minimax game against a discriminator — is notoriously unstable, prone to mode
+collapse, and hard to scale.
+
+Diffusion refuses the jump. It asks a thousand times for a barely-perceptible
+improvement, and each request is a **plain supervised regression with a squared
+error loss**. There is no adversary, no game, no equilibrium to find. Training is
+about as stable as training a classifier.
+
+<Aside type="tip" title="The trade you are making">
+You have bought training stability with sampling cost. A GAN generates in one
+network evaluation; a diffusion model classically needs hundreds or thousands.
+Everything interesting in the last three years of this field is an attempt to get
+the stability without paying the full sampling bill.
+</Aside>
+
+## What "predict the noise" really buys you
+
+The network is not asked "what does the clean image look like?" It is asked "what
+noise was added?" — which sounds like a strange choice and is the crucial one.
+
+The answer is that the added noise points *away* from the data. Subtracting it
+points *toward* the data. So a network trained to identify noise has implicitly
+learned, at every point in image space, **which direction leads toward
+plausible-looking images**. That direction field is called the score, and having
+it is equivalent to knowing the shape of the data distribution.
+
+This is why the same model that denoises can also generate: generation is just
+repeatedly stepping in the direction the score points.
+
+<Tier level="mechanics" />
+
+## The two processes
+
+<Figure
+  lead="Forward is fixed; only the reverse is learned."
+  caption="The forward process has no parameters — it is a defined schedule of noise addition, and crucially you can jump to any timestep in closed form rather than simulating step by step. That is what makes training cheap: sample a random t, corrupt once, ask the network to identify the noise. The reverse process is the learned part, and it must be run sequentially, which is why sampling is expensive and training is not."
+>
+<svg viewBox="0 0 760 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Forward noising process and learned reverse denoising process">
+  <defs>
+    <marker id="df1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <text class="lb" x="14" y="20">FORWARD  q(x_t | x_t−1)  — fixed, no parameters</text>
+
+  <rect class="f-green" x="20" y="34" width="82" height="56" rx="5"/>
+  <text class="on-fill-sm" x="61" y="58" text-anchor="middle">x₀</text>
+  <text class="xs" x="61" y="76" text-anchor="middle">clean data</text>
+
+  <path class="ar" d="M106,62 L156,62" marker-end="url(#df1)"/>
+  <rect class="f-green" x="162" y="34" width="82" height="56" rx="5" opacity="0.8"/>
+  <text class="on-fill-sm" x="203" y="66" text-anchor="middle">x₁</text>
+
+  <path class="ar" d="M248,62 L298,62" marker-end="url(#df1)"/>
+  <rect class="f-amber" x="304" y="34" width="82" height="56" rx="5" opacity="0.75"/>
+  <text class="on-fill-sm" x="345" y="66" text-anchor="middle">x_t</text>
+
+  <path class="ar" d="M390,62 L440,62" marker-end="url(#df1)"/>
+  <text class="xs" x="415" y="54" text-anchor="middle">…</text>
+  <rect class="f-pink" x="446" y="34" width="82" height="56" rx="5"/>
+  <text class="on-fill-sm" x="487" y="58" text-anchor="middle">x_T</text>
+  <text class="xs" x="487" y="76" text-anchor="middle">≈ N(0, I)</text>
+
+  <path class="dash" d="M61,96 C200,132 260,132 345,96" marker-end="url(#df1)"/>
+  <text class="xs" x="200" y="126" text-anchor="middle">closed form: jump straight to any t in one step</text>
+
+  <line class="bx" x1="14" y1="150" x2="746" y2="150" opacity="0.3"/>
+
+  <text class="lb" x="14" y="176">REVERSE  p θ (x_t−1 | x_t)  — this is the neural network</text>
+
+  <rect class="f-pink" x="446" y="190" width="82" height="52" rx="5"/>
+  <text class="on-fill-sm" x="487" y="220" text-anchor="middle">x_T ~ N(0,I)</text>
+
+  <path class="ar" d="M442,216 L396,216" marker-end="url(#df1)"/>
+  <rect class="f-amber" x="304" y="190" width="82" height="52" rx="5" opacity="0.75"/>
+  <text class="on-fill-sm" x="345" y="220" text-anchor="middle">x_t</text>
+
+  <path class="ar" d="M300,216 L254,216" marker-end="url(#df1)"/>
+  <text class="xs" x="277" y="208" text-anchor="middle">…</text>
+  <rect class="f-green" x="162" y="190" width="82" height="52" rx="5" opacity="0.8"/>
+  <text class="on-fill-sm" x="203" y="220" text-anchor="middle">x₁</text>
+
+  <path class="ar" d="M158,216 L112,216" marker-end="url(#df1)"/>
+  <rect class="f-green" x="20" y="190" width="82" height="52" rx="5"/>
+  <text class="on-fill-sm" x="61" y="220" text-anchor="middle">x₀</text>
+
+  <text class="xs" x="600" y="200">must be run SEQUENTIALLY</text>
+  <text class="xs" x="600" y="216">T network evals per sample</text>
+  <text class="xs" x="600" y="232">— the entire cost problem</text>
+</svg>
+</Figure>
+
+## Training, which is simpler than you expect
+
+<Steps>
+
+1. **Sample** a clean example $x_0$ from the dataset and a random timestep $t
+   \sim \mathcal{U}\{1,\dots,T\}$.
+
+2. **Corrupt in one shot.** Draw $\epsilon \sim \mathcal{N}(0, I)$ and form
+   $x_t = \sqrt{\bar\alpha_t}\,x_0 + \sqrt{1-\bar\alpha_t}\,\epsilon$. No
+   simulation — the closed form is why this is cheap.
+
+3. **Predict.** Feed $x_t$ and $t$ to the network; it outputs $\epsilon_\theta(x_t,
+   t)$.
+
+4. **Regress.** Loss is $\|\epsilon - \epsilon_\theta(x_t,t)\|^2$. That is the
+   whole objective.
+
+</Steps>
+
+Three lines of actual work. There is no adversary, no sampling during training,
+and no sequential rollout — every step is independent, so training parallelises
+perfectly.
+
+<Aside type="caution" title="The asymmetry that catches people out">
+Training is embarrassingly parallel and cheap per step. *Sampling* is inherently
+sequential and expensive. A diffusion model is unusual in that its inference cost
+dwarfs its per-step training cost, which inverts the usual intuitions about where
+to optimise.
+</Aside>
+
+## Sampling, and how to make it faster
+
+The naive sampler (DDPM ancestral sampling) walks back through all $T$ steps,
+adding a little fresh noise at each. Quality is good; 1000 network evaluations per
+image is not.
+
+<Tabs>
+<TabItem label="DDIM">
+
+DDIM's observation: the DDPM training objective does not actually pin down the
+sampler. There is a *family* of reverse processes with the same marginals, and one
+member of that family is **deterministic**.
+
+Removing the injected noise turns sampling into solving an ODE rather than an
+SDE. Two consequences follow immediately:
+
+- **You can take bigger steps.** ODE solvers tolerate coarse discretisation far
+  better. 20–50 steps often suffice instead of 1000.
+- **The mapping becomes invertible.** The same latent always produces the same
+  image, so you can encode a real image to its latent and edit it — the basis of
+  most image-editing pipelines.
+
+No retraining is needed. DDIM is a different way of *sampling* an already-trained
+DDPM.
+
+</TabItem>
+<TabItem label="Guidance">
+
+Conditional generation ("a photo of a cat") works, but early samples were often
+only loosely faithful to the prompt.
+
+**Classifier guidance** used the gradient of a separately-trained noise-robust
+classifier to push samples toward the class. It works and requires an extra model
+trained on noisy inputs, which is a nuisance.
+
+**Classifier-free guidance** removed the classifier entirely. Train *one* model on
+both conditional and unconditional prediction (drop the condition ~10% of the
+time), then at sampling extrapolate:
+
+$$
+\tilde\epsilon = \epsilon_\theta(x_t, \varnothing) + w\big[\epsilon_\theta(x_t, c) - \epsilon_\theta(x_t, \varnothing)\big].
+$$
+
+At $w=1$ this is ordinary conditional sampling. At $w > 1$ you are moving *past*
+the conditional prediction, away from the unconditional one — exaggerating
+whatever the condition contributes.
+
+**This is a hack and it is the single most important sampling technique in the
+field.** Every text-to-image system uses it, typically at $w \approx 7$. Prompt
+adherence improves dramatically, diversity drops, and at high $w$ you get
+saturated, over-contrasted images. There is no clean theory saying what
+distribution you are sampling from.
+
+</TabItem>
+<TabItem label="Latent diffusion">
+
+Pixel-space diffusion at 1024×1024 is brutally expensive — the network processes a
+million-dimensional tensor a thousand times per image.
+
+Latent diffusion runs the whole process in the latent space of a pretrained
+autoencoder instead. Encode to (say) 64×64×4, diffuse there, decode once at the
+end. That is roughly a 48× reduction in the dimensionality the diffusion model
+sees.
+
+The reason it works without visible quality loss is a division of labour: the
+autoencoder handles **perceptual** detail (texture, high-frequency content) and the
+diffusion model handles **semantic** structure (what is in the image, where). These
+turn out to be largely separable, and this insight is what made Stable Diffusion
+runnable on consumer hardware.
+
+</TabItem>
+<TabItem label="Architecture">
+
+The original backbone was a U-Net — convolutional, with skip connections between
+matching resolutions, and attention layers at low resolutions.
+
+**DiT (Peebles & Xie, 2022)** replaced it with a plain transformer on latent
+patches, and showed the U-Net's inductive biases are not necessary. More
+importantly, DiT scales predictably: generation quality improves smoothly with
+model FLOPs, which the U-Net variants did not do as cleanly.
+
+This mattered because it let diffusion inherit the entire transformer scaling
+toolkit. Most large modern image and video generators are transformer-based.
+
+</TabItem>
+</Tabs>
+
+<Tier level="formal" />
+
+## The forward process
+
+A fixed Markov chain adding Gaussian noise on a variance schedule $\beta_1 <
+\cdots < \beta_T$:
+
+$$
+q(x_t \mid x_{t-1}) = \mathcal{N}\big(x_t;\ \sqrt{1-\beta_t}\,x_{t-1},\ \beta_t I\big).
+$$
+
+With $\alpha_t = 1-\beta_t$ and $\bar\alpha_t = \prod_{s=1}^{t}\alpha_s$, Gaussians
+compose, giving the **closed form** that makes training tractable:
+
+$$
+q(x_t \mid x_0) = \mathcal{N}\big(x_t;\ \sqrt{\bar\alpha_t}\,x_0,\ (1-\bar\alpha_t) I\big)
+\quad\Longleftrightarrow\quad
+x_t = \sqrt{\bar\alpha_t}\,x_0 + \sqrt{1-\bar\alpha_t}\,\epsilon .
+$$
+
+**This single identity is why diffusion is trainable.** Without it you would have
+to simulate $t$ steps for every training example.
+
+The schedule is chosen so $\bar\alpha_T \approx 0$, making $q(x_T) \approx
+\mathcal{N}(0,I)$ — a distribution you can sample from directly.
+
+## The reverse process and the ELBO
+
+The true reverse $q(x_{t-1}\mid x_t)$ is intractable, but for small $\beta_t$ it is
+approximately Gaussian, so we parameterise
+
+$$
+p_\theta(x_{t-1}\mid x_t) = \mathcal{N}\big(x_{t-1};\ \mu_\theta(x_t,t),\ \Sigma_\theta(x_t,t)\big)
+$$
+
+and optimise the variational bound (the same machinery as the
+[ELBO](/foundations/probability-for-ml/)):
+
+$$
+\mathcal{L} = \mathbb{E}_q\Big[\underbrace{\mathrm{KL}\big(q(x_T\mid x_0)\,\|\,p(x_T)\big)}_{L_T,\ \text{no parameters}} + \sum_{t>1}\underbrace{\mathrm{KL}\big(q(x_{t-1}\mid x_t,x_0)\,\|\,p_\theta(x_{t-1}\mid x_t)\big)}_{L_{t-1}} \underbrace{-\log p_\theta(x_0\mid x_1)}_{L_0}\Big].
+$$
+
+The *posterior* $q(x_{t-1}\mid x_t, x_0)$ — conditioned on the clean data — **is**
+tractable:
+
+$$
+q(x_{t-1}\mid x_t, x_0) = \mathcal{N}\big(x_{t-1};\ \tilde\mu_t(x_t,x_0),\ \tilde\beta_t I\big),
+$$
+
+$$
+\tilde\mu_t(x_t,x_0) = \frac{\sqrt{\bar\alpha_{t-1}}\beta_t}{1-\bar\alpha_t}x_0 + \frac{\sqrt{\alpha_t}(1-\bar\alpha_{t-1})}{1-\bar\alpha_t}x_t,
+\qquad
+\tilde\beta_t = \frac{1-\bar\alpha_{t-1}}{1-\bar\alpha_t}\beta_t .
+$$
+
+Both terms in the KL are Gaussians with fixed variance, so it reduces to a squared
+difference of means. Substituting $x_0 = (x_t - \sqrt{1-\bar\alpha_t}\epsilon) /
+\sqrt{\bar\alpha_t}$ and reparameterising $\mu_\theta$ in terms of a
+noise-prediction network collapses the whole bound to
+
+$$
+\boxed{\ \mathcal{L}_{\text{simple}} = \mathbb{E}_{t, x_0, \epsilon}\Big[\big\|\epsilon - \epsilon_\theta\big(\sqrt{\bar\alpha_t}x_0 + \sqrt{1-\bar\alpha_t}\epsilon,\ t\big)\big\|^2\Big]\ }
+$$
+
+Ho et al. dropped the per-timestep weighting the derivation produces, and found the
+unweighted version trains *better*. So the objective everyone uses is a
+deliberately mis-weighted variational bound — a good reminder that the derivation
+motivated the loss rather than dictating it.
+
+## The score connection
+
+For the Gaussian perturbation kernel,
+
+$$
+\nabla_{x_t} \log q(x_t \mid x_0) = -\frac{x_t - \sqrt{\bar\alpha_t}x_0}{1-\bar\alpha_t} = -\frac{\epsilon}{\sqrt{1-\bar\alpha_t}} .
+$$
+
+So
+
+$$
+s_\theta(x_t, t) \;\equiv\; \nabla_{x_t}\log p_t(x_t) \;\approx\; -\frac{\epsilon_\theta(x_t,t)}{\sqrt{1-\bar\alpha_t}} .
+$$
+
+**Noise prediction and score estimation are the same task up to a scale.** This
+identity unified two literatures that had developed separately — Sohl-Dickstein's
+thermodynamic framing and Song & Ermon's score matching — and is why the modern
+account is usually given in score language.
+
+Song et al. then showed both are discretisations of a continuous-time SDE:
+
+$$
+dx = f(x,t)\,dt + g(t)\,dw \qquad\text{(forward)},
+$$
+
+$$
+dx = \big[f(x,t) - g(t)^2 \nabla_x \log p_t(x)\big]dt + g(t)\,d\bar w \qquad\text{(reverse)}.
+$$
+
+And every SDE has an associated **probability flow ODE** with identical marginals:
+
+$$
+\frac{dx}{dt} = f(x,t) - \tfrac{1}{2}g(t)^2 \nabla_x \log p_t(x).
+$$
+
+Deterministic sampling — DDIM — is exactly a discretisation of this ODE. That
+recontextualises DDIM from "a clever trick" to "the natural deterministic member
+of the family", and it opens the door to using any off-the-shelf ODE solver, which
+is where the fast samplers (DPM-Solver and relatives) come from.
+
+## Flow matching
+
+The framing that is displacing diffusion notation. Instead of a noising process,
+posit a straight-line **probability path** between noise and data:
+
+$$
+x_t = (1-t)\,x_0 + t\,x_1, \qquad x_0 \sim \mathcal{N}(0,I),\ x_1 \sim p_{\text{data}},\ t \in [0,1].
+$$
+
+The velocity field along this path is trivially $u_t = x_1 - x_0$, and you regress
+a network onto it:
+
+$$
+\mathcal{L}_{\text{FM}} = \mathbb{E}_{t, x_0, x_1}\Big[\big\|v_\theta(x_t, t) - (x_1 - x_0)\big\|^2\Big].
+$$
+
+Compare with $\mathcal{L}_{\text{simple}}$: structurally identical, conceptually
+much simpler. No noise schedule, no $\bar\alpha_t$, no variational bound — just
+"learn the velocity field of a straight-line interpolation".
+
+**Why straightness matters.** ODE integration error depends on path curvature. A
+perfectly straight path can be integrated exactly in one Euler step. Diffusion's
+implied paths are curved, which is precisely why they need many steps. Rectified
+flow makes this explicit: iteratively re-couple samples to straighten the paths,
+and each round of straightening buys you fewer sampling steps.
+
+<Aside type="note" title="How to hold the relationship">
+Flow matching is not a rival to diffusion so much as a cleaner coordinate system
+for the same object. Diffusion with a particular schedule *is* a flow-matching
+model with a particular (curved) path. The practical argument for flow matching is
+that the straight path is both simpler to state and faster to sample — and that
+argument has largely won on the engineering side.
+</Aside>
+
+## Classifier-free guidance, formally
+
+Train a single network on both conditional and unconditional prediction by
+randomly replacing $c$ with a null token $\varnothing$ during training. At
+sampling:
+
+$$
+\tilde\epsilon_\theta(x_t, c) = \epsilon_\theta(x_t, \varnothing) + w\big[\epsilon_\theta(x_t, c) - \epsilon_\theta(x_t, \varnothing)\big].
+$$
+
+In score terms this corresponds to sampling from
+
+$$
+\tilde p(x \mid c) \;\propto\; p(x)\, p(c \mid x)^{w},
+$$
+
+i.e. the likelihood term raised to a power. For $w>1$ this is a **sharpened**
+distribution — one that no training procedure produced and that is not the
+posterior. Empirically it trades diversity for fidelity, and the failure mode at
+large $w$ (blown-out contrast, saturated colours) is exactly what over-sharpening a
+likelihood should produce.
+
+The honest summary: it is an unprincipled extrapolation that works extremely well,
+and the field uses it universally while lacking a satisfying account of why.
+
+<Tier level="frontier" />
+
+## Where things stand, as of 2026
+
+**Flow matching has largely displaced the DDPM formulation for new work.** Not
+because it generates better images at equal compute — the objectives are close to
+equivalent — but because the formulation is simpler to reason about, the
+straight-path property gives a principled route to few-step sampling, and it
+extends cleanly to non-Gaussian source distributions and to arbitrary domains.
+
+**Few-step generation is close to solved, and the methods are ad hoc.**
+Consistency models train a network to map any point on a trajectory directly to
+its endpoint, giving one- or two-step sampling. Distillation approaches compress a
+many-step teacher into a few-step student. Both work; both add a training stage and
+lose some quality. There is no single clean answer yet.
+
+**Transformers won the backbone question.** DiT-style architectures dominate at
+scale for images and video, and the reason is scaling predictability rather than
+per-FLOP quality.
+
+**Diffusion is being tried on discrete data, with mixed results.** Diffusion
+language models are an active area — they promise parallel generation and
+bidirectional context, which autoregressive models cannot offer. As of 2026 they
+do not match autoregressive quality at scale, and whether the gap is fundamental
+or an engineering lag is genuinely unsettled.
+
+## Open problems
+
+- **Guidance lacks a theory.** CFG is essential and the distribution it samples
+  from is not one anybody characterised. Attempts to derive principled
+  alternatives have not displaced it.
+
+- **The sampling-quality trade-off is not understood.** We know more steps help up
+  to a point. Nothing predicts how many a given model and dataset need.
+
+- **Likelihood and sample quality diverge.** Models with better likelihoods often
+  produce worse-looking samples. FID is the standard metric and is known to be
+  biased by its Inception backbone and sensitive to sample count.
+
+- **Memorisation.** Diffusion models provably reproduce training examples under
+  some conditions, particularly for duplicated data. The relationship between
+  dataset duplication, model capacity, and memorisation is only partly mapped, and
+  it has direct legal consequences.
+
+- **Discrete diffusion is unresolved.** The Gaussian machinery does not transfer
+  cleanly to tokens, and the several proposed corruption processes for discrete
+  data have no clear winner.
+
+## What to read next, in order
+
+1. **Ho et al. (2020), DDPM** — Section 3 and Appendix A. The derivation from ELBO
+   to $\mathcal{L}_{\text{simple}}$ is worth working through by hand once.
+2. **Song et al. (2020), Score-Based SDEs** — the unification. Read it after DDPM
+   and it will retroactively explain everything.
+3. **Karras et al. (2022), EDM** — the most practically useful paper here. It
+   disentangles schedule, preconditioning, and sampler as independent design
+   choices, and the resulting recipe is what most implementations now follow.
+4. **Lipman et al. (2022), Flow Matching** — for the formulation that is replacing
+   the others.
+
+<Papers papers={frontmatter.papers} />

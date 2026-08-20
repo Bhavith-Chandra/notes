@@ -1,0 +1,427 @@
+---
+title: Mixture of Experts
+description: "Decoupling parameter count from compute per token: sparse routing, load balancing, the capacity factor, and why every frontier model is now sparse."
+sidebar:
+  order: 5
+depth: frontier
+readingTime: 35
+prereqs:
+  - label: "Transformers"
+    slug: "architectures/transformers"
+papers:
+  - title: "Outrageously Large Neural Networks: The Sparsely-Gated Mixture-of-Experts Layer"
+    authors: "Shazeer, Mirhoseini, Maziarz, Davis, Le, Hinton, Dean"
+    year: 2017
+    url: "https://arxiv.org/abs/1701.06538"
+  - title: "GShard: Scaling Giant Models with Conditional Computation and Automatic Sharding"
+    authors: "Lepikhin, Lee, Xu, Chen, Firat et al."
+    year: 2020
+    url: "https://arxiv.org/abs/2006.16668"
+  - title: "Switch Transformers: Scaling to Trillion Parameter Models with Simple and Efficient Sparsity"
+    authors: "William Fedus, Barret Zoph, Noam Shazeer"
+    year: 2021
+    url: "https://arxiv.org/abs/2101.03961"
+  - title: "Mixture-of-Experts with Expert Choice Routing"
+    authors: "Zhou, Lei, Liu, Du, Huang et al."
+    year: 2022
+    url: "https://arxiv.org/abs/2202.09368"
+  - title: "Mixtral of Experts"
+    authors: "Jiang, Sablayrolles, Roux, Mensch, Savary et al."
+    year: 2024
+    url: "https://arxiv.org/abs/2401.04088"
+  - title: "DeepSeekMoE: Towards Ultimate Expert Specialization in Mixture-of-Experts Language Models"
+    authors: "Dai, Deng, Zhao, Xu, Gao et al."
+    year: 2024
+    url: "https://arxiv.org/abs/2401.06066"
+  - title: "Training Compute-Optimal Large Language Models (Chinchilla)"
+    authors: "Hoffmann et al."
+    year: 2022
+    url: "https://arxiv.org/abs/2203.15556"
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+<Abstract>
+A dense model uses every parameter on every token. A mixture of experts keeps
+many parallel copies of the feed-forward layer and routes each token to a handful
+of them, so total parameters and per-token compute stop being the same number.
+That decoupling is the whole point — and it turns a modelling problem into a load
+balancing problem, because a router left to its own devices will send almost
+everything to a few favourite experts.
+</Abstract>
+
+<KeyPoints>
+
+- **Parameters and FLOPs come apart.** A model can hold 600B parameters and spend 30B worth of compute per token. Capacity scales with the former; inference cost with the latter.
+- **The router collapses without help.** Slightly-better experts get more tokens, train faster, get better, and take more tokens. An auxiliary load-balancing loss exists purely to break this feedback loop, and it is fighting the main objective.
+- **Memory, not compute, is the constraint.** All experts must be resident even though most are idle for any given token. MoE trades cheap FLOPs for expensive VRAM, which is why it favours large-batch server deployment over local inference.
+- **The experts are not interpretable specialists.** Despite the name, routing correlates with surface features like token identity far more than with topic or domain. "The physics expert" does not exist.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## A hospital, not a generalist
+
+A small clinic has one doctor who handles everything. Every patient sees them,
+and their knowledge is bounded by what one person can hold.
+
+A hospital has a hundred specialists plus a triage nurse. Each patient sees two of
+them. The institution's total expertise is enormous; the cost of treating any one
+patient is still two consultations.
+
+**That is a mixture of experts.** The triage nurse is the router. The specialists
+are the expert networks. And the key economic fact is that the hospital's *capacity*
+grew a hundredfold while the *cost per patient* stayed flat.
+
+## What this buys, precisely
+
+Scaling a dense transformer means every added parameter costs compute on every
+single token, forever, in training and in inference. That coupling is what makes
+frontier models expensive.
+
+MoE breaks it. Mixtral 8×7B holds roughly 47 billion parameters and activates about
+13 billion per token. You are paying 13B-model inference prices for something with
+considerably more than 13B worth of stored knowledge.
+
+<Aside type="caution" title="The bill arrives as memory">
+All 47B parameters must sit in memory even though only 13B are used per token — you
+do not know in advance which experts a token will need. So MoE saves compute and
+spends VRAM. This is a good trade in a datacentre with big batches and a bad one on
+a laptop, which is exactly the deployment pattern you see.
+</Aside>
+
+## The problem nobody anticipates
+
+Left alone, the router develops favourites, and the mechanism is a straightforward
+runaway.
+
+Suppose expert 3 starts marginally better than the others by chance. The router
+sends it slightly more tokens. More tokens means more gradient updates, so it gets
+better faster. Being better, it attracts more tokens. Within a few thousand steps
+the router sends nearly everything to expert 3 and the remaining experts are dead
+weight — parameters that consume memory and never learn.
+
+This is **routing collapse**, and it is not a rare failure; it is the default
+behaviour. Every MoE system carries machinery whose only job is to prevent it.
+
+<Tier level="mechanics" />
+
+## Where the experts go
+
+<Figure
+  lead="Replace one FFN with many, plus a router."
+  caption="Attention is untouched — every token attends to every other exactly as before. Only the feed-forward block is replicated. The router scores the token against each expert, picks the top k (usually 2), and combines their outputs weighted by the routing probabilities. Experts not selected do no work for this token, which is where the compute saving comes from and why the parameters must still be resident."
+>
+<svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A mixture of experts layer replacing the feed-forward block in a transformer">
+  <defs>
+    <marker id="mo1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <text class="lb" x="90" y="20" text-anchor="middle">Dense block</text>
+  <rect class="f-grey" x="24" y="34" width="132" height="34" rx="4"/>
+  <text class="on-fill-sm" x="90" y="56" text-anchor="middle">attention</text>
+  <path class="ar" d="M90,72 L90,94" marker-end="url(#mo1)"/>
+  <rect class="f-blue" x="24" y="96" width="132" height="46" rx="4"/>
+  <text class="on-fill-sm" x="90" y="116" text-anchor="middle">FFN</text>
+  <text class="xs" x="90" y="132" text-anchor="middle">every token, every param</text>
+  <text class="xs" x="90" y="166" text-anchor="middle">params = FLOPs</text>
+
+  <line class="bx" x1="200" y1="20" x2="200" y2="285" opacity="0.3"/>
+
+  <text class="lb" x="480" y="20" text-anchor="middle">MoE block</text>
+  <rect class="f-grey" x="380" y="34" width="200" height="34" rx="4"/>
+  <text class="on-fill-sm" x="480" y="56" text-anchor="middle">attention (unchanged)</text>
+
+  <path class="ar" d="M480,72 L480,90" marker-end="url(#mo1)"/>
+  <rect class="f-amber" x="404" y="92" width="152" height="38" rx="5"/>
+  <text class="on-fill-sm" x="480" y="110" text-anchor="middle">router  softmax(x·W_g)</text>
+  <text class="xs" x="480" y="125" text-anchor="middle">pick top-k = 2</text>
+
+  <path class="thick" d="M440,132 L280,168" marker-end="url(#mo1)"/>
+  <path class="ar" d="M462,132 L378,168" opacity="0.25" marker-end="url(#mo1)"/>
+  <path class="thick" d="M498,132 L578,168" marker-end="url(#mo1)"/>
+  <path class="ar" d="M520,132 L676,168" opacity="0.25" marker-end="url(#mo1)"/>
+
+  <rect class="f-green" x="236" y="170" width="88" height="44" rx="5"/>
+  <text class="on-fill-sm" x="280" y="190" text-anchor="middle">expert 1</text>
+  <text class="xs" x="280" y="206" text-anchor="middle">SELECTED</text>
+
+  <rect class="f-grey" x="334" y="170" width="88" height="44" rx="5" opacity="0.45"/>
+  <text class="on-fill-sm" x="378" y="190" text-anchor="middle">expert 2</text>
+  <text class="xs" x="378" y="206" text-anchor="middle">idle</text>
+
+  <rect class="f-green" x="534" y="170" width="88" height="44" rx="5"/>
+  <text class="on-fill-sm" x="578" y="190" text-anchor="middle">expert 3</text>
+  <text class="xs" x="578" y="206" text-anchor="middle">SELECTED</text>
+
+  <rect class="f-grey" x="632" y="170" width="88" height="44" rx="5" opacity="0.45"/>
+  <text class="on-fill-sm" x="676" y="190" text-anchor="middle">expert N</text>
+  <text class="xs" x="676" y="206" text-anchor="middle">idle</text>
+
+  <text class="sm" x="470" y="196" text-anchor="middle">…</text>
+
+  <path class="thick" d="M280,218 L440,250" marker-end="url(#mo1)"/>
+  <path class="thick" d="M578,218 L520,250" marker-end="url(#mo1)"/>
+  <rect class="f-purple" x="404" y="252" width="152" height="34" rx="5"/>
+  <text class="on-fill-sm" x="480" y="274" text-anchor="middle">Σ gᵢ · Eᵢ(x)</text>
+
+  <text class="xs" x="676" y="248">all N experts must be</text>
+  <text class="xs" x="676" y="264">in memory; only k do work</text>
+  <text class="xs" x="676" y="280">params ≫ FLOPs</text>
+</svg>
+</Figure>
+
+## The routing loop
+
+<Steps>
+
+1. **Score.** A single linear layer maps the token representation to $N$ logits,
+   one per expert. This is the entire router — a $d \times N$ matrix, negligible
+   in size.
+
+2. **Select top-$k$.** Usually $k=2$; Switch Transformer showed $k=1$ works and is
+   cheaper, at some quality cost. DeepSeek-style models use larger $k$ over many
+   more, smaller experts.
+
+3. **Dispatch.** Send each token to its chosen experts. In a distributed setting
+   experts live on different devices, so this is an all-to-all communication — and
+   it is frequently the bottleneck, not the arithmetic.
+
+4. **Compute and combine.** Each expert applies its FFN; outputs are summed
+   weighted by the (renormalised) routing probabilities.
+
+</Steps>
+
+## Load balancing
+
+The auxiliary loss that stops routing collapse. For $N$ experts and a batch of $T$
+tokens, let $f_i$ be the fraction of tokens routed to expert $i$ and $P_i$ the mean
+routing probability assigned to it. Then
+
+$$
+\mathcal{L}_{\text{aux}} = \alpha\, N \sum_{i=1}^{N} f_i \, P_i .
+$$
+
+This is minimised when the load is uniform. The product form is deliberate: $f_i$ is
+a hard count and non-differentiable, $P_i$ is soft and differentiable, so the
+gradient flows through $P_i$ while $f_i$ supplies the actual imbalance signal.
+
+$\alpha$ is typically around 0.01. **This term is in direct tension with the main
+objective** — it pushes the router toward uniformity, which is precisely not what
+specialisation wants. Too large and experts fail to specialise; too small and the
+model collapses. DeepSeekMoE's auxiliary-loss-free approach instead adds a learned
+per-expert bias to the routing logits, adjusted to equalise load without
+introducing a competing gradient — currently the more favoured design.
+
+## The capacity factor
+
+Hardware wants fixed-size tensors, so each expert gets a fixed buffer:
+
+$$
+\text{capacity} = \text{CF} \times \frac{T \cdot k}{N},
+$$
+
+with $\text{CF}$ the capacity factor, typically 1.0–1.25. Tokens arriving at a full
+expert are **dropped** — they skip the FFN entirely and pass through via the
+residual connection.
+
+<Aside type="danger" title="Token dropping is real and mostly invisible">
+A dropped token receives no FFN computation at that layer. With CF = 1.25 and
+imperfect balance this can affect a meaningful fraction of tokens. It is rarely
+reported, it degrades quality silently, and raising CF costs memory linearly. This
+is the practical reason load balancing matters as much as it does.
+</Aside>
+
+## Design choices that differentiate real systems
+
+| Choice | Options | Trade-off |
+|---|---|---|
+| Experts per token ($k$) | 1 (Switch), 2 (Mixtral), 8 (DeepSeek) | more $k$ = better quality, more FLOPs and communication |
+| Expert count and size | few large vs many small | many small = finer specialisation, more routing overhead |
+| Shared experts | none vs always-on expert(s) | shared experts absorb common knowledge so routed ones specialise |
+| Routing direction | token-choice vs expert-choice | expert-choice guarantees balance but breaks causality |
+| MoE layer placement | every layer vs every other | alternating reduces communication substantially |
+
+**Expert-choice routing** inverts the selection: instead of each token picking $k$
+experts, each expert picks its top-$C$ tokens. Load is then perfectly balanced by
+construction and no auxiliary loss is needed. The catch is that a token's routing
+now depends on the other tokens in the batch — fine for encoders, a causality
+violation for autoregressive decoding, which is why it has not become the default
+for LLMs.
+
+<Tier level="formal" />
+
+## The layer
+
+Given token representation $x \in \mathbb{R}^d$, expert networks $E_1,\dots,E_N$,
+and router weights $W_g \in \mathbb{R}^{d\times N}$:
+
+$$
+g(x) = \operatorname{softmax}\big(W_g^{\top} x\big) \in \Delta^{N-1},
+$$
+
+$$
+\mathcal{T} = \operatorname{top-}k\big(g(x)\big), \qquad
+y = \sum_{i \in \mathcal{T}} \frac{g_i(x)}{\sum_{j\in\mathcal{T}} g_j(x)}\, E_i(x).
+$$
+
+The renormalisation over the selected set matters: without it the output magnitude
+scales with how confident the router happened to be, injecting a spurious signal
+into the residual stream.
+
+**Gradients.** The top-$k$ operation is not differentiable, but gradients still
+reach $W_g$ through the $g_i(x)$ coefficients of the *selected* experts. Unselected
+experts receive no gradient at all from this token — which is the mathematical
+origin of the collapse dynamic. An expert that stops being selected stops learning
+entirely, and cannot recover on its own.
+
+Shazeer et al.'s original fix was **noisy top-$k$** gating: add tunable Gaussian
+noise to the logits before selection,
+
+$$
+H(x)_i = (W_g^{\top}x)_i + \varepsilon \cdot \operatorname{softplus}\big((W_{\text{noise}}^{\top}x)_i\big), \qquad \varepsilon\sim\mathcal{N}(0,1),
+$$
+
+which gives losing experts a stochastic chance of selection — exploration, in the
+bandit sense.
+
+## Compute accounting
+
+For a transformer layer with model dimension $d$ and FFN hidden dimension $d_{ff}$:
+
+$$
+\text{Dense FFN params} = 2 d\, d_{ff}, \qquad \text{FLOPs/token} = 4 d\, d_{ff}.
+$$
+
+$$
+\text{MoE params} = 2 N d\, d_{ff} + dN, \qquad \text{FLOPs/token} = 4 k\, d\, d_{ff} + 2dN .
+$$
+
+The ratio is the headline:
+
+$$
+\frac{\text{params}}{\text{FLOPs}} \;\propto\; \frac{N}{k}.
+$$
+
+With $N=64$ and $k=2$ you hold 32× the parameters for essentially the same
+per-token arithmetic. The router term $dN$ is negligible — for $d = 4096$, $N=64$
+that is 262k parameters against hundreds of millions per expert.
+
+**The efficiency claim, stated honestly.** MoE models reach a given loss with fewer
+training FLOPs than dense models. They do *not* reach it with less memory, and they
+do not reach it with less total parameter storage — quite the opposite. The
+Switch Transformer result is a speedup in *time to a given quality*, which is the
+right metric for training and the wrong one for edge deployment.
+
+## Load balancing, derived
+
+Define, over a batch $\mathcal{B}$ of $T$ tokens,
+
+$$
+f_i = \frac{1}{T}\sum_{x \in \mathcal{B}} \mathbb{1}\{i \in \operatorname{top-}k(g(x))\},
+\qquad
+P_i = \frac{1}{T}\sum_{x \in \mathcal{B}} g_i(x).
+$$
+
+Note $\sum_i f_i = k$ and $\sum_i P_i = 1$. The auxiliary loss
+
+$$
+\mathcal{L}_{\text{aux}} = \alpha N \sum_{i=1}^{N} f_i P_i
+$$
+
+is, under the constraint $\sum_i P_i = 1$, minimised when $P$ is uniform given a
+fixed $f$ — and by symmetry the joint minimum is $f_i = k/N$, $P_i = 1/N$ for all
+$i$, giving $\mathcal{L}_{\text{aux}} = \alpha k$. Deviation from uniformity
+increases it. Since $f_i$ carries no gradient, the update is
+
+$$
+\frac{\partial \mathcal{L}_{\text{aux}}}{\partial W_g} = \alpha N \sum_i f_i \frac{\partial P_i}{\partial W_g},
+$$
+
+i.e. the router is pushed to reduce probability mass on over-subscribed experts,
+weighted by how over-subscribed they are.
+
+## Router z-loss
+
+A second auxiliary term, less discussed and important for stability:
+
+$$
+\mathcal{L}_{z} = \frac{1}{T}\sum_{x\in\mathcal{B}} \left(\log \sum_{i=1}^{N} e^{(W_g^\top x)_i}\right)^{2}.
+$$
+
+This penalises large router logits. Without it the logits grow, the softmax
+saturates, and the layer becomes numerically unstable in bf16 — a failure mode that
+shows up as loss spikes late in training. Cheap insurance, and its omission is a
+common cause of unexplained MoE training instability.
+
+<Tier level="frontier" />
+
+## Where this stands, as of 2026
+
+**Sparse is the default at the frontier.** Most large models released since 2024
+are MoE. The reason is straightforward economics: for a fixed training budget and a
+fixed inference cost target, sparsity buys more capacity, and the engineering to
+make it work is now well understood.
+
+**Fine-grained experts with shared experts is the current best recipe.**
+DeepSeekMoE's design — split the FFN into many small experts, activate more of
+them, and keep one or two always-on "shared" experts — outperforms the classic
+few-large-experts layout at matched compute. The argument is that shared experts
+absorb the knowledge every token needs, freeing routed experts to actually
+specialise rather than each re-learning the common case.
+
+**Auxiliary-loss-free balancing is displacing the auxiliary loss.** Adjusting
+per-expert routing bias to equalise load, rather than adding a competing gradient
+term, avoids the tension with the main objective. This is a clear improvement and
+is being adopted broadly.
+
+**"Experts" remains a misnomer.** Analyses of routing in Mixtral and elsewhere
+found routing correlates strongly with syntactic and token-level features and
+weakly with semantic domain. There is no physics expert. The specialisation is
+real but operates at a level well below what the name suggests, and papers
+continue to use the name anyway.
+
+## Open problems
+
+- **Scaling laws for MoE are immature.** Chinchilla tells you how to trade
+  parameters against tokens for dense models. The sparse equivalent has extra axes —
+  expert count, $k$, granularity — and no comparably clean result.
+
+- **Inference is awkward.** Batched serving works well because different tokens hit
+  different experts and the load averages out. Single-stream inference does not:
+  you pay full memory for one token's worth of compute. Expert offloading and
+  caching help and add latency.
+
+- **Fine-tuning MoE models is unreliable.** Routing shifts during fine-tuning,
+  sometimes collapsing on small datasets. The interaction between LoRA-style
+  adaptation and routing is poorly characterised.
+
+- **Nobody can predict what an expert will learn.** Routing patterns are emergent
+  and not controllable, which blocks the obvious applications — you cannot ask for
+  a medical expert and get one.
+
+- **Communication dominates at scale.** All-to-all dispatch across devices is
+  frequently the bottleneck. This is a systems problem constraining a modelling
+  choice, and it shapes which configurations are practical more than quality
+  considerations do.
+
+## What to read next, in order
+
+1. **Shazeer et al. (2017)** — the original. Sections 2–4 set up gating, noisy
+   top-$k$, and load balancing, and every paper since is a variation.
+2. **Fedus et al. (2021), Switch** — the clearest engineering treatment. Read the
+   capacity-factor and stability discussion.
+3. **Dai et al. (2024), DeepSeekMoE** — for fine-grained plus shared experts, which
+   is the current best-practice architecture.
+4. **Zhou et al. (2022), Expert Choice** — for the inverted formulation, and to
+   understand exactly why it does not work for decoders.
+
+<Papers papers={frontmatter.papers} />

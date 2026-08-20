@@ -1,0 +1,517 @@
+---
+title: Optimization
+description: "Adam and why decoupled weight decay was a bug fix, learning-rate schedules, gradient clipping, and what normalization actually does."
+sidebar:
+  order: 2
+depth: frontier
+readingTime: 35
+prereqs:
+  - label: "Probability for ML"
+    slug: "foundations/probability-for-ml"
+papers:
+  - title: "Adam: A Method for Stochastic Optimization"
+    authors: "Diederik P. Kingma, Jimmy Ba"
+    year: 2014
+    url: "https://arxiv.org/abs/1412.6980"
+  - title: "Decoupled Weight Decay Regularization (AdamW)"
+    authors: "Ilya Loshchilov, Frank Hutter"
+    year: 2017
+    url: "https://arxiv.org/abs/1711.05101"
+  - title: "SGDR: Stochastic Gradient Descent with Warm Restarts"
+    authors: "Ilya Loshchilov, Frank Hutter"
+    year: 2016
+    url: "https://arxiv.org/abs/1608.03983"
+  - title: "Batch Normalization: Accelerating Deep Network Training by Reducing Internal Covariate Shift"
+    authors: "Sergey Ioffe, Christian Szegedy"
+    year: 2015
+    url: "https://arxiv.org/abs/1502.03167"
+  - title: "Layer Normalization"
+    authors: "Jimmy Lei Ba, Jamie Ryan Kiros, Geoffrey E. Hinton"
+    year: 2016
+    url: "https://arxiv.org/abs/1607.06450"
+  - title: "Root Mean Square Layer Normalization (RMSNorm)"
+    authors: "Biao Zhang, Rico Sennrich"
+    year: 2019
+    url: "https://arxiv.org/abs/1910.07467"
+  - title: "On the difficulty of training Recurrent Neural Networks"
+    authors: "Razvan Pascanu, Tomas Mikolov, Yoshua Bengio"
+    year: 2012
+    url: "https://arxiv.org/abs/1211.5063"
+  - title: "Large Batch Optimization for Deep Learning: Training BERT in 76 minutes (LAMB)"
+    authors: "Yang You et al."
+    year: 2019
+    url: "https://arxiv.org/abs/1904.00962"
+  - title: "On Layer Normalization in the Transformer Architecture"
+    authors: "Xiong et al."
+    year: 2020
+    url: "https://arxiv.org/abs/2002.04745"
+  - title: "Shampoo: Preconditioned Stochastic Tensor Optimization"
+    authors: "Vineet Gupta, Tomer Koren, Yoram Singer"
+    year: 2018
+    url: "https://arxiv.org/abs/1802.09568"
+  - title: "SOAP: Improving and Stabilizing Shampoo using Adam"
+    authors: "Vyas, Morwani, Zhao et al."
+    year: 2024
+    url: "https://arxiv.org/abs/2409.11321"
+  - title: "Muon is Scalable for LLM Training"
+    authors: "Jingyuan Liu et al. (Moonshot AI)"
+    year: 2025
+    url: "https://arxiv.org/abs/2502.16982"
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+<Abstract>
+Optimization in deep learning is not the study of finding minima — the loss
+surface is non-convex and nobody finds the global minimum. It is the study of
+making the descent *well-conditioned* enough that a first-order method works at
+all. Adaptive step sizes, normalization layers, learning-rate schedules and
+gradient clipping are four different attacks on the same problem: the curvature
+of the loss varies wildly across parameters and across training.
+</Abstract>
+
+<KeyPoints>
+
+- **Adam gives every parameter its own effective learning rate**, estimated from the running magnitude of its gradients. That is the whole idea; the bias corrections are bookkeeping for the fact that the running averages start at zero.
+- **AdamW is a bug fix, not a variant.** L2 regularisation added to the loss gets divided by Adam's per-parameter scaling, so parameters with large gradients get *less* decay — the opposite of intended. Decoupling restores the intent.
+- **Warmup exists because early gradient statistics are garbage.** Adam's variance estimate is built from a handful of samples at step 10; trusting it produces enormous steps. Pre-norm transformers need warmup much less, which tells you the two are addressing overlapping problems.
+- **Normalization's benefit is not what its paper claimed.** "Internal covariate shift" did not survive scrutiny. The durable explanation is that it smooths the loss landscape and decouples weight magnitude from function.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## Descending a valley you cannot see
+
+Gradient descent is walking downhill in fog: feel the slope, step downhill, repeat.
+
+The problem is that the terrain is not uniform. In some directions the valley is a
+narrow steep canyon — step too far and you overshoot the far wall. In others it is
+a broad shallow plain — step timidly and you make no progress for thousands of
+steps.
+
+A single learning rate must serve both, so it gets set small enough for the canyon
+and is then hopelessly slow on the plain. **This mismatch — bad conditioning — is
+the central practical problem**, and every technique on this page addresses it.
+
+## The adaptive idea
+
+Adam's answer: give each parameter its own step size, inferred from its own
+history.
+
+Keep a running average of each parameter's recent gradient *magnitudes*. If a
+parameter's gradients have been consistently large, it is in a steep direction —
+take smaller steps. If consistently tiny, it is on a plain — take larger ones.
+Divide the step by that magnitude estimate and both directions move at a
+comparable rate.
+
+Add momentum — a running average of gradient *direction*, so you keep rolling
+through small bumps rather than reacting to every noisy minibatch — and you have
+Adam.
+
+<Aside type="tip" title="Two averages, two jobs">
+Adam tracks the first moment (mean gradient — *which way*) and the second moment
+(mean squared gradient — *how steep*). Momentum smooths direction; the second
+moment normalises scale. Almost everything about Adam's behaviour follows from
+holding those two roles apart.
+</Aside>
+
+## Why the learning rate has to move
+
+Even with per-parameter scaling, the *global* rate needs to change over training,
+in two phases.
+
+**Warmup, at the start.** At step 10, Adam's estimate of gradient magnitude comes
+from ten noisy samples. If it happens to underestimate, you divide by a small
+number and take a huge step, potentially into a region the model never recovers
+from. Warmup ramps the rate up from near zero, buying time for the statistics to
+become trustworthy.
+
+**Decay, at the end.** Early on you want to travel; late on you want to settle.
+Large steps near the end just bounce around the minimum without converging. Cosine
+decay to near zero is the standard.
+
+<Tier level="mechanics" />
+
+## Adam, step by step
+
+<Steps>
+
+1. **Momentum (first moment).** $m_t = \beta_1 m_{t-1} + (1-\beta_1) g_t$, with
+   $\beta_1 = 0.9$. An exponentially weighted average of recent gradients.
+
+2. **Scale (second moment).** $v_t = \beta_2 v_{t-1} + (1-\beta_2) g_t^2$, with
+   $\beta_2 = 0.999$. Note the much longer window — the scale estimate should be
+   more stable than the direction estimate.
+
+3. **Bias correction.** Both start at zero and are therefore biased toward zero
+   early. Divide by $(1-\beta_1^t)$ and $(1-\beta_2^t)$ to undo it. At $t=1$ this
+   is a factor of 1000 for $v$ — not a minor correction.
+
+4. **Update.** $\theta_t = \theta_{t-1} - \eta\, \hat m_t / (\sqrt{\hat v_t} +
+   \epsilon)$.
+
+</Steps>
+
+The division by $\sqrt{\hat v_t}$ is the adaptive part: it is a diagonal
+approximation to a preconditioner, rescaling each coordinate by its own gradient
+magnitude.
+
+## The AdamW fix
+
+This is the single most useful thing on this page, because the failure is silent.
+
+Classic weight decay means adding $\tfrac{\lambda}{2}\|\theta\|^2$ to the loss. Its
+gradient is $\lambda\theta$, which gets added to $g_t$ *before* Adam's machinery
+runs. So it flows through the second-moment division:
+
+$$
+\text{effective decay for } \theta_i \;\propto\; \frac{\lambda \theta_i}{\sqrt{\hat v_i}} .
+$$
+
+**Parameters with large gradients get less regularisation.** That is backwards —
+those are exactly the parameters doing the most work and most at risk of growing
+too large. With SGD this problem does not arise, because there is no per-parameter
+scaling, which is why the bug went unnoticed for years.
+
+AdamW applies the decay directly to the weights, outside the adaptive step:
+
+$$
+\theta_t = \theta_{t-1} - \eta\left(\frac{\hat m_t}{\sqrt{\hat v_t}+\epsilon} + \lambda\,\theta_{t-1}\right).
+$$
+
+<Aside type="danger" title="Two things people get wrong">
+**Do not decay biases, or normalization gains and offsets.** Decaying a LayerNorm
+gain toward zero is shrinking the layer's output scale for no principled reason.
+Every serious training script excludes them via a parameter group; many tutorials
+do not.
+
+**Check what your framework means by `weight_decay`.** In `torch.optim.Adam` it is
+the coupled L2 version — the buggy one. In `AdamW` it is decoupled. The argument
+has the same name and different semantics.
+</Aside>
+
+## Schedules
+
+<Figure
+  lead="Cosine commits to a horizon; WSD does not."
+  caption="Both start with a linear warmup, for the same reason: Adam's second-moment estimate is built from too few samples early on, and trusting it produces enormous steps. They differ in what follows. Cosine decays continuously toward the end of a pre-declared budget T, so stopping early leaves you mid-decay at a systematically worse point than the schedule intended — this is precisely the confound that made Kaplan's scaling analysis disagree with Chinchilla. WSD holds the rate constant for as long as you like and decays only over the final stretch, so a run can be extended, or several decay phases forked from one trunk."
+>
+<svg viewBox="0 0 760 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Warmup plus cosine schedule compared with warmup stable decay">
+  <text class="lb" x="190" y="18" text-anchor="middle">Warmup + cosine</text>
+  <line class="bx" x1="40" y1="180" x2="350" y2="180"/>
+  <line class="bx" x1="40" y1="40" x2="40" y2="180"/>
+  <text class="xs" x="24" y="46" text-anchor="middle">η</text>
+  <text class="xs" x="195" y="200" text-anchor="middle">step  →</text>
+
+  <path class="thick" d="M40,180 L86,54 C150,54 190,80 230,120 C270,158 300,168 340,170"/>
+  <line class="bx" x1="86" y1="40" x2="86" y2="180" stroke-dasharray="4 4" opacity="0.45"/>
+  <text class="xs" x="86" y="36" text-anchor="middle">warmup ends</text>
+  <line class="bx" x1="340" y1="40" x2="340" y2="180" stroke-dasharray="4 4" opacity="0.45"/>
+  <text class="xs" x="340" y="36" text-anchor="middle">T</text>
+  <text class="xs" x="195" y="222" text-anchor="middle">T must be chosen before training starts —</text>
+  <text class="xs" x="195" y="238" text-anchor="middle">stop early and you stop mid-decay</text>
+
+  <line class="bx" x1="390" y1="24" x2="390" y2="240" opacity="0.3"/>
+
+  <text class="lb" x="570" y="18" text-anchor="middle">Warmup–Stable–Decay</text>
+  <line class="bx" x1="420" y1="180" x2="730" y2="180"/>
+  <line class="bx" x1="420" y1="40" x2="420" y2="180"/>
+  <text class="xs" x="404" y="46" text-anchor="middle">η</text>
+  <text class="xs" x="575" y="200" text-anchor="middle">step  →</text>
+
+  <path class="thick" d="M420,180 L462,54 L648,54 L700,172"/>
+  <line class="bx" x1="462" y1="40" x2="462" y2="180" stroke-dasharray="4 4" opacity="0.45"/>
+  <line class="bx" x1="648" y1="40" x2="648" y2="180" stroke-dasharray="4 4" opacity="0.45"/>
+  <text class="xs" x="555" y="46" text-anchor="middle">stable — extend freely</text>
+
+  <path class="dash" d="M600,54 L652,172" opacity="0.55"/>
+  <path class="dash" d="M540,54 L592,172" opacity="0.4"/>
+  <text class="xs" x="575" y="222" text-anchor="middle">decay can be forked from any point on the</text>
+  <text class="xs" x="575" y="238" text-anchor="middle">trunk — no horizon committed in advance</text>
+</svg>
+</Figure>
+
+<Tabs>
+<TabItem label="Warmup + cosine">
+
+The default for transformer training. Linear ramp for the first 1–5% of steps, then
+cosine decay to some floor (commonly 10% of peak):
+
+$$
+\eta_t = \begin{cases}
+\eta_{\max}\, \dfrac{t}{T_{\text{warm}}} & t < T_{\text{warm}} \\[6pt]
+\eta_{\min} + \tfrac{1}{2}(\eta_{\max}-\eta_{\min})\Big(1 + \cos\dfrac{\pi (t-T_{\text{warm}})}{T - T_{\text{warm}}}\Big) & t \geq T_{\text{warm}}
+\end{cases}
+$$
+
+**Cosine has a trap.** The schedule depends on $T$, the total number of steps, so
+it must be decided in advance. Stop early and you stop mid-decay at a
+systematically worse point than the schedule intended. This is exactly the confound
+that made the Kaplan scaling-law analysis disagree with Chinchilla — fixed-length
+schedules penalised the longer runs.
+
+</TabItem>
+<TabItem label="WSD">
+
+Warmup–Stable–Decay avoids the cosine trap. Warm up, hold the rate constant for as
+long as you like, then decay sharply over the final ~10% of whatever budget you end
+up using.
+
+The advantage is that the stable phase can be extended arbitrarily, so you can
+continue training a checkpoint without having committed to a horizon, and you can
+branch multiple decay runs from one stable trunk. Increasingly the choice for large
+runs where the total budget is not fixed upfront.
+
+</TabItem>
+<TabItem label="Large batch">
+
+As batch size grows, gradients get less noisy, so you can take larger steps. The
+two standard heuristics:
+
+- **Linear scaling.** Multiply the learning rate by $k$ when multiplying batch size
+  by $k$. Works up to a point.
+- **Square-root scaling.** Multiply by $\sqrt{k}$. Better justified for Adam, since
+  gradient *noise* scales as $1/\sqrt{B}$.
+
+Both break beyond some critical batch size, past which more parallelism buys wall
+clock but not sample efficiency. LARS and LAMB address this with layer-wise
+trust-ratio scaling, normalising each layer's update by the ratio of its weight
+norm to its update norm.
+
+</TabItem>
+</Tabs>
+
+## Gradient clipping
+
+Cheap and load-bearing. Compute the global norm over all parameters; if it exceeds
+a threshold, rescale:
+
+$$
+g \leftarrow g \cdot \min\left(1, \frac{c}{\|g\|_2}\right).
+$$
+
+Typically $c = 1.0$. This prevents a single pathological batch from destroying a
+run — one bad example produces an enormous gradient, one enormous step lands
+somewhere terrible, and the loss never recovers.
+
+**Clip the global norm, not per-parameter values.** Per-parameter clipping changes
+the *direction* of the update, which is a different and less benign intervention.
+Global-norm clipping preserves direction and only bounds magnitude.
+
+## Normalization
+
+| | Normalises over | Batch-dependent | Used in |
+|---|---|---|---|
+| BatchNorm | the batch, per channel | **yes** | CNNs |
+| LayerNorm | features, per token | no | transformers |
+| RMSNorm | features, no mean subtraction | no | most modern LLMs |
+
+BatchNorm's batch dependence is disqualifying for language models: it behaves
+differently at train and inference, and it couples examples in a batch, which is
+wrong for variable-length sequences.
+
+RMSNorm drops the mean-centring:
+
+$$
+\text{RMSNorm}(x) = \frac{x}{\sqrt{\tfrac{1}{d}\sum_i x_i^2 + \epsilon}}\odot \gamma .
+$$
+
+Zhang & Sennrich found the re-centring contributes little while costing a pass over
+the data, so RMSNorm is slightly faster with no quality loss. Nearly universal in
+modern LLMs.
+
+<Tier level="formal" />
+
+## Adam
+
+$$
+m_t = \beta_1 m_{t-1} + (1-\beta_1) g_t, \qquad v_t = \beta_2 v_{t-1} + (1-\beta_2) g_t^{\odot 2},
+$$
+
+$$
+\hat m_t = \frac{m_t}{1-\beta_1^{t}}, \qquad \hat v_t = \frac{v_t}{1-\beta_2^{t}}, \qquad
+\theta_t = \theta_{t-1} - \eta\,\frac{\hat m_t}{\sqrt{\hat v_t}+\epsilon}.
+$$
+
+**Where the bias correction comes from.** Unrolling with $v_0 = 0$:
+
+$$
+v_t = (1-\beta_2)\sum_{i=1}^{t}\beta_2^{\,t-i} g_i^{\odot 2}.
+$$
+
+If the $g_i^2$ are drawn from a stationary distribution with mean
+$\mathbb{E}[g^2]$,
+
+$$
+\mathbb{E}[v_t] = \mathbb{E}[g^2]\,(1-\beta_2)\sum_{i=1}^{t}\beta_2^{\,t-i} = \mathbb{E}[g^2]\big(1-\beta_2^{\,t}\big).
+$$
+
+So $v_t$ underestimates by exactly the factor $(1-\beta_2^t)$, and dividing it out
+is exact rather than heuristic. At $t=1$, $\beta_2 = 0.999$: the raw estimate is
+1000× too small. Without correction the first step is catastrophic — which is part
+of why warmup matters.
+
+**Adam as a preconditioner.** Newton's method uses $H^{-1}g$. Adam uses
+$\operatorname{diag}(\sqrt{\hat v})^{-1}\hat m$, i.e. a diagonal approximation with
+$\sqrt{\mathbb{E}[g^2]}$ standing in for curvature. This is the empirical Fisher
+diagonal, and it is exact only when the Hessian is diagonal — never true, but the
+approximation captures the dominant scale differences cheaply.
+
+## Coupled versus decoupled decay, precisely
+
+**Coupled (L2 in the loss).** Set $\tilde g_t = g_t + \lambda\theta_{t-1}$. Then
+
+$$
+\theta_t = \theta_{t-1} - \eta\, \frac{\hat{\tilde m}_t}{\sqrt{\hat{\tilde v}_t}+\epsilon},
+$$
+
+and both moment estimates now contain the decay term. The effective shrinkage per
+step is
+
+$$
+\Delta\theta_i^{\text{decay}} \approx -\eta\,\frac{\lambda \theta_i}{\sqrt{\hat v_i}},
+$$
+
+**inversely proportional to that parameter's gradient scale.**
+
+**Decoupled (AdamW).**
+
+$$
+\theta_t = \theta_{t-1} - \eta\,\frac{\hat m_t}{\sqrt{\hat v_t}+\epsilon} - \eta\lambda\,\theta_{t-1},
+$$
+
+so the shrinkage is $-\eta\lambda\theta_i$, uniform across parameters as intended.
+
+A practical corollary: because the decay term is multiplied by $\eta$, its strength
+follows the learning-rate schedule. If you want decay independent of the schedule,
+you need the "fully decoupled" variant where $\lambda$ is not multiplied by
+$\eta$ — some frameworks do this, some don't, and it changes the meaning of your
+hyperparameter.
+
+## Why normalization helps
+
+Ioffe & Szegedy attributed BatchNorm's benefit to reducing "internal covariate
+shift" — the changing distribution of layer inputs during training. Subsequent work
+largely dismantled this: injecting noise *after* BatchNorm to deliberately
+reintroduce distribution shift did not remove the benefit.
+
+The better-supported account has two parts.
+
+**Loss landscape smoothing.** Normalization improves the Lipschitz constants of the
+loss and its gradient, making the landscape more predictable and permitting larger
+stable step sizes.
+
+**Scale invariance.** For any $a > 0$,
+
+$$
+\text{Norm}(a\,W x) = \text{Norm}(W x),
+$$
+
+so the function is invariant to the *magnitude* of the preceding weights — only
+direction matters. Differentiating gives
+
+$$
+\nabla_{(aW)} \mathcal{L} = \frac{1}{a}\nabla_{W}\mathcal{L},
+$$
+
+an automatic learning-rate adaptation: as weights grow, their effective step
+shrinks. This also explains the otherwise-odd interaction between weight decay and
+normalized networks — decay there controls the *effective learning rate* rather
+than model complexity in any classical sense.
+
+## Second-order methods
+
+Full Newton needs $H^{-1}$, which is $O(n^2)$ memory and $O(n^3)$ to invert —
+impossible at billions of parameters. The practical family approximates the
+preconditioner with structure.
+
+**Shampoo** maintains per-dimension preconditioners for each weight *tensor*. For
+$W \in \mathbb{R}^{m\times n}$ it keeps $L \in \mathbb{R}^{m\times m}$ and $R \in
+\mathbb{R}^{n\times n}$ accumulating $GG^\top$ and $G^\top G$, and updates with
+
+$$
+W \leftarrow W - \eta\, L^{-1/4} G R^{-1/4}.
+$$
+
+This is a Kronecker-factored approximation to the full preconditioner: $O(m^2+n^2)$
+rather than $O(m^2n^2)$. **SOAP** stabilises it by running Adam in Shampoo's
+eigenbasis, which reduces the frequency of the expensive eigendecompositions.
+
+**Muon** takes a different angle: orthogonalise the momentum matrix (via a few
+Newton–Schulz iterations) before applying it, so the update has uniform singular
+values. Applied to hidden weight matrices only — embeddings and the output head
+stay on AdamW. Reported wall-clock speedups of roughly 2× over AdamW at scale, and
+it has been used in production LLM training runs, which is a meaningful bar.
+
+<Aside type="note" title="How much of this is settled">
+AdamW has been the default for a decade and remains hard to beat robustly. The
+matrix-preconditioner family (Shampoo, SOAP, Muon) shows real gains in careful
+head-to-head comparisons at scale, and adoption is still early. Treat "AdamW has
+been superseded" as premature and "nothing beats AdamW" as out of date.
+</Aside>
+
+<Tier level="frontier" />
+
+## Where this stands, as of 2026
+
+**AdamW is still the default and is no longer unchallenged.** Muon in particular
+has moved from a blog post to production LLM training with published scaling
+results. The gains are on wall-clock time to a given loss, which is the metric that
+matters for large runs.
+
+**WSD schedules are displacing cosine for large training.** Not because they reach
+better final loss, but because they decouple the schedule from a pre-committed
+horizon — you can extend a run, or fork several decay phases from one trunk.
+
+**Warmup is better understood as an Adam problem than an architecture problem.**
+Pre-norm transformers need far less warmup than post-norm ones, and variance-
+rectified variants of Adam reduce the need further. Both point at early
+second-moment estimation as the underlying cause.
+
+**Precision interacts with optimization more than people expect.** bf16 training
+with fp32 optimizer states is standard; pure low-precision optimizer states cause
+subtle divergence. Adam's $\epsilon$ and the second moment are particularly
+sensitive, and several reported training instabilities have traced back to
+precision rather than to hyperparameters.
+
+## Open problems
+
+- **No theory predicts a good learning rate.** It is found by sweep, and the
+  transfer of hyperparameters across scale is only partly solved (μP and relatives
+  help and are not universal).
+
+- **Why Adam beats SGD on transformers is unresolved.** On CNNs, well-tuned SGD
+  with momentum matches or beats Adam. On transformers it does not, by a wide
+  margin, and there is no accepted explanation — proposals include heavy-tailed
+  gradient noise and the conditioning of attention layers.
+
+- **Loss spikes.** Large runs experience sudden loss increases that sometimes
+  recover and sometimes do not. Mitigations exist (skip the batch, lower the rate,
+  clip harder); the cause is not understood.
+
+- **The batch-size ceiling is empirical.** There is a critical batch size beyond
+  which more parallelism gives no sample-efficiency benefit. Estimating it in
+  advance is not solved.
+
+- **Second-order methods are hard to evaluate fairly.** Comparisons are confounded
+  by tuning budget, and an under-tuned baseline makes any new optimizer look good.
+  Read optimizer papers with the same scepticism you would apply to a benchmark
+  leaderboard.
+
+## What to read next, in order
+
+1. **Loshchilov & Hutter (2017), AdamW** — short, and it will change how you set up
+   every training script.
+2. **Kingma & Ba (2014), Adam** — Section 3 for the bias-correction derivation.
+3. **Xiong et al. (2020)** — for why pre-norm removes the need for warmup, which
+   ties normalization and optimization together.
+4. **Liu et al. (2025), Muon is Scalable** — the strongest current evidence that
+   AdamW is beatable at scale.
+
+<Papers papers={frontmatter.papers} />

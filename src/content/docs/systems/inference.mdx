@@ -1,0 +1,474 @@
+---
+title: Inference and Serving
+description: "Why generation is memory-bound, not compute-bound — and what quantization, speculative decoding, and PagedAttention each do about it."
+sidebar:
+  order: 1
+depth: frontier
+readingTime: 35
+prereqs:
+  - label: "Transformers"
+    slug: "architectures/transformers"
+papers:
+  - title: "Fast Inference from Transformers via Speculative Decoding"
+    authors: "Yaniv Leviathan, Matan Kalman, Yossi Matias"
+    year: 2022
+    url: "https://arxiv.org/abs/2211.17192"
+  - title: "Efficient Memory Management for Large Language Model Serving with PagedAttention (vLLM)"
+    authors: "Woosuk Kwon et al."
+    year: 2023
+    url: "https://arxiv.org/abs/2309.06180"
+  - title: "GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers"
+    authors: "Elias Frantar et al."
+    year: 2022
+    url: "https://arxiv.org/abs/2210.17323"
+  - title: "AWQ: Activation-aware Weight Quantization for LLM Compression and Acceleration"
+    authors: "Ji Lin et al."
+    year: 2023
+    url: "https://arxiv.org/abs/2306.00978"
+  - title: "GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints"
+    authors: "Ainslie et al."
+    year: 2023
+    url: "https://arxiv.org/abs/2305.13245"
+  - title: "Fast Transformer Decoding: One Write-Head is All You Need (MQA)"
+    authors: "Noam Shazeer"
+    year: 2019
+    url: "https://arxiv.org/abs/1911.02150"
+  - title: "FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness"
+    authors: "Dao, Fu, Ermon, Rudra, Ré"
+    year: 2022
+    url: "https://arxiv.org/abs/2205.14135"
+  - title: "QLoRA: Efficient Finetuning of Quantized LLMs"
+    authors: "Tim Dettmers et al."
+    year: 2023
+    url: "https://arxiv.org/abs/2305.14314"
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+<Abstract>
+Generating one token requires reading every weight in the model from memory and
+doing almost no arithmetic with each. On an H100 that means the GPU is idle
+roughly 99% of the time, waiting on memory. Nearly every inference optimisation
+that matters is a response to this single fact — either move fewer bytes, or get
+more useful work out of the bytes you already moved.
+</Abstract>
+
+<KeyPoints>
+
+- **Decoding is memory-bound; prefill is compute-bound.** They are different workloads with different bottlenecks, and treating them as one problem is why naive serving is slow.
+- **Arithmetic intensity is the number to compute.** Batch size 1 decoding does ~2 FLOPs per byte read; an H100 wants ~300. That ratio is the whole story, and it is why batching is the single highest-leverage optimisation.
+- **Quantization is a bandwidth optimisation first.** 4-bit weights are 4× fewer bytes to move, so ~4× faster decoding. The memory saving is real; the speedup is the actual reason people do it.
+- **Speculative decoding buys parallelism, not fewer FLOPs.** A small model guesses several tokens, the large model verifies them in one pass. You spend more compute to use the bandwidth you were wasting — and the output distribution is provably unchanged.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## The GPU is not the bottleneck
+
+Here is the fact that reorganises everything.
+
+To generate one token, the model reads every weight from GPU memory and multiplies
+each by a number. For a 70B model in fp16 that is 140 GB read. An H100 has about
+3.35 TB/s of memory bandwidth, so the read alone takes roughly 42 milliseconds —
+about 24 tokens per second, and that is a hard ceiling.
+
+Meanwhile the arithmetic — 140 billion multiply-adds — takes under a millisecond on
+hardware capable of ~1000 TFLOP/s.
+
+**The GPU spends 98% of its time waiting for memory.** Buying a faster GPU with
+the same bandwidth changes nothing.
+
+## Two workloads wearing one name
+
+<Steps>
+
+1. **Prefill.** Process the prompt. All tokens go through at once, so you read each
+   weight once and use it for hundreds of tokens. Compute-bound, efficient, fast.
+
+2. **Decode.** Generate token by token. Each token requires reading all the weights
+   again, and uses each weight exactly once. Memory-bound, inefficient, slow.
+
+</Steps>
+
+A 1000-token prompt might prefill in 100ms and then generate 1000 tokens over 40
+seconds. **Almost all the time is in the slow phase**, which is why "time to first
+token" and "tokens per second" are reported separately — they measure different
+bottlenecks and different optimisations fix them.
+
+## Why batching is the biggest win
+
+If you read 140 GB of weights to serve one user, and a second request arrives, you
+can serve both from the *same* read. The weights are already in registers; using
+them twice costs almost nothing extra.
+
+Batch 32 requests and you read the weights once for 32 tokens instead of 32 times.
+Throughput goes up nearly 32×, with only a small increase in latency per request.
+
+**This is why hosted inference is cheap and local inference is not.** A server
+batching hundreds of concurrent requests operates in a fundamentally more efficient
+regime than your laptop generating one stream.
+
+<Aside type="tip" title="What every technique on this page is doing">
+Either **move fewer bytes** (quantization, GQA, KV-cache compression) or **get more
+work per byte moved** (batching, speculative decoding). There is no third category.
+Once you have that frame, each technique's benefit and limits are predictable.
+</Aside>
+
+<Tier level="mechanics" />
+
+## Arithmetic intensity
+
+<Figure
+  lead="The roofline, and where decoding sits."
+  caption="Performance is bounded by bandwidth on the left and by peak compute on the right; the ridge is where they cross. Batch-1 decoding sits far into the memory-bound region — arithmetic intensity around 2 FLOPs per byte against hardware that needs roughly 300 to saturate. Batching moves you rightward along the roof: the same weight read serves more tokens. Prefill and large-batch decode sit near or past the ridge, which is why they are efficient and single-stream decode is not."
+>
+<svg viewBox="0 0 760 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Roofline model showing memory-bound decoding versus compute-bound prefill">
+  <line class="bx" x1="80" y1="230" x2="720" y2="230"/>
+  <line class="bx" x1="80" y1="30" x2="80" y2="230"/>
+  <text class="xs" x="400" y="258" text-anchor="middle">arithmetic intensity (FLOPs per byte read)  →</text>
+  <text class="xs" x="40" y="120" text-anchor="middle">achievable</text>
+  <text class="xs" x="40" y="136" text-anchor="middle">FLOP/s</text>
+
+  <path class="thick" d="M92,222 L420,60"/>
+  <path class="thick" d="M420,60 L712,60"/>
+  <text class="xs" x="230" y="130" transform="rotate(-26 230 130)">bandwidth-limited</text>
+  <text class="xs" x="570" y="50" text-anchor="middle">compute-limited (peak FLOP/s)</text>
+
+  <line class="bx" x1="420" y1="60" x2="420" y2="230" stroke-dasharray="5 4" opacity="0.5"/>
+  <text class="xs" x="420" y="246" text-anchor="middle">ridge ≈ 300</text>
+
+  <circle class="f-pink" cx="112" cy="212" r="6"/>
+  <text class="xs" x="122" y="200">decode, batch 1</text>
+  <text class="xs" x="122" y="214">~2 FLOP/byte — 1% utilisation</text>
+
+  <circle class="f-amber" cx="220" cy="159" r="6"/>
+  <text class="xs" x="230" y="152">decode, batch 32</text>
+
+  <circle class="f-blue" cx="330" cy="105" r="6"/>
+  <text class="xs" x="340" y="98">decode, batch 128</text>
+
+  <circle class="f-green" cx="520" cy="60" r="6"/>
+  <text class="xs" x="530" y="52">prefill — fully compute-bound</text>
+
+  <path class="ar" d="M126,206 C180,190 260,140 320,112" opacity="0.6" stroke-dasharray="4 3"/>
+  <text class="xs" x="200" y="106">batching moves you along the roof</text>
+</svg>
+</Figure>
+
+For a matrix-vector product with an $n \times n$ weight matrix at batch size $B$:
+
+$$
+\text{FLOPs} = 2n^2 B, \qquad \text{bytes read} \approx 2n^2 \ (\text{fp16 weights}),
+$$
+
+$$
+\text{arithmetic intensity} = \frac{2n^2 B}{2n^2} = B .
+$$
+
+**Arithmetic intensity is just the batch size.** That is the cleanest statement of
+why batching matters: at $B=1$ you get 1 FLOP per byte on hardware wanting ~300.
+
+## The KV cache
+
+Attention needs keys and values for all previous tokens. Recomputing them each step
+would be quadratic waste, so they are cached — and the cache becomes the dominant
+memory consumer at long context.
+
+$$
+\text{KV bytes} = 2 \times L \times n_{\text{layers}} \times n_{\text{kv-heads}} \times d_{\text{head}} \times \text{bytes/elem}.
+$$
+
+For a 70B-class model (80 layers, 8 KV heads after GQA, $d_{\text{head}}=128$) in
+fp16 at 100k tokens:
+
+$$
+2 \times 100{,}000 \times 80 \times 8 \times 128 \times 2 \approx 32\ \text{GB}
+$$
+
+per sequence. Without GQA (64 heads) that would be 256 GB — larger than the model.
+**GQA is primarily a serving optimisation**, and this calculation is why.
+
+## The four levers
+
+<Tabs>
+<TabItem label="Quantization">
+
+Store weights in fewer bits. 4-bit instead of 16-bit means 4× fewer bytes to read,
+so roughly 4× faster decoding — the speedup comes from bandwidth, not from cheaper
+arithmetic.
+
+**GPTQ** quantises layer by layer, minimising the error in that layer's *output*
+rather than in its weights, using second-order (Hessian) information to decide
+rounding. Weights whose perturbation matters more get rounded more carefully.
+
+**AWQ** starts from a different observation: a small fraction of weights —
+roughly 1% — matter disproportionately, and which ones can be identified from
+*activation* magnitudes rather than weight magnitudes. Scale those channels up
+before quantising so they survive, then scale back. No backprop required, so it is
+fast and it generalises across calibration sets better.
+
+**The rule of thumb:** 8-bit is essentially lossless. 4-bit costs a small,
+measurable amount of quality. Below 4-bit, degradation becomes serious except with
+specialised methods.
+
+</TabItem>
+<TabItem label="Speculative decoding">
+
+Use a small fast model to draft $\gamma$ tokens, then have the large model verify
+all $\gamma$ **in a single forward pass** — the same pass that would have produced
+one token.
+
+Why this is free-ish: verifying $\gamma$ tokens costs the same *weight read* as
+producing one, because you read the weights once regardless. You are converting
+wasted bandwidth into speculative compute.
+
+Accepted tokens are kept; at the first rejection you resample from a corrected
+distribution and discard the rest. Typical speedups are 2–3×.
+
+**The output distribution is provably identical** to standard sampling. This is the
+property that makes it usable in production — it is not an approximation, and
+enabling it cannot change your model's behaviour.
+
+</TabItem>
+<TabItem label="PagedAttention">
+
+The insight behind vLLM, borrowed directly from operating systems.
+
+Naive serving allocates a contiguous KV buffer sized to the *maximum* sequence
+length for every request. A request that generates 100 tokens in a 4096-token
+buffer wastes 97.5% of it. Measured waste in real systems was 60–80%.
+
+PagedAttention stores the KV cache in fixed-size **blocks** that need not be
+contiguous, with a block table mapping logical positions to physical blocks —
+virtual memory, applied to attention. Waste drops to under 4%.
+
+The second benefit is sharing. Two requests with the same prompt prefix can point
+at the *same* physical blocks, with copy-on-write on divergence. For chat with a
+long shared system prompt, or parallel sampling from one prompt, this is a large
+saving.
+
+</TabItem>
+<TabItem label="Batching">
+
+**Static batching** waits for a full batch, runs it to completion, returns. The
+whole batch is held hostage by its longest sequence — finished slots sit idle.
+
+**Continuous batching** operates at the iteration level: when a sequence finishes,
+a queued request takes its slot immediately. GPU utilisation stays high and
+reported throughput improvements are large — often several-fold over static
+batching at the same latency target.
+
+This, combined with PagedAttention, is most of what modern serving engines do.
+
+</TabItem>
+</Tabs>
+
+<Tier level="formal" />
+
+## The roofline
+
+Achievable performance is
+
+$$
+P = \min\big(P_{\max},\ \beta \cdot I\big),
+$$
+
+with $P_{\max}$ peak FLOP/s, $\beta$ memory bandwidth in bytes/s, and $I$
+arithmetic intensity in FLOPs/byte. The **ridge point** is $I^{*} =
+P_{\max}/\beta$.
+
+For an H100 SXM: $P_{\max} \approx 990$ TFLOP/s (bf16 with sparsity off, dense
+~990), $\beta \approx 3.35$ TB/s, giving
+
+$$
+I^{*} \approx \frac{990 \times 10^{12}}{3.35 \times 10^{12}} \approx 295\ \text{FLOPs/byte}.
+$$
+
+Batch-1 decode has $I \approx 1$–2. You are operating at well under 1% of peak
+compute, and this is not a software inefficiency — it is the workload.
+
+## Decode latency, from first principles
+
+Ignoring attention (which is small relative to weight reads at moderate context),
+time per token is bounded below by the weight read:
+
+$$
+t_{\text{token}} \geq \frac{N_{\text{params}} \cdot b}{\beta},
+$$
+
+with $b$ bytes per parameter. For 70B at fp16 ($b=2$) on an H100:
+
+$$
+t \geq \frac{70\times10^{9} \times 2}{3.35\times10^{12}} \approx 41.8\ \text{ms} \implies \approx 24\ \text{tok/s}.
+$$
+
+At 4-bit ($b = 0.5$):
+
+$$
+t \geq \frac{70\times10^{9} \times 0.5}{3.35\times10^{12}} \approx 10.4\ \text{ms} \implies \approx 96\ \text{tok/s}.
+$$
+
+**The 4× speedup from quantization falls straight out of the bandwidth ratio.** It
+has nothing to do with faster integer arithmetic — which is a common
+misunderstanding, and it explains why quantization helps decode and barely helps
+prefill.
+
+## Speculative decoding, and its correctness proof
+
+Draft model $q$, target model $p$. Draft $\gamma$ tokens autoregressively from $q$,
+then evaluate $p$ on all of them in one pass. For each draft token $x_i$ in order,
+accept with probability
+
+$$
+\min\left(1,\ \frac{p(x_i \mid x_{<i})}{q(x_i \mid x_{<i})}\right).
+$$
+
+On rejection, resample from the residual distribution
+
+$$
+p'(x) = \frac{\max\big(0,\ p(x) - q(x)\big)}{\sum_{x'}\max\big(0,\ p(x') - q(x')\big)}
+$$
+
+and discard the remaining drafts.
+
+**Why the output is exactly $p$.** Consider the probability of emitting token $x$
+at a given position. It is emitted either by accepting the draft or by resampling
+after rejection:
+
+$$
+\Pr[\text{emit } x] = \underbrace{q(x)\min\left(1, \tfrac{p(x)}{q(x)}\right)}_{\text{accepted}} + \underbrace{\left(\sum_{x'}q(x')\left(1-\min\left(1,\tfrac{p(x')}{q(x')}\right)\right)\right)p'(x)}_{\text{resampled}} .
+$$
+
+The first term is $\min(q(x), p(x))$. The rejection mass is $\sum_{x'}
+\max(0, q(x')-p(x'))$, which equals $\sum_{x'}\max(0, p(x')-q(x'))$ since both $p$
+and $q$ sum to 1 — so it exactly cancels $p'$'s normaliser, leaving
+$\max(0, p(x)-q(x))$. Summing:
+
+$$
+\min(q(x),p(x)) + \max(0, p(x)-q(x)) = p(x).
+$$
+
+**This is a modified-rejection-sampling identity, and it is exact.** The draft model
+affects *speed only* — a poor draft model wastes work, it cannot corrupt output.
+
+**Expected speedup.** With per-token acceptance rate $\alpha$ and draft length
+$\gamma$, the expected number of tokens per target-model pass is
+
+$$
+\mathbb{E}[\text{tokens}] = \frac{1 - \alpha^{\gamma+1}}{1-\alpha}.
+$$
+
+Accounting for draft cost $c$ (draft time relative to target time), the speedup is
+
+$$
+S = \frac{1-\alpha^{\gamma+1}}{(1-\alpha)(1 + c\gamma)}.
+$$
+
+Two readings: there is an optimal $\gamma$ (too long and you waste drafts past the
+first rejection), and $\alpha$ matters far more than draft-model size — which is
+why draft models are usually small models from the *same family*, trained on
+similar data.
+
+## KV cache memory, with GQA
+
+$$
+M_{\text{KV}} = 2 \cdot B \cdot L \cdot n_{\text{layer}} \cdot n_{\text{kv}} \cdot d_{\text{head}} \cdot b .
+$$
+
+Multi-head sets $n_{\text{kv}} = n_{\text{head}}$; multi-query sets $n_{\text{kv}}
+= 1$; grouped-query sets $n_{\text{kv}} = n_{\text{head}}/g$.
+
+The reduction factor is exactly $g$. GQA with 8 groups on a 64-head model gives an
+8× smaller cache, which translates directly into 8× more concurrent sequences at
+fixed memory — and concurrency is throughput.
+
+## PagedAttention's fragmentation accounting
+
+With contiguous allocation of $L_{\max}$ per request and actual length $L_i$:
+
+$$
+\text{waste} = \sum_{i} (L_{\max} - L_i),
+$$
+
+which for a heavy-tailed length distribution is most of the allocation.
+
+With block size $S$, the only waste is internal fragmentation in the last block:
+
+$$
+\text{waste} = \sum_{i}\big(S - (L_i \bmod S)\big) \bmod S \;\leq\; N \cdot (S-1).
+$$
+
+For $S=16$ and mean length 500, that is ~1.5% rather than 60–80%. Since memory
+freed is memory available for more concurrent sequences, and concurrency is
+throughput, this is a throughput result dressed as a memory result.
+
+<Tier level="frontier" />
+
+## Where this stands, as of 2026
+
+**Continuous batching plus PagedAttention is table stakes.** Every serious serving
+stack implements both. The differentiation has moved to scheduling policy,
+prefix-cache management, and disaggregation.
+
+**Prefill/decode disaggregation is the current architectural shift.** Since the two
+phases have opposite bottlenecks, running them on separate hardware pools —
+compute-dense for prefill, bandwidth-dense with more memory for decode — lets each
+be provisioned appropriately and prevents long prefills from stalling decode
+batches.
+
+**4-bit is the practical floor for weights.** GPTQ and AWQ at 4-bit are near-
+lossless for most uses. Below that, quality degrades sharply without specialised
+methods, and the marginal bandwidth saving shrinks anyway.
+
+**KV cache quantization is the newer frontier.** Weights are well-handled;
+the cache is now often the larger consumer at long context. 8-bit KV is
+near-lossless; 4-bit is usable with per-channel scaling. Attention sinks — the
+observation that the first few tokens absorb disproportionate attention mass and
+must be preserved at higher precision — matter here.
+
+**Speculative decoding has broadened.** Beyond a separate draft model: self-
+speculation using early layers, Medusa-style multiple prediction heads, and n-gram
+lookup from the prompt (very effective for code, where verbatim repetition is
+common). All share the same correctness guarantee.
+
+## Open problems
+
+- **Long-context serving remains hard.** The KV cache grows linearly and attention
+  cost grows with context. Eviction, compression, and offloading all trade quality
+  or latency, and none is clearly right.
+
+- **Latency/throughput scheduling is unsolved.** Larger batches raise throughput and
+  raise per-request latency. Optimal scheduling under mixed SLAs is an open systems
+  problem, currently handled with heuristics.
+
+- **Quantization interacts badly with fine-tuning and MoE.** Quantised MoE models
+  can shift routing; quantised fine-tuned models sometimes degrade
+  disproportionately. The interactions are not well characterised.
+
+- **Speculative decoding is worthless at large batch.** Its benefit comes from
+  spare bandwidth, and at large batch there is none. The techniques that help
+  single-stream latency and those that help server throughput are largely disjoint,
+  which is under-appreciated.
+
+- **Evaluating quantized models is done badly.** Perplexity is insensitive to
+  degradations that show up on reasoning and long-context tasks. Reported
+  "lossless" claims frequently rest on perplexity alone.
+
+## What to read next, in order
+
+1. **Kwon et al. (2023), vLLM** — Section 4. The OS analogy is exact and the
+   fragmentation measurements are the convincing part.
+2. **Leviathan et al. (2022), Speculative Decoding** — the correctness proof is
+   short and elegant; work it through.
+3. **Lin et al. (2023), AWQ** — for the activation-aware insight, which is a good
+   example of finding the right thing to measure.
+4. **Dao et al. (2022), FlashAttention** — for IO-awareness as a general principle,
+   which is the frame this whole page rests on.
+
+<Papers papers={frontmatter.papers} />

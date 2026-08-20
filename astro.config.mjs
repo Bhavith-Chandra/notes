@@ -104,6 +104,11 @@ export default defineConfig({
           items: [{ autogenerate: { directory: 'training' } }],
         },
         {
+          label: 'Systems',
+          collapsed: true,
+          items: [{ autogenerate: { directory: 'systems' } }],
+        },
+        {
           label: 'Reference',
           collapsed: true,
           items: [{ autogenerate: { directory: 'reference' } }],

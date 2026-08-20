@@ -1,0 +1,447 @@
+---
+title: Post-Training and Alignment
+description: "RLHF, DPO, GRPO and verifiable rewards — how a next-token predictor becomes an assistant, and why reward models get gamed."
+sidebar:
+  order: 3
+depth: frontier
+readingTime: 40
+prereqs:
+  - label: "Transformers"
+    slug: "architectures/transformers"
+papers:
+  - title: "Proximal Policy Optimization Algorithms (PPO)"
+    authors: "John Schulman et al."
+    year: 2017
+    url: "https://arxiv.org/abs/1707.06347"
+  - title: "Training language models to follow instructions with human feedback (InstructGPT)"
+    authors: "Long Ouyang et al."
+    year: 2022
+    url: "https://arxiv.org/abs/2203.02155"
+  - title: "Constitutional AI: Harmlessness from AI Feedback"
+    authors: "Yuntao Bai et al."
+    year: 2022
+    url: "https://arxiv.org/abs/2212.08073"
+  - title: "Direct Preference Optimization: Your Language Model is Secretly a Reward Model (DPO)"
+    authors: "Rafael Rafailov et al."
+    year: 2023
+    url: "https://arxiv.org/abs/2305.18290"
+  - title: "DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models (GRPO)"
+    authors: "Zhihong Shao, Peiyi Wang, Qihao Zhu et al."
+    year: 2024
+    url: "https://arxiv.org/abs/2402.03300"
+  - title: "DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning"
+    authors: "DeepSeek-AI, Daya Guo et al."
+    year: 2025
+    url: "https://arxiv.org/abs/2501.12948"
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+<Abstract>
+A pretrained language model predicts what text is likely, not what text is
+useful. Post-training closes that gap. The classical recipe learns a reward model
+from human preference comparisons and optimises against it with RL; DPO showed the
+reward model can be skipped entirely; and the 2025 shift is toward rewards that
+are *verifiable* — where a program, not a human or a learned proxy, decides
+whether the answer is right.
+</Abstract>
+
+<KeyPoints>
+
+- **Pretraining and helpfulness are different objectives.** A base model asked a question may continue with more questions, because that is what the internet does. Post-training is what makes "answer it" the likely continuation.
+- **Preferences are used because absolute ratings are unreliable.** Humans agree poorly on "rate this 1–10" and much better on "which of these two is better". The Bradley–Terry model turns those comparisons into a scalar reward.
+- **DPO's result is an identity, not an approximation.** The optimal policy under a KL-constrained reward objective has a closed form, which can be inverted to express reward in terms of the policy — so you can optimise the preference likelihood directly and never build a reward model.
+- **Every learned reward model gets gamed.** Optimise hard enough against a proxy and you find its errors rather than the intent. The KL penalty is a leash on how far you may stray, and it is a mitigation rather than a fix.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## The base model problem
+
+Pretrain on the internet and you get a system that continues text plausibly. Ask
+it *"What is the capital of France?"* and a perfectly good continuation is:
+
+> What is the population of Germany? What is the largest city in Italy?
+
+That is not a failure. Lists of quiz questions exist on the internet, so this is a
+*likely* continuation. It is simply not a *useful* one, and the model was never
+told the difference.
+
+**Post-training installs that difference.** It shifts the model from "what usually
+follows?" to "what would a helpful assistant say?".
+
+## Why comparisons rather than scores
+
+The first instinct is to have humans rate responses out of ten. This works badly.
+Different annotators anchor differently; the same annotator drifts over a session;
+nobody can articulate why a 7 is not a 6.
+
+Ask instead: *"Which of these two responses is better?"* Agreement rates jump
+dramatically. People are poor at absolute judgement and good at relative
+judgement — a robust finding well outside machine learning.
+
+So the pipeline collects pairwise comparisons and fits a model that assigns scores
+*consistent* with them. This is the same statistical problem as ranking chess
+players from match outcomes, and it uses the same century-old model.
+
+## The three stages, and why the third is hard
+
+<Steps>
+
+1. **Supervised fine-tuning.** Show the model thousands of high-quality
+   demonstrations of assistant behaviour. Ordinary next-token training on curated
+   data. This does most of the format-learning work.
+
+2. **Reward modelling.** Collect comparisons, train a model that scores responses
+   in agreement with human preference.
+
+3. **Reinforcement learning.** Optimise the language model to score highly under
+   that reward model.
+
+</Steps>
+
+Stage 3 is where it gets difficult, for a reason worth stating plainly: **the
+reward model is a proxy, and optimisers exploit proxies.** Push hard enough and the
+policy stops producing better answers and starts producing answers that trip the
+reward model's blind spots — excessive length, sycophancy, confident formatting
+over correct content. This is Goodhart's law with a gradient.
+
+<Aside type="caution" title="What the KL penalty is really doing">
+Every RLHF objective includes a term penalising divergence from the pre-RL model.
+It is not there for regularisation in the usual sense — it is a **leash**. It
+bounds how far the policy may travel into regions where the reward model has never
+seen data and its predictions are fiction. Remove it and the model reliably
+degenerates into reward-hacking gibberish.
+</Aside>
+
+<Tier level="mechanics" />
+
+## The pipeline
+
+<Figure
+  lead="Three stages, and the shortcut."
+  caption="The classical path runs left to right: demonstrations produce an SFT model, comparisons produce a reward model, and PPO optimises the policy against it while a KL term holds it near the SFT reference. DPO collapses the last two boxes — it uses the same preference data to update the policy directly, because the optimal policy and the reward function determine each other. The dashed path is the same data producing the same objective with one fewer model to train and serve."
+>
+<svg viewBox="0 0 760 290" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="RLHF pipeline with the DPO shortcut">
+  <defs>
+    <marker id="pt1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <rect class="f-grey" x="16" y="80" width="96" height="48" rx="5"/>
+  <text class="on-fill-sm" x="64" y="100" text-anchor="middle">base model</text>
+  <text class="xs" x="64" y="117" text-anchor="middle">next-token only</text>
+
+  <path class="ar" d="M116,104 L156,104" marker-end="url(#pt1)"/>
+  <text class="xs" x="136" y="96" text-anchor="middle">SFT</text>
+
+  <rect class="f-blue" x="162" y="80" width="96" height="48" rx="5"/>
+  <text class="on-fill-sm" x="210" y="100" text-anchor="middle">SFT model</text>
+  <text class="xs" x="210" y="117" text-anchor="middle">π_ref</text>
+
+  <path class="ar" d="M262,104 L302,104" marker-end="url(#pt1)"/>
+
+  <rect class="f-amber" x="308" y="34" width="120" height="48" rx="5"/>
+  <text class="on-fill-sm" x="368" y="54" text-anchor="middle">preference data</text>
+  <text class="xs" x="368" y="71" text-anchor="middle">(y_w ≻ y_l | x)</text>
+
+  <path class="ar" d="M368,86 L368,106" marker-end="url(#pt1)"/>
+
+  <rect class="f-purple" x="308" y="108" width="120" height="48" rx="5"/>
+  <text class="on-fill-sm" x="368" y="128" text-anchor="middle">reward model</text>
+  <text class="xs" x="368" y="145" text-anchor="middle">r φ (x, y)</text>
+
+  <path class="ar" d="M432,132 L486,132" marker-end="url(#pt1)"/>
+
+  <rect class="f-green" x="492" y="108" width="120" height="48" rx="5"/>
+  <text class="on-fill-sm" x="552" y="128" text-anchor="middle">PPO</text>
+  <text class="xs" x="552" y="145" text-anchor="middle">maximise r − β·KL</text>
+
+  <path class="ar" d="M616,132 L664,132" marker-end="url(#pt1)"/>
+  <rect class="f-green" x="670" y="108" width="76" height="48" rx="5"/>
+  <text class="on-fill-sm" x="708" y="136" text-anchor="middle">π θ</text>
+
+  <path class="dash" d="M210,132 C210,190 480,190 552,162" marker-end="url(#pt1)"/>
+  <text class="xs" x="360" y="186" text-anchor="middle">KL leash back to π_ref — bounds how far the policy may drift</text>
+
+  <line class="bx" x1="16" y1="208" x2="746" y2="208" opacity="0.3"/>
+
+  <text class="lb" x="16" y="232">DPO — same data, no reward model, no sampling</text>
+  <rect class="f-amber" x="16" y="242" width="120" height="36" rx="5"/>
+  <text class="on-fill-sm" x="76" y="265" text-anchor="middle">preference data</text>
+  <path class="thick" d="M140,260 L200,260" marker-end="url(#pt1)"/>
+  <rect class="f-pink" x="206" y="242" width="230" height="36" rx="5"/>
+  <text class="on-fill-sm" x="321" y="265" text-anchor="middle">classification loss on log-ratios</text>
+  <path class="thick" d="M440,260 L500,260" marker-end="url(#pt1)"/>
+  <rect class="f-green" x="506" y="242" width="76" height="36" rx="5"/>
+  <text class="on-fill-sm" x="544" y="265" text-anchor="middle">π θ</text>
+  <text class="xs" x="660" y="256">one model instead of four,</text>
+  <text class="xs" x="660" y="272">no rollouts during training</text>
+</svg>
+</Figure>
+
+## What PPO actually costs
+
+The classical RLHF setup holds **four** models in memory: the policy being trained,
+a frozen reference for the KL term, the reward model, and a value model for
+advantage estimation. Plus generation during training, which is sequential and
+slow.
+
+This is the practical reason DPO landed so hard. It needs two models (policy and
+reference), no generation, and no RL machinery — it is a classification loss on
+pre-collected pairs.
+
+<Tabs>
+<TabItem label="PPO">
+
+Policy-gradient with a clipped surrogate objective. The clipping prevents any
+single update from moving the policy too far, which is what makes on-policy RL
+stable enough to use here.
+
+**Where it still wins:** PPO is *on-policy* — it generates fresh responses and
+learns from the reward assigned to them. DPO only ever sees the fixed preference
+dataset. When the policy drifts away from the distribution that dataset covers,
+DPO has nothing to say and PPO does. Careful head-to-head comparisons have
+generally found well-tuned PPO ahead on hard tasks, at substantially more
+engineering cost.
+
+</TabItem>
+<TabItem label="DPO">
+
+The insight: for the KL-constrained reward-maximisation objective, the optimal
+policy has a closed form in terms of the reward. Invert it, and the reward has a
+closed form in terms of the policy. Substitute that into the Bradley–Terry
+preference likelihood, and the reward model cancels out.
+
+What remains is a binary classification loss on the *log-probability ratios* of
+chosen versus rejected responses. No reward model, no sampling, no value network.
+
+**The known failure mode:** DPO increases the *margin* between chosen and rejected
+responses, and it can do that by pushing the rejected response's likelihood down
+rather than the chosen one's up. Both likelihoods can decrease, with the model
+drifting to some third distribution neither annotator endorsed. Variants (IPO,
+KTO, and the SFT-regularised forms) exist to address this.
+
+</TabItem>
+<TabItem label="GRPO">
+
+Introduced in DeepSeekMath, and now widely used for reasoning models.
+
+The observation: PPO's value network is expensive and hard to train. But if you
+sample a *group* of $G$ responses to the same prompt, the group's mean reward is a
+perfectly serviceable baseline — no learned critic needed. Advantage becomes the
+response's reward normalised within its group.
+
+This removes one of the four models and much of the tuning difficulty, which is
+why GRPO became the default for RL on verifiable tasks where you can afford to
+sample many completions per prompt.
+
+</TabItem>
+<TabItem label="RLVR">
+
+Reinforcement Learning from Verifiable Rewards. The reward is not learned at all —
+it is computed. Run the generated code against unit tests. Check the maths answer
+against ground truth. Parse the output format.
+
+**This eliminates reward hacking against a learned proxy**, because there is no
+proxy. The reward is the actual thing you wanted.
+
+DeepSeek-R1 demonstrated that RL on verifiable rewards alone — no reward model, no
+human preference data — induces extended chain-of-thought reasoning. The model
+learns to think longer because thinking longer produces correct answers, and
+correct answers are what is rewarded.
+
+**The limitation is scope.** Verifiable rewards exist for maths, code, and formal
+logic. They do not exist for "is this essay good", "is this response kind", or most
+of what people actually use assistants for.
+
+</TabItem>
+</Tabs>
+
+<Tier level="formal" />
+
+## Reward modelling
+
+Under the Bradley–Terry model, the probability that response $y_w$ is preferred to
+$y_l$ given prompt $x$ is
+
+$$
+p(y_w \succ y_l \mid x) = \frac{\exp r(x,y_w)}{\exp r(x,y_w) + \exp r(x,y_l)} = \sigma\big(r(x,y_w) - r(x,y_l)\big).
+$$
+
+Fit by maximum likelihood:
+
+$$
+\mathcal{L}_{\text{RM}} = -\,\mathbb{E}_{(x,y_w,y_l)\sim\mathcal{D}}\Big[\log \sigma\big(r_\phi(x,y_w) - r_\phi(x,y_l)\big)\Big].
+$$
+
+**The reward is only identified up to an additive constant per prompt.** Adding
+$c(x)$ to every response's reward leaves all differences — and hence the
+likelihood — unchanged. This is why reward values are not comparable across
+prompts and why reward-model "scores" reported in isolation are close to
+meaningless.
+
+## The RLHF objective and its solution
+
+$$
+\max_{\pi_\theta}\ \mathbb{E}_{x\sim\mathcal{D},\ y\sim\pi_\theta(\cdot\mid x)}\big[r_\phi(x,y)\big] \;-\; \beta\,\mathrm{KL}\big(\pi_\theta(\cdot\mid x)\,\|\,\pi_{\text{ref}}(\cdot\mid x)\big).
+$$
+
+This has a closed-form maximiser. Writing the objective per prompt and applying
+calculus of variations with the normalisation constraint:
+
+$$
+\pi^{*}(y\mid x) = \frac{1}{Z(x)}\,\pi_{\text{ref}}(y\mid x)\exp\!\left(\frac{1}{\beta}r(x,y)\right), \qquad Z(x) = \sum_y \pi_{\text{ref}}(y\mid x)\exp\!\left(\tfrac{1}{\beta}r(x,y)\right).
+$$
+
+The optimal policy is the reference **reweighted exponentially by reward**. $Z(x)$
+is intractable — it sums over all sequences — which is why you cannot simply sample
+from $\pi^*$ and must run RL instead.
+
+## DPO's derivation
+
+Take logarithms of the solution above and solve for $r$:
+
+$$
+r(x,y) = \beta \log\frac{\pi^{*}(y\mid x)}{\pi_{\text{ref}}(y\mid x)} + \beta\log Z(x).
+$$
+
+Now substitute into the Bradley–Terry likelihood. The reward appears only as a
+*difference* between two responses to the **same** prompt, so $\beta\log Z(x)$ —
+which depends on $x$ alone — cancels exactly:
+
+$$
+r(x,y_w) - r(x,y_l) = \beta\left[\log\frac{\pi^{*}(y_w\mid x)}{\pi_{\text{ref}}(y_w\mid x)} - \log\frac{\pi^{*}(y_l\mid x)}{\pi_{\text{ref}}(y_l\mid x)}\right].
+$$
+
+Replacing $\pi^*$ with the trainable $\pi_\theta$ gives the DPO loss:
+
+$$
+\boxed{\ \mathcal{L}_{\text{DPO}} = -\,\mathbb{E}\left[\log \sigma\!\left(\beta\log\frac{\pi_\theta(y_w\mid x)}{\pi_{\text{ref}}(y_w\mid x)} - \beta\log\frac{\pi_\theta(y_l\mid x)}{\pi_{\text{ref}}(y_l\mid x)}\right)\right]\ }
+$$
+
+**The cancellation of $Z(x)$ is the entire trick**, and it depends on both
+responses sharing a prompt. This is exact — DPO is not approximating RLHF, it is
+optimising the same objective in different coordinates, under the assumption that
+the preference data is generated by a Bradley–Terry model with the optimal policy's
+implicit reward.
+
+**Where the equivalence leaks.** The derivation assumes the preference dataset is
+on-policy for $\pi_\theta$. In practice it is collected once, from some other
+model. As $\pi_\theta$ moves away from that distribution, the implicit reward is
+being evaluated where no data exists — which is exactly the extrapolation problem
+RLHF's KL term guards against, reappearing in a different place.
+
+The gradient makes the failure mode visible:
+
+$$
+\nabla_\theta \mathcal{L}_{\text{DPO}} = -\beta\,\mathbb{E}\Big[\sigma\big(\hat r_l - \hat r_w\big)\Big(\nabla_\theta\log\pi_\theta(y_w\mid x) - \nabla_\theta\log\pi_\theta(y_l\mid x)\Big)\Big],
+$$
+
+with $\hat r$ the implicit rewards. The update raises $\log\pi_\theta(y_w)$ and
+lowers $\log\pi_\theta(y_l)$, weighted by how wrong the current implicit reward
+ordering is. Nothing constrains the *absolute* level of either — hence the
+observed drift where both fall.
+
+## PPO's clipped objective
+
+$$
+\mathcal{L}^{\text{CLIP}} = \mathbb{E}_t\Big[\min\big(\rho_t \hat A_t,\ \operatorname{clip}(\rho_t, 1-\varepsilon, 1+\varepsilon)\hat A_t\big)\Big], \qquad \rho_t = \frac{\pi_\theta(a_t\mid s_t)}{\pi_{\theta_{\text{old}}}(a_t\mid s_t)}.
+$$
+
+The $\min$ with the clipped term makes the objective pessimistic: when the
+advantage is positive, gain is capped at $1+\varepsilon$; when negative, the
+penalty is not capped below $1-\varepsilon$. So the update cannot be driven by a
+large importance ratio in either direction, which is what keeps it stable without
+an explicit trust region.
+
+## GRPO
+
+Drop the value network. For a group of $G$ sampled responses to prompt $x$:
+
+$$
+\hat A_i = \frac{r_i - \operatorname{mean}(r_1,\dots,r_G)}{\operatorname{std}(r_1,\dots,r_G)},
+$$
+
+$$
+\mathcal{L}_{\text{GRPO}} = -\,\mathbb{E}\left[\frac{1}{G}\sum_{i=1}^{G}\min\big(\rho_i \hat A_i,\ \operatorname{clip}(\rho_i, 1-\varepsilon, 1+\varepsilon)\hat A_i\big)\right] + \beta\,\mathrm{KL}\big(\pi_\theta\,\|\,\pi_{\text{ref}}\big).
+$$
+
+The group mean is an unbiased baseline for the prompt's expected reward, which is
+all the value network was providing. Standardising by the group's standard
+deviation additionally normalises the advantage scale across prompts of differing
+difficulty — a prompt where all $G$ responses score similarly contributes little
+gradient, which is sensible.
+
+**Trade-off:** you need $G$ generations per prompt (typically 8–64) instead of one.
+Cheaper in models and tuning, more expensive in sampling. For verifiable tasks
+where reward evaluation is a cheap function call, this is clearly the right trade.
+
+<Tier level="frontier" />
+
+## Where this stands, as of 2026
+
+**Verifiable rewards are the most significant recent shift.** DeepSeek-R1 showed
+that RL against automatically-checkable rewards induces long chain-of-thought
+reasoning without any human preference data or reward model — the model discovers
+that thinking longer improves accuracy, and lengthens its reasoning accordingly.
+This sidesteps reward hacking entirely for the domains where verification is
+possible.
+
+**DPO won on adoption; PPO retains a quality edge on hard tasks.** DPO's
+simplicity made it the default for open-source post-training. Careful comparisons
+at scale still favour well-tuned on-policy RL, and the gap is largest where the
+preference dataset poorly covers the policy's output distribution. Iterative and
+online DPO variants — regenerate preferences from the current policy, retrain —
+close much of it, at the cost of reintroducing the sampling loop DPO removed.
+
+**The scope problem is the field's real constraint.** Verifiable rewards cover
+maths, code, and formal reasoning. They do not cover helpfulness, tone, honesty, or
+judgement — which is most of what assistants do. Those still need learned reward
+models, with all the hacking risk that entails.
+
+**Reward hacking is documented and persistent.** Length bias is the canonical
+example: reward models systematically prefer longer responses, so RLHF makes models
+verbose. Explicit length normalisation helps and does not eliminate it. Sycophancy
+is the same phenomenon on a different axis — agreeing with the user is rated
+higher than being right.
+
+## Open problems
+
+- **Preference data does not capture what people want.** Annotators rate what looks
+  good, which correlates imperfectly with what *is* good. A confidently-worded wrong
+  answer often beats a hedged correct one, and the model learns exactly that.
+
+- **No principled way to set $\beta$.** Too small and the policy hacks the reward;
+  too large and it barely changes. It is tuned by inspection.
+
+- **Multi-objective alignment is unsolved.** Helpfulness, harmlessness, and honesty
+  conflict. Collapsing them to one scalar reward forces a trade-off nobody
+  explicitly chose. Constitutional AI addresses part of this by generating critiques
+  from written principles, which at least makes the trade-offs legible.
+
+- **Evaluation is circular.** Post-training is increasingly evaluated by LLM judges,
+  which have their own biases (including a preference for length and for their own
+  outputs). Optimising against a judge is reward hacking one level up.
+
+- **Distribution shift in DPO.** The off-policy assumption breaks as training
+  proceeds, and there is no clean diagnostic for when it has broken.
+
+## What to read next, in order
+
+1. **Rafailov et al. (2023), DPO** — Section 4 for the derivation. Work the
+   $Z(x)$ cancellation by hand; it is short and it is the whole paper.
+2. **Ouyang et al. (2022), InstructGPT** — the canonical three-stage pipeline, with
+   honest reporting of the alignment tax.
+3. **Shao et al. (2024), DeepSeekMath** — Section 4 for GRPO.
+4. **DeepSeek-AI (2025), R1** — for RLVR and the emergence of extended reasoning.
+   Read the failed-attempts section, which is unusually candid.
+
+<Papers papers={frontmatter.papers} />

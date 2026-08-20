@@ -1,0 +1,412 @@
+---
+title: Generalization
+description: "Why overparameterised networks generalise at all: double descent, memorisation of random labels, grokking, and what the classical theory got wrong."
+sidebar:
+  order: 3
+depth: frontier
+readingTime: 30
+prereqs:
+  - label: "Probability for ML"
+    slug: "foundations/probability-for-ml"
+papers:
+  - title: "Understanding deep learning requires rethinking generalization"
+    authors: "Chiyuan Zhang et al."
+    year: 2016
+    url: "https://arxiv.org/abs/1611.03530"
+  - title: "Reconciling modern machine learning practice and the bias-variance trade-off"
+    authors: "Mikhail Belkin et al."
+    year: 2018
+    url: "https://arxiv.org/abs/1812.11118"
+  - title: "Deep Double Descent: Where Bigger Models and More Data Hurt"
+    authors: "Preetum Nakkiran et al."
+    year: 2019
+    url: "https://arxiv.org/abs/1912.02292"
+  - title: "Grokking: Generalization Beyond Overfitting on Small Algorithmic Datasets"
+    authors: "Power, Burda, Edwards, Babuschkin, Misra"
+    year: 2022
+    url: "https://arxiv.org/abs/2201.02177"
+  - title: "The Lottery Ticket Hypothesis: Finding Sparse, Trainable Neural Networks"
+    authors: "Jonathan Frankle, Michael Carbin"
+    year: 2018
+    url: "https://arxiv.org/abs/1803.03635"
+  - title: "Scaling Laws for Neural Language Models"
+    authors: "Kaplan et al."
+    year: 2020
+    url: "https://arxiv.org/abs/2001.08361"
+  - title: "Training Compute-Optimal Large Language Models (Chinchilla)"
+    authors: "Hoffmann et al."
+    year: 2022
+    url: "https://arxiv.org/abs/2203.15556"
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+<Abstract>
+Classical statistics says a model with more parameters than data points will
+overfit. Deep networks have orders of magnitude more parameters than data points
+and generalise well. This is not a small discrepancy to be patched — it means the
+classical capacity-based account is measuring the wrong thing. This page covers
+what the experiments actually showed, what survived, and why nobody has a
+satisfying replacement.
+</Abstract>
+
+<KeyPoints>
+
+- **Networks can memorise pure noise, so capacity bounds cannot explain generalisation.** Zhang et al. fit random labels to zero training error with the same architecture that generalises on real labels. Any bound depending only on architecture and data size must therefore be vacuous.
+- **Test error is not U-shaped.** Past the interpolation threshold it descends again — double descent. The classical bias–variance picture describes the first descent and the peak, and simply does not extend past it.
+- **The peak sits where the model is *just barely* able to fit the data.** With exactly enough capacity there is one interpolating solution and it is forced through the noise. With excess capacity there are many, and gradient descent picks a well-behaved one.
+- **The explanation has moved from capacity to implicit bias.** The interesting question is not what the network *could* represent but which solution SGD actually finds — and that remains an open problem.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## The thing that should not work
+
+Fit a curve through ten data points. Use a straight line and you underfit. Use a
+degree-nine polynomial and it passes through every point exactly while oscillating
+wildly between them — a textbook illustration of overfitting, and correct.
+
+Now consider a network with 100 million parameters trained on 50,000 images. By
+that logic it should be catastrophically overfit. It is not. It generalises well,
+and generally *better* than a smaller network on the same data.
+
+**Either the images are special or the classical account is incomplete.** The
+experiments say it is the account.
+
+## Memorising noise
+
+Zhang et al. ran the decisive experiment in 2016, and it is worth appreciating how
+simple it was.
+
+Take CIFAR-10. Replace every label with a random one — no relationship to the image
+at all. Train the same architecture, unchanged.
+
+**It reaches zero training error.** It memorises 50,000 arbitrary image-to-label
+assignments perfectly. Test accuracy is chance, as it must be, since there is
+nothing to learn.
+
+The implication is sharp. The network's *capacity* is clearly sufficient to
+memorise the entire dataset. So capacity cannot be what prevents memorisation when
+the labels are real. Something else decides that the network learns the pattern
+rather than the noise, and that something is not in the architecture.
+
+<Aside type="tip" title="The reframing this forces">
+Stop asking "what functions can this network represent?" — the answer is
+essentially everything, and it is useless. Ask instead "of the enormous set of
+functions that fit the training data, which one does gradient descent land on, and
+why is it usually a good one?" That is the **implicit bias** question, and it is
+where the field went.
+</Aside>
+
+## Double descent
+
+Plot test error against model size and classical theory predicts a U: too small
+underfits, too large overfits, optimum in the middle.
+
+What you actually observe has a second act. Error falls, rises to a peak, and then
+**falls again** — often to below the first minimum.
+
+<Figure
+  lead="The curve has two descents, not one."
+  caption="The classical regime on the left behaves exactly as textbooks describe. The peak sits at the interpolation threshold, where the model has just enough capacity to fit the training data exactly. Past it, error falls again and often below the classical optimum. The width of the peak depends on label noise: with clean labels it can be barely visible, with heavy noise it dominates. This is why the effect went unnoticed for decades — the classical experiments lived entirely on the left."
+>
+<svg viewBox="0 0 760 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Double descent curve of test error versus model capacity">
+  <line class="bx" x1="70" y1="230" x2="710" y2="230"/>
+  <line class="bx" x1="70" y1="30" x2="70" y2="230"/>
+  <text class="xs" x="390" y="256" text-anchor="middle">model capacity  →</text>
+  <text class="xs" x="30" y="130" text-anchor="middle">test</text>
+  <text class="xs" x="30" y="146" text-anchor="middle">error</text>
+
+  <line class="bx" x1="330" y1="30" x2="330" y2="230" stroke-dasharray="5 4" opacity="0.5"/>
+  <text class="xs" x="330" y="24" text-anchor="middle">interpolation threshold</text>
+  <text class="xs" x="330" y="246" text-anchor="middle">params ≈ data points</text>
+
+  <path class="thick" d="M84,70 C140,150 190,178 250,166 C300,156 318,110 330,58 C344,112 372,150 430,166 C520,190 620,198 700,202" opacity="0.9"/>
+
+  <path class="dash" d="M84,70 C140,150 190,178 250,166 C300,156 318,120 330,70 C342,120 370,164 430,196 C480,222 530,240 570,254" opacity="0.5"/>
+  <text class="xs" x="600" y="252">what classical theory predicts</text>
+
+  <rect class="f-blue" x="120" y="196" width="176" height="26" rx="4" opacity="0.55"/>
+  <text class="on-fill-sm" x="208" y="214" text-anchor="middle">classical regime</text>
+
+  <rect class="f-purple" x="380" y="196" width="300" height="26" rx="4" opacity="0.55"/>
+  <text class="on-fill-sm" x="530" y="214" text-anchor="middle">modern / overparameterised regime</text>
+
+  <circle class="f-pink" cx="330" cy="58" r="6"/>
+  <text class="xs" x="374" y="52">peak: exactly one interpolating</text>
+  <text class="xs" x="374" y="66">solution, forced through the noise</text>
+
+  <circle class="f-green" cx="250" cy="166" r="5"/>
+  <text class="xs" x="150" y="176">classical optimum</text>
+
+  <circle class="f-green" cx="700" cy="202" r="5"/>
+  <text class="xs" x="620" y="184">often better</text>
+</svg>
+</Figure>
+
+## Why the peak exists
+
+The cleanest available intuition, and it holds up.
+
+**Just below the threshold**, the model has barely enough capacity. There is
+essentially *one* way to fit the training data exactly, and that solution is forced
+to contort itself through every noisy label. It has no freedom to be smooth.
+
+**Well above the threshold**, there are infinitely many exact fits. Gradient
+descent does not choose among them randomly — it has preferences, and it tends
+toward solutions of small norm, which are smoother. Extra capacity is not extra
+overfitting; it is **extra room to find a well-behaved interpolant**.
+
+So overparameterisation helps not by increasing what the model can express but by
+enlarging the set of good solutions available to be found.
+
+<Tier level="mechanics" />
+
+## What the classical bounds say, and why they fail
+
+VC dimension and Rademacher complexity bound generalisation error roughly as
+
+$$
+\text{test error} \lesssim \text{train error} + O\!\left(\sqrt{\frac{\text{capacity}}{n}}\right).
+$$
+
+For a network with $10^8$ parameters and $n = 5\times10^4$, the bound exceeds 1 —
+it permits 100% error and is therefore **vacuous**. It is not wrong; it is
+uninformative.
+
+Zhang et al.'s random-label result explains why any such bound must be vacuous:
+Rademacher complexity is *defined* as the ability to fit random labels, and the
+network fits them perfectly. So its Rademacher complexity is maximal, and any bound
+built on it says nothing.
+
+<Aside type="caution" title="What this does and does not establish">
+It does not show the bounds are incorrect — they are theorems. It shows they are
+**uniform over the hypothesis class**, and the hypothesis class is far larger than
+the set of functions SGD actually reaches. Explaining generalisation requires a
+bound over the reachable set, not the representable one, and characterising the
+reachable set is exactly the hard part.
+</Aside>
+
+## Double descent in three dimensions
+
+Nakkiran et al. showed the effect is not just about model size.
+
+<Steps>
+
+1. **Model-wise.** Vary width. Peak at the interpolation threshold. The classical
+   version.
+
+2. **Epoch-wise.** Fix the model, vary training time. Test error descends, rises,
+   and descends again — with *no* change in capacity. This one is striking, because
+   nothing about the model changed. It also means early stopping can land you at a
+   worse point than training longer.
+
+3. **Sample-wise.** More data can *hurt*, in a narrow regime. Adding data moves the
+   interpolation threshold rightward, so a model comfortably past the threshold can
+   be pushed back onto the peak.
+
+</Steps>
+
+They unify these with **effective model complexity** — the largest training set the
+procedure can interpolate. The peak occurs where EMC equals the dataset size, and
+anything that changes EMC (width, epochs, data, regularisation) moves the peak.
+
+The sample-wise result is the most practically startling: more data is not
+monotonically better. It nearly always is; it is not guaranteed to be.
+
+## Grokking
+
+An extreme, isolated demonstration that fitting and understanding are separable in
+*time*.
+
+Train a small transformer on modular arithmetic, e.g. $a \circ b = (a+b) \bmod 97$,
+on a fraction of all pairs.
+
+- Training accuracy hits 100% within a few hundred steps. Test accuracy stays at
+  chance.
+- Continue training well past that — sometimes $10^5$ steps with apparently nothing
+  happening.
+- Test accuracy then rises **abruptly** to near 100%.
+
+The model memorised, sat on the memorised solution for a very long time, and then
+switched to a general one.
+
+Mechanistic work has since shown what the grokked network computes: it implements
+modular addition via discrete Fourier transforms, using trigonometric identities
+over frequencies in the embedding. The generalising circuit is real, specific, and
+inspectable.
+
+**Weight decay is essential.** Without it, grokking does not occur — the model
+stays memorised indefinitely. The standard account is a competition: the memorising
+solution is found fast but has large norm; the generalising solution is slower to
+find but has small norm. Weight decay slowly penalises the former until the latter
+takes over. That story fits the phenomenology and is not a complete theory.
+
+<Tier level="formal" />
+
+## Implicit regularisation of gradient descent
+
+The central claim: SGD does not choose arbitrarily among interpolating solutions.
+
+**Linear regression, exactly.** For an overparameterised least-squares problem
+$\min_w \|Xw - y\|^2$ with $d > n$, gradient descent initialised at $w_0 = 0$
+converges to the **minimum-norm** interpolant:
+
+$$
+w^{\star} = X^{\top}(XX^{\top})^{-1}y = \arg\min_{w}\ \|w\|_2 \quad \text{s.t. } Xw = y .
+$$
+
+The reason is a conservation property: every gradient $X^\top(Xw-y)$ lies in the
+row space of $X$, so all updates stay in that space. Starting at zero, the iterate
+never leaves it, and the unique interpolating solution in the row space is the
+minimum-norm one. **No explicit regulariser appears anywhere** — the bias comes
+from the geometry of the optimiser.
+
+**Logistic regression on separable data.** Gradient descent converges in direction
+to the max-margin separator,
+
+$$
+\frac{w(t)}{\|w(t)\|} \longrightarrow \frac{w_{\text{SVM}}}{\|w_{\text{SVM}}\|},
+$$
+
+at a rate of $O(1/\log t)$. So the model that classical theory would credit to SVM's
+explicit margin objective is what plain gradient descent finds anyway, given enough
+time.
+
+For deep nonlinear networks, analogous results exist only in restricted settings.
+**This is the gap.** We know the mechanism in linear and near-linear regimes and we
+cannot characterise it for the models we actually use.
+
+## Double descent in the linear model
+
+The peak can be derived exactly in a linear setting, which is worth doing because
+it shows the peak is not a deep-learning phenomenon.
+
+For random-feature regression with $p$ features and $n$ samples, define $\gamma =
+p/n$. The asymptotic test risk under isotropic features and noise variance
+$\sigma^2$ behaves as
+
+$$
+R(\gamma) \;\sim\;
+\begin{cases}
+\sigma^2 \dfrac{\gamma}{1-\gamma} & \gamma < 1 \quad\text{(underparameterised)}\\[10pt]
+\sigma^2 \dfrac{1}{\gamma-1} + \|w^*\|^2\left(1 - \dfrac{1}{\gamma}\right) & \gamma > 1 \quad\text{(overparameterised)}
+\end{cases}
+$$
+
+Both branches diverge as $\gamma \to 1$. **The peak is a resonance at $p = n$**,
+and its height is proportional to the noise variance $\sigma^2$ — which is why
+clean-label experiments show a barely-visible peak and noisy-label experiments show
+a dramatic one.
+
+Past the peak the first term decays as $1/(\gamma-1)$ while the second saturates,
+giving the second descent. This is a closed-form derivation in a linear model:
+**double descent is a property of overparameterised interpolation in general**, not
+something exotic about neural networks.
+
+## Effective model complexity
+
+Nakkiran et al.'s unifying definition. For a training procedure $\mathcal{T}$ and
+distribution $\mathcal{D}$:
+
+$$
+\text{EMC}_{\mathcal{D}}(\mathcal{T}) = \max\big\{\,n : \mathbb{E}_{S\sim\mathcal{D}^n}\big[\text{train-error}_{S}(\mathcal{T}(S))\big] \approx 0 \,\big\}.
+$$
+
+Note this is a property of the **procedure**, not the architecture — it includes
+the optimiser, the number of epochs, the regularisation, and the data
+distribution. The prediction is:
+
+- $\text{EMC} \ll n$: classical regime, more capacity helps.
+- $\text{EMC} \approx n$: **critical regime, the peak.**
+- $\text{EMC} \gg n$: modern regime, more capacity helps again.
+
+Epoch-wise double descent then follows immediately, since EMC grows with training
+time at fixed architecture.
+
+## Scaling laws as an empirical answer
+
+The pragmatic response of the field: stop trying to explain generalisation and
+measure it. Kaplan et al. found
+
+$$
+L(N) = \left(\frac{N_c}{N}\right)^{\alpha_N}, \qquad L(D) = \left(\frac{D_c}{D}\right)^{\alpha_D},
+$$
+
+with $\alpha_N \approx 0.076$. Hoffmann et al. corrected the compute-optimal
+allocation to roughly proportional scaling of parameters and tokens.
+
+**These are descriptions, not explanations.** Nothing derives the exponents from
+first principles, and nothing predicts when a power law will break. But they
+predict held-out loss remarkably well across orders of magnitude, and in practice
+that is what gets used.
+
+Note also the connection back to double descent: at frontier scale, models are
+trained for roughly one epoch on data far exceeding parameter count. The regime is
+so far past the interpolation threshold that the peak is not encountered at all —
+which is part of why large-scale practitioners rarely see it.
+
+<Tier level="frontier" />
+
+## Where this stands, as of 2026
+
+**Nobody has a theory of generalisation for deep networks.** That is the honest
+summary, and the field has largely made peace with it. The classical account is
+known to be inapplicable, the implicit-bias account is proven only in linear and
+near-linear settings, and empirical scaling laws fill the practical gap.
+
+**Double descent is well-established and rarely encountered at frontier scale.**
+Modern LLM training sits far into the overparameterised regime with near-single-epoch
+data, so the peak is not a practical concern for large runs. It matters for
+smaller-scale work, and it matters for correctly reading the literature.
+
+**Grokking has been partly explained mechanistically.** The Fourier-based circuit
+for modular arithmetic is fully characterised. Whether the memorise-then-generalise
+dynamic is a general phenomenon or an artefact of tiny algorithmic tasks with
+strong weight decay remains contested.
+
+**Memorisation is a live practical issue, not just a theoretical one.** Large
+models demonstrably reproduce training data verbatim under some conditions. The
+relationship between duplication in the training set, model capacity, and
+extraction risk is partly mapped and has direct legal consequences.
+
+## Open problems
+
+- **What is SGD's implicit bias for deep nonlinear networks?** Solved for linear
+  models, open for the models anyone uses. This is the central question.
+
+- **Why do scaling-law exponents take the values they do?** No derivation. No
+  prediction of when a power law will break, which matters a great deal for
+  forecasting.
+
+- **No non-vacuous generalisation bound for realistic networks.** Progress has been
+  made (PAC-Bayes, compression-based bounds) and nothing is both tight and general.
+
+- **The relationship between memorisation and generalisation is unclear.** Some
+  memorisation appears *necessary* for good performance on long-tailed
+  distributions — rare examples must be memorised because there is nothing to
+  generalise from. Where the useful line sits is not known.
+
+- **Emergent abilities are contested.** Whether capabilities appear abruptly at
+  scale, or whether apparent discontinuities are artefacts of discontinuous metrics
+  (exact-match accuracy rather than log-likelihood), is genuinely unsettled and has
+  large implications for forecasting.
+
+## What to read next, in order
+
+1. **Zhang et al. (2016)** — the random-label experiment. Four pages of setup and
+   an argument that reoriented the field.
+2. **Nakkiran et al. (2019), Deep Double Descent** — the systematic study. The
+   epoch-wise and sample-wise results are the surprising parts.
+3. **Belkin et al. (2018)** — for the linear-model derivation, which shows the peak
+   is not special to deep learning.
+4. **Power et al. (2022), Grokking** — short, and the phenomenon is worth seeing
+   plotted.
+
+<Papers papers={frontmatter.papers} />
