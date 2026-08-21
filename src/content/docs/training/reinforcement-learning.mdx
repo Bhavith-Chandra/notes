@@ -1,0 +1,557 @@
+---
+title: Reinforcement Learning
+description: "MDPs, value versus policy methods, the deadly triad, and why RL is so much less sample-efficient than supervised learning."
+sidebar:
+  order: 5
+depth: frontier
+readingTime: 40
+prereqs:
+  - label: "Probability for ML"
+    slug: "foundations/probability-for-ml"
+papers:
+  - title: "Reinforcement Learning: An Introduction (2nd edition)"
+    authors: "Richard S. Sutton, Andrew G. Barto"
+    year: 2018
+    url: "http://incompleteideas.net/book/the-book-2nd.html"
+  - title: "Human-level control through deep reinforcement learning (DQN)"
+    authors: "Mnih, Kavukcuoglu, Silver, et al."
+    year: 2015
+    url: "https://doi.org/10.1038/nature14236"
+  - title: "Trust Region Policy Optimization (TRPO)"
+    authors: "Schulman, Levine, Moritz, Jordan, Abbeel"
+    year: 2015
+    url: "https://arxiv.org/abs/1502.05477"
+  - title: "High-Dimensional Continuous Control Using Generalized Advantage Estimation (GAE)"
+    authors: "Schulman, Moritz, Levine, Jordan, Abbeel"
+    year: 2015
+    url: "https://arxiv.org/abs/1506.02438"
+  - title: "Proximal Policy Optimization Algorithms (PPO)"
+    authors: "Schulman, Wolski, Dhariwal, Radford, Klimov"
+    year: 2017
+    url: "https://arxiv.org/abs/1707.06347"
+  - title: "Soft Actor-Critic: Off-Policy Maximum Entropy Deep Reinforcement Learning with a Stochastic Actor"
+    authors: "Haarnoja, Zhou, Abbeel, Levine"
+    year: 2018
+    url: "https://arxiv.org/abs/1801.01290"
+  - title: "Rainbow: Combining Improvements in Deep Reinforcement Learning"
+    authors: "Hessel, Modayil, van Hasselt, et al."
+    year: 2017
+    url: "https://arxiv.org/abs/1710.02298"
+  - title: "A general reinforcement learning algorithm that masters chess, shogi, and Go through self-play (AlphaZero)"
+    authors: "Silver, Hubert, Schrittwieser, et al."
+    year: 2018
+    url: "https://doi.org/10.1126/science.aar6404"
+  - title: "Offline Reinforcement Learning: Tutorial, Review, and Perspectives on Open Problems"
+    authors: "Levine, Kumar, Tucker, Fu"
+    year: 2020
+    url: "https://arxiv.org/abs/2005.01643"
+  - title: "Conservative Q-Learning for Offline Reinforcement Learning (CQL)"
+    authors: "Kumar, Zhou, Tucker, Levine"
+    year: 2020
+    url: "https://arxiv.org/abs/2006.04779"
+  - title: "Decision Transformer: Reinforcement Learning via Sequence Modeling"
+    authors: "Chen, Lu, Rajeswaran, et al."
+    year: 2021
+    url: "https://arxiv.org/abs/2106.01345"
+  - title: "Mastering diverse control tasks through world models (DreamerV3)"
+    authors: "Hafner, Pasukonis, Ba, Lillicrap"
+    year: 2025
+    url: "https://doi.org/10.1038/s41586-025-08744-2"
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+<Abstract>
+Supervised learning is told the right answer. Reinforcement learning is told
+only whether things went well, possibly much later, and must work out which of
+its thousands of decisions deserve the credit. That is the credit assignment
+problem, and everything expensive about RL — the sample inefficiency, the
+instability, the sensitivity to seeds — follows from it.
+</Abstract>
+
+<KeyPoints>
+
+- **The label problem is the whole problem.** No action is ever labelled correct. The agent must infer which decisions mattered from a delayed, scalar, noisy signal — and it must generate its own data while doing so.
+- **Two families: learn values, or learn a policy.** Value methods estimate how good each state or action is and act greedily. Policy methods adjust action probabilities directly. Actor-critic uses both, and almost everything that works in practice is actor-critic.
+- **The deadly triad predicts divergence.** Function approximation, bootstrapping, and off-policy data are each fine alone. All three together can diverge, and deep RL uses all three — which is why target networks and replay buffers exist.
+- **RL's data distribution moves as the policy improves.** Supervised learning has a fixed dataset; RL's changes underneath it. This non-stationarity is why RL results are so seed-sensitive and why reported numbers need many runs to mean anything.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## Learning without being told
+
+Train an image classifier and every example comes with the answer. The gradient
+points directly at "you should have said cat".
+
+Now train something to play chess. After sixty moves you lose. Which move was
+wrong? Move 23 was probably fine. Move 41 might have been the mistake, or it might
+have been forced by a subtle weakness created at move 12. Nobody tells you.
+
+**That is credit assignment**, and it makes RL a fundamentally harder problem than
+supervised learning — not just quantitatively but structurally.
+
+## The three complications
+
+<Steps>
+
+1. **Delayed reward.** Consequences arrive long after the decisions that caused
+   them. The signal must be propagated backwards through time.
+
+2. **Exploration.** You only learn about actions you take. An action you never try
+   stays unknown forever — so the agent must deliberately do things it believes are
+   suboptimal, on the chance it is wrong.
+
+3. **Non-stationary data.** In supervised learning the dataset is fixed. In RL, the
+   agent generates its own data, so improving the policy changes the distribution
+   it learns from. You are fitting a moving target with data you are also moving.
+
+</Steps>
+
+Point 3 is the one people underrate. It means RL has no clean separation between
+"collect data" and "fit model" — the two are coupled, and instability in one
+feeds the other.
+
+## Two ways to decide
+
+**Learn the values.** Estimate, for every situation, how good each available action
+is in the long run. Then act greedily: take the highest-valued action. The policy
+is implicit in the value function.
+
+**Learn the policy.** Directly parameterise "what should I do here?" as a
+probability distribution, and shift probability mass toward actions that turned out
+well. No value function needed.
+
+Each has a characteristic weakness. Value methods struggle with continuous action
+spaces — you cannot enumerate infinitely many actions to take a max. Policy methods
+have high-variance gradients, because a single trajectory's total return is a very
+noisy estimate of any individual action's quality.
+
+**Actor-critic combines them**: a policy (actor) that acts, and a value function
+(critic) that reduces the variance of the policy's learning signal. Essentially
+every practical modern method is in this family.
+
+<Aside type="tip" title="Why RL needs so much data">
+A supervised example teaches you the answer to one question. An RL episode teaches
+you that some sequence of many decisions produced some scalar. The information per
+sample is vastly lower, and it must be untangled from confounding decisions. This
+is why RL agents need millions of environment steps for tasks a human learns in
+minutes.
+</Aside>
+
+<Tier level="mechanics" />
+
+## The setup
+
+<Figure
+  lead="The loop, and where the difficulty enters."
+  caption="The agent acts, the environment responds with a new state and a scalar reward, and the cycle repeats. Two properties make this much harder than supervised learning: the reward may arrive many steps after the decision that earned it, so credit must be propagated backwards through time; and the agent's own improving policy changes which states it visits, so the data distribution is non-stationary. Neither has an analogue in supervised training."
+>
+<svg viewBox="0 0 760 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The reinforcement learning interaction loop with delayed reward">
+  <defs>
+    <marker id="rl1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <rect class="f-blue" x="120" y="40" width="140" height="52" rx="6"/>
+  <text class="on-fill" x="190" y="64" text-anchor="middle">Agent</text>
+  <text class="xs" x="190" y="82" text-anchor="middle">π(a | s)</text>
+
+  <rect class="f-green" x="480" y="40" width="140" height="52" rx="6"/>
+  <text class="on-fill" x="550" y="64" text-anchor="middle">Environment</text>
+  <text class="xs" x="550" y="82" text-anchor="middle">P(s′ | s, a)</text>
+
+  <path class="thick" d="M264,56 L474,56" marker-end="url(#rl1)"/>
+  <text class="xs" x="369" y="48" text-anchor="middle">action a_t</text>
+
+  <path class="thick" d="M476,80 L266,80" marker-end="url(#rl1)"/>
+  <text class="xs" x="369" y="98" text-anchor="middle">state s_t+1 , reward r_t</text>
+
+  <line class="bx" x1="40" y1="122" x2="716" y2="122" opacity="0.3"/>
+
+  <text class="lb" x="40" y="146">Delayed reward — the credit assignment problem</text>
+
+  <rect class="f-grey" x="40" y="160" width="46" height="26" rx="3"/>
+  <text class="xs" x="63" y="178" text-anchor="middle">a₁</text>
+  <rect class="f-amber" x="94" y="160" width="46" height="26" rx="3"/>
+  <text class="xs" x="117" y="178" text-anchor="middle">a₂</text>
+  <rect class="f-grey" x="148" y="160" width="46" height="26" rx="3"/>
+  <text class="xs" x="171" y="178" text-anchor="middle">a₃</text>
+  <rect class="f-grey" x="202" y="160" width="46" height="26" rx="3"/>
+  <text class="xs" x="225" y="178" text-anchor="middle">…</text>
+  <rect class="f-grey" x="256" y="160" width="46" height="26" rx="3"/>
+  <text class="xs" x="279" y="178" text-anchor="middle">a₅₉</text>
+  <rect class="f-grey" x="310" y="160" width="46" height="26" rx="3"/>
+  <text class="xs" x="333" y="178" text-anchor="middle">a₆₀</text>
+  <path class="ar" d="M360,173 L400,173" marker-end="url(#rl1)"/>
+  <rect class="f-pink" x="406" y="158" width="80" height="30" rx="4"/>
+  <text class="on-fill-sm" x="446" y="178" text-anchor="middle">r = −1</text>
+
+  <path class="dash" d="M420,192 C340,216 180,216 118,190" marker-end="url(#rl1)"/>
+  <text class="xs" x="270" y="228" text-anchor="middle">which action was responsible? nothing says.</text>
+
+  <text class="xs" x="520" y="164">And because π changes,</text>
+  <text class="xs" x="520" y="180">the states you visit change —</text>
+  <text class="xs" x="520" y="196">the data distribution moves</text>
+  <text class="xs" x="520" y="212">while you are fitting it.</text>
+</svg>
+</Figure>
+
+An MDP is $(\mathcal{S}, \mathcal{A}, P, R, \gamma)$: states, actions, transition
+dynamics, reward, and a discount factor. The agent maximises expected discounted
+return.
+
+**The discount $\gamma$ does two jobs.** It expresses a preference for sooner
+rewards, and it makes the infinite sum converge. Values near 1 mean far-sighted and
+high-variance; near 0 means myopic and stable. It is a hyperparameter and an
+unusually consequential one — it defines the effective planning horizon,
+approximately $1/(1-\gamma)$ steps.
+
+## The algorithm families
+
+<Tabs>
+<TabItem label="Q-learning / DQN">
+
+Learn $Q(s,a)$ — the expected return from taking $a$ in $s$ and then acting well.
+Act greedily with respect to it.
+
+DQN made this work with neural networks via two additions, and both address the
+same underlying instability:
+
+- **Replay buffer.** Store transitions and sample randomly. Consecutive states are
+  highly correlated, which violates the i.i.d. assumption gradient descent needs.
+  Random sampling breaks the correlation.
+- **Target network.** A periodically-frozen copy used to compute the regression
+  target. Without it, you regress toward a target that moves every time you update
+  — the network chases itself.
+
+**Rainbow** combined six independent improvements (double Q, prioritised replay,
+duelling architecture, multi-step returns, distributional RL, noisy nets) and
+showed they are largely complementary. Its ablations are the most useful thing in
+the paper.
+
+**Limit:** the $\max_a$ requires enumerable actions. Continuous control needs a
+different approach.
+
+</TabItem>
+<TabItem label="Policy gradient">
+
+Directly parameterise $\pi_\theta(a\mid s)$ and push up the probability of actions
+that led to high return.
+
+The raw estimator (REINFORCE) is unbiased and has enormous variance — it scales the
+gradient by the *whole trajectory's* return, which includes the effects of every
+other decision. Two standard fixes:
+
+- **Baseline subtraction.** Subtract a state-dependent value $V(s)$ from the return.
+  This leaves the estimator unbiased (the baseline does not depend on the action)
+  and substantially reduces variance.
+- **Advantage estimation.** Use $A(s,a) = Q(s,a) - V(s)$ — how much *better* than
+  average this action was. GAE interpolates between low-bias/high-variance and
+  high-bias/low-variance estimates with a single parameter $\lambda$.
+
+</TabItem>
+<TabItem label="TRPO and PPO">
+
+The problem policy-gradient methods hit: a step that is too large can collapse the
+policy, and because the agent generates its own data, a collapsed policy collects
+bad data and may never recover. Unlike supervised learning, there is no fixed
+dataset to fall back on.
+
+**TRPO** constrains each update to a trust region — a bounded KL divergence from
+the previous policy — and solves the constrained problem with conjugate gradients.
+Principled, and complicated to implement.
+
+**PPO** achieves a similar effect with a clipped objective that is a few lines of
+code. It gives up TRPO's guarantee and is overwhelmingly the more used method,
+including for [RLHF](/training/post-training/).
+
+</TabItem>
+<TabItem label="SAC">
+
+Maximum-entropy RL: maximise return **plus** the entropy of the policy.
+
+$$
+J(\pi) = \mathbb{E}\left[\sum_t r_t + \alpha\,\mathcal{H}\big(\pi(\cdot\mid s_t)\big)\right]
+$$
+
+The entropy bonus makes exploration part of the objective rather than a bolt-on
+$\epsilon$-greedy heuristic, and it produces policies that keep multiple good
+options alive rather than committing early.
+
+SAC is off-policy, so it reuses data from a replay buffer and is far more
+sample-efficient than PPO on continuous control. The temperature $\alpha$ can be
+tuned automatically against a target entropy, which removed the method's main
+hyperparameter sensitivity. **The default choice for continuous control today.**
+
+</TabItem>
+</Tabs>
+
+## The deadly triad
+
+Three ingredients that are individually safe and jointly dangerous:
+
+1. **Function approximation** — a neural network rather than a lookup table.
+2. **Bootstrapping** — updating an estimate using another estimate.
+3. **Off-policy learning** — learning about one policy from data generated by
+   another.
+
+Any two are fine. All three can diverge, provably, on examples as small as two
+states. And deep RL uses all three: neural nets, TD targets, replay buffers.
+
+<Aside type="danger" title="Read the standard tricks as triad mitigations">
+Target networks, replay buffers, gradient clipping, double Q-learning, and
+conservative penalties are not miscellaneous engineering. They are all attempts to
+weaken one leg of the triad enough to keep training stable. Knowing that makes the
+grab-bag look like a coherent response to a single named problem.
+</Aside>
+
+<Tier level="formal" />
+
+## Value functions and the Bellman equations
+
+For policy $\pi$:
+
+$$
+V^{\pi}(s) = \mathbb{E}_\pi\left[\sum_{k=0}^{\infty}\gamma^{k} r_{t+k}\ \Big|\ s_t = s\right],
+\qquad
+Q^{\pi}(s,a) = \mathbb{E}_\pi\left[\sum_{k=0}^{\infty}\gamma^{k}r_{t+k}\ \Big|\ s_t=s,\ a_t=a\right].
+$$
+
+The Bellman expectation equation is a recursive consistency condition:
+
+$$
+V^{\pi}(s) = \sum_a \pi(a\mid s)\sum_{s'} P(s'\mid s,a)\big[R(s,a,s') + \gamma V^{\pi}(s')\big].
+$$
+
+And for the optimal value function:
+
+$$
+Q^{*}(s,a) = \sum_{s'}P(s'\mid s,a)\Big[R(s,a,s') + \gamma \max_{a'} Q^{*}(s',a')\Big].
+$$
+
+**Why a solution exists and is unique.** The Bellman optimality operator
+$\mathcal{T}$ is a $\gamma$-contraction in the sup norm:
+
+$$
+\|\mathcal{T}Q_1 - \mathcal{T}Q_2\|_\infty \leq \gamma\,\|Q_1 - Q_2\|_\infty .
+$$
+
+By the Banach fixed-point theorem it has a unique fixed point, and value iteration
+converges to it geometrically at rate $\gamma$. **This guarantee holds for exact,
+tabular representations.** With function approximation, $\mathcal{T}$ composed with
+a projection onto the representable set need not be a contraction — and that
+composition is exactly where the deadly triad's divergence comes from.
+
+## Temporal-difference learning
+
+$$
+Q(s_t,a_t) \leftarrow Q(s_t,a_t) + \alpha\underbrace{\Big[r_t + \gamma\max_{a}Q(s_{t+1},a) - Q(s_t,a_t)\Big]}_{\text{TD error }\delta_t}.
+$$
+
+The TD error is the surprise: how much better or worse things turned out than the
+current estimate predicted.
+
+**What bootstrapping buys and costs.** Monte Carlo waits for the episode to end and
+uses the actual return — unbiased, high variance, and unusable for continuing
+tasks. TD updates immediately from an estimate — biased (the estimate is wrong
+early), much lower variance, and usable online. The bias is the price of the
+variance reduction, and it is the second leg of the triad.
+
+<Figure
+  lead="Any two legs are safe; all three can diverge."
+  caption="Each pair has well-understood behaviour — tabular Q-learning is off-policy and bootstrapped but exact; Monte Carlo policy gradients use approximation and off-policy data without bootstrapping. Only the centre, where all three meet, admits provable divergence on examples as small as two states. Deep RL sits in that centre by construction, which recasts target networks, replay buffers, double Q-learning and conservative penalties as a coherent set of countermeasures rather than a grab bag of tricks."
+>
+<svg viewBox="0 0 760 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Venn diagram of the deadly triad in reinforcement learning">
+  <circle class="f-blue" cx="300" cy="120" r="88" opacity="0.45"/>
+  <circle class="f-green" cx="410" cy="120" r="88" opacity="0.45"/>
+  <circle class="f-amber" cx="355" cy="200" r="88" opacity="0.45"/>
+
+  <text class="lb" x="238" y="46" text-anchor="middle">Function</text>
+  <text class="lb" x="238" y="62" text-anchor="middle">approximation</text>
+  <text class="lb" x="486" y="46" text-anchor="middle">Bootstrapping</text>
+  <text class="lb" x="355" y="272" text-anchor="middle">Off-policy data</text>
+
+  <text class="xs" x="252" y="120" text-anchor="middle">safe</text>
+  <text class="xs" x="458" y="120" text-anchor="middle">safe</text>
+  <text class="xs" x="355" y="238" text-anchor="middle">safe</text>
+
+  <text class="xs" x="355" y="96" text-anchor="middle">safe pair</text>
+  <text class="xs" x="286" y="186" text-anchor="middle">safe pair</text>
+  <text class="xs" x="424" y="186" text-anchor="middle">safe pair</text>
+
+  <circle class="f-pink" cx="355" cy="146" r="30"/>
+  <text class="on-fill-sm" x="355" y="143" text-anchor="middle">CAN</text>
+  <text class="on-fill-sm" x="355" y="158" text-anchor="middle">DIVERGE</text>
+
+  <rect class="f-pink" x="580" y="96" width="164" height="86" rx="5" opacity="0.5"/>
+  <text class="on-fill-sm" x="596" y="118">Deep RL lives here:</text>
+  <text class="xs" x="596" y="138">neural nets ✓</text>
+  <text class="xs" x="596" y="154">TD targets ✓</text>
+  <text class="xs" x="596" y="170">replay buffer ✓</text>
+
+  <text class="xs" x="580" y="206">Mitigations: target networks,</text>
+  <text class="xs" x="580" y="222">double Q, gradient clipping,</text>
+  <text class="xs" x="580" y="238">conservative penalties (CQL)</text>
+</svg>
+</Figure>
+
+## The policy gradient theorem
+
+$$
+\nabla_\theta J(\theta) = \mathbb{E}_{\tau\sim\pi_\theta}\left[\sum_{t=0}^{T}\nabla_\theta \log \pi_\theta(a_t\mid s_t)\,\Psi_t\right],
+$$
+
+where $\Psi_t$ can be the return, the advantage, or the TD error.
+
+**The derivation, in one line**, using the likelihood-ratio identity
+$\nabla p = p\,\nabla\log p$:
+
+$$
+\nabla_\theta \mathbb{E}_{\tau}[R(\tau)] = \nabla_\theta\!\int\! p_\theta(\tau)R(\tau)\,d\tau = \int\! p_\theta(\tau)\nabla_\theta \log p_\theta(\tau)R(\tau)\,d\tau,
+$$
+
+and since $\log p_\theta(\tau) = \log p(s_0) + \sum_t\big[\log \pi_\theta(a_t\mid
+s_t) + \log P(s_{t+1}\mid s_t,a_t)\big]$, the **environment dynamics vanish** —
+they do not depend on $\theta$. This is why policy gradients are model-free: you
+never need to know $P$.
+
+**Why a baseline is free.** For any $b(s)$ not depending on $a$:
+
+$$
+\mathbb{E}_{a\sim\pi}\big[\nabla_\theta \log\pi_\theta(a\mid s)\,b(s)\big] = b(s)\,\nabla_\theta \sum_a \pi_\theta(a\mid s) = b(s)\,\nabla_\theta 1 = 0 .
+$$
+
+Subtracting it changes nothing in expectation and can substantially reduce
+variance. The variance-minimising baseline is close to $V(s)$, which is why the
+critic estimates exactly that.
+
+## Generalized advantage estimation
+
+Define the TD residual $\delta_t = r_t + \gamma V(s_{t+1}) - V(s_t)$. Then
+
+$$
+\hat A_t^{\text{GAE}(\gamma,\lambda)} = \sum_{l=0}^{\infty}(\gamma\lambda)^{l}\,\delta_{t+l}.
+$$
+
+The two endpoints are the classical estimators:
+
+- $\lambda = 0$: $\hat A_t = \delta_t$. Low variance, high bias — one-step TD.
+- $\lambda = 1$: $\hat A_t = \sum_l \gamma^l r_{t+l} - V(s_t)$. Unbiased given a
+  correct $V$, high variance — Monte Carlo.
+
+$\lambda \in (0,1)$ interpolates, and it is an exponentially-weighted average of
+all $n$-step advantage estimators. Typical $\lambda = 0.95$. This single knob is
+the cleanest expression of the bias–variance trade-off in RL.
+
+## PPO's clipped objective
+
+$$
+\mathcal{L}^{\text{CLIP}}(\theta) = \mathbb{E}_t\Big[\min\big(\rho_t \hat A_t,\ \operatorname{clip}(\rho_t,\,1-\varepsilon,\,1+\varepsilon)\,\hat A_t\big)\Big],
+\qquad \rho_t = \frac{\pi_\theta(a_t\mid s_t)}{\pi_{\theta_{\text{old}}}(a_t\mid s_t)} .
+$$
+
+The $\min$ makes the objective **pessimistic**, and the asymmetry is deliberate:
+
+- $\hat A_t > 0$ (good action): improvement is capped once $\rho_t > 1+\varepsilon$,
+  so you cannot rush the probability up in one step.
+- $\hat A_t < 0$ (bad action): the penalty is *not* capped below
+  $1-\varepsilon$ — pushing probability down further is always permitted.
+
+So the objective allows unbounded retreat from bad actions and bounded advance
+toward good ones, which is the conservative direction when your value estimates
+might be wrong.
+
+## Offline RL and distribution shift
+
+Offline RL learns from a fixed dataset with no environment interaction. The
+failure mode is specific and severe.
+
+The Bellman target contains $\max_{a'}Q(s',a')$. For actions not in the dataset,
+$Q$ is an extrapolation — and because of the max, **errors are selected for**. The
+optimiser seeks out exactly the actions whose values are erroneously high, and
+bootstrapping propagates those errors backwards through the whole value function.
+
+CQL adds a penalty pushing down $Q$ on out-of-distribution actions:
+
+$$
+\mathcal{L}_{\text{CQL}} = \alpha\Big(\mathbb{E}_{s\sim\mathcal{D},\,a\sim\mu}\big[Q(s,a)\big] - \mathbb{E}_{(s,a)\sim\mathcal{D}}\big[Q(s,a)\big]\Big) + \mathcal{L}_{\text{TD}},
+$$
+
+which lower-bounds the true value, so the policy cannot be fooled by optimistic
+extrapolation. It is deliberately pessimistic, and pessimism is the correct
+posture when you cannot test your beliefs.
+
+**Decision Transformer** sidesteps all of this by reframing RL as sequence
+modelling: condition on a desired return and predict actions autoregressively. No
+Bellman equation, no bootstrapping, no triad. It works well on some benchmarks and
+degrades when the desired return is far outside what the dataset demonstrates —
+which is exactly the extrapolation problem reappearing in a different costume.
+
+<Tier level="frontier" />
+
+## Where this stands, as of 2026
+
+**RL's largest impact today is on language models, not robots.** RLHF, DPO and
+RLVR are RL applied to text generation, and they are what turned base models into
+assistants. See [post-training](/training/post-training/) — the algorithms there
+are PPO and its descendants.
+
+**Model-based RL is competitive and no longer exotic.** DreamerV3 masters a wide
+range of domains with fixed hyperparameters and was the first system to collect
+diamonds in Minecraft from scratch. Learning a world model and planning inside it
+is substantially more sample-efficient than model-free RL — the connection to
+[world models](/world-models/) is direct.
+
+**Sample efficiency remains the binding constraint for physical systems.** Millions
+of environment steps are fine in simulation and prohibitive on a real robot. This
+is why sim-to-sim transfer, offline RL from logged data, and world models all
+attract effort.
+
+**Reproducibility is genuinely poor and now acknowledged.** Deep RL results vary
+enormously across random seeds; single-seed comparisons are close to meaningless.
+Reporting multiple seeds with confidence intervals is now expected, and older
+results should be read with that in mind.
+
+## Open problems
+
+- **Exploration in sparse-reward settings is unsolved.** When reward is
+  essentially never observed, undirected exploration never finds it. Intrinsic
+  motivation and curiosity help on some benchmarks and generalise poorly.
+
+- **Reward specification is hard and adversarial.** Writing a reward that captures
+  what you want, and cannot be satisfied by something you don't, is the same
+  problem as [reward hacking](/training/post-training/) in RLHF. Agents reliably
+  find the degenerate solution.
+
+- **No theory for deep RL.** Convergence guarantees are for tabular methods. With
+  function approximation, essentially nothing is proven about the algorithms in
+  actual use.
+
+- **Generalisation is weak.** Agents trained on one environment often fail on
+  cosmetic variations. Whether this is an RL problem or a representation problem is
+  unclear.
+
+- **Off-policy evaluation is unreliable.** Estimating a new policy's value from old
+  data — needed for any high-stakes deployment — has high variance and no
+  trustworthy estimator.
+
+## What to read next, in order
+
+1. **Sutton & Barto (2018)** — Chapters 3–6 for MDPs, dynamic programming, Monte
+   Carlo and TD. Still the best treatment, and freely available.
+2. **Schulman et al. (2015), GAE** — the bias–variance interpolation. Short and it
+   clarifies the whole advantage-estimation literature.
+3. **Haarnoja et al. (2018), SAC** — for maximum-entropy RL and automatic
+   temperature tuning.
+4. **Levine et al. (2020), Offline RL tutorial** — the clearest statement of why
+   distribution shift makes offline RL hard.
+
+<Papers papers={frontmatter.papers} />

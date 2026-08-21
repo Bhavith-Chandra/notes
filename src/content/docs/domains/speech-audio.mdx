@@ -1,0 +1,554 @@
+---
+title: Speech and Audio
+description: "The alignment problem and how CTC solves it, self-supervised speech representations, neural codecs, and why TTS became a language modelling task."
+sidebar:
+  order: 3
+depth: frontier
+readingTime: 35
+prereqs:
+  - label: "Encoder–Decoder Architectures"
+    slug: "encoders/encoder-decoder"
+papers:
+  - title: "Connectionist temporal classification: labelling unsegmented sequence data with recurrent neural networks (CTC)"
+    authors: "Graves, Fernández, Gomez, Schmidhuber"
+    year: 2006
+    url: "https://doi.org/10.1145/1143844.1143891"
+  - title: "Sequence Transduction with Recurrent Neural Networks (RNN-T)"
+    authors: "Alex Graves"
+    year: 2012
+    url: "https://arxiv.org/abs/1211.3711"
+  - title: "WaveNet: A Generative Model for Raw Audio"
+    authors: "van den Oord, Dieleman, Zen, et al."
+    year: 2016
+    url: "https://arxiv.org/abs/1609.03499"
+  - title: "Natural TTS Synthesis by Conditioning WaveNet on Mel Spectrogram Predictions (Tacotron 2)"
+    authors: "Shen, Pang, Weiss, et al."
+    year: 2017
+    url: "https://arxiv.org/abs/1712.05884"
+  - title: "Conformer: Convolution-augmented Transformer for Speech Recognition"
+    authors: "Gulati, Qin, Chiu, et al."
+    year: 2020
+    url: "https://arxiv.org/abs/2005.08100"
+  - title: "wav2vec 2.0: A Framework for Self-Supervised Learning of Speech Representations"
+    authors: "Baevski, Zhou, Mohamed, Auli"
+    year: 2020
+    url: "https://arxiv.org/abs/2006.11477"
+  - title: "HiFi-GAN: Generative Adversarial Networks for Efficient and High Fidelity Speech Synthesis"
+    authors: "Kong, Kim, Bae"
+    year: 2020
+    url: "https://arxiv.org/abs/2010.05646"
+  - title: "HuBERT: Self-Supervised Speech Representation Learning by Masked Prediction of Hidden Units"
+    authors: "Hsu, Bolte, Tsai, Lakhotia, Salakhutdinov, Mohamed"
+    year: 2021
+    url: "https://arxiv.org/abs/2106.07447"
+  - title: "SoundStream: An End-to-End Neural Audio Codec"
+    authors: "Zeghidour, Luebs, Omran, Skoglund, Tagliasacchi"
+    year: 2021
+    url: "https://arxiv.org/abs/2107.03312"
+  - title: "AudioLM: a Language Modeling Approach to Audio Generation"
+    authors: "Borsos, Marinier, Vincent, et al."
+    year: 2022
+    url: "https://arxiv.org/abs/2209.03143"
+  - title: "High Fidelity Neural Audio Compression (EnCodec)"
+    authors: "Défossez, Copet, Synnaeve, Adi"
+    year: 2022
+    url: "https://arxiv.org/abs/2210.13438"
+  - title: "Robust Speech Recognition via Large-Scale Weak Supervision (Whisper)"
+    authors: "Radford, Kim, Xu, Brockman, McLeavey, Sutskever"
+    year: 2022
+    url: "https://arxiv.org/abs/2212.04356"
+  - title: "Neural Codec Language Models are Zero-Shot Text to Speech Synthesizers (VALL-E)"
+    authors: "Wang, Chen, Wu, et al."
+    year: 2023
+    url: "https://arxiv.org/abs/2301.02111"
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+<Abstract>
+Speech recognition has a structural problem text does not: one second of audio is
+a hundred frames and perhaps three characters, and nobody labelled which frames
+belong to which character. CTC solved that alignment problem in 2006 by summing
+over all possible alignments — and the same idea, applied in reverse through
+neural codecs, is why text-to-speech is now a language modelling task.
+</Abstract>
+
+<KeyPoints>
+
+- **Alignment is the defining difficulty.** Audio frames vastly outnumber output tokens and the correspondence is unlabelled. CTC introduces a blank symbol and marginalises over every alignment consistent with the transcript, computed efficiently by dynamic programming.
+- **CTC assumes conditional independence between outputs; RNN-T does not.** That single difference is why RNN-T dominates streaming production ASR — it has an internal language model, CTC needs an external one.
+- **Neural codecs turned audio into tokens, and that changed generation.** Once a second of speech is 75 discrete tokens, generating audio becomes next-token prediction. VALL-E clones a voice from three seconds of reference audio on that basis.
+- **Weak supervision beat clever self-supervision for ASR.** Whisper trained on 680k hours of noisy web audio-transcript pairs and generalises better across domains than models with lower benchmark WER. Scale and diversity beat pretraining sophistication here.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## The alignment problem
+
+You have a one-second recording of someone saying "cat". At a typical frame rate
+that is about a hundred feature frames, and three characters of output.
+
+Which frames are the "c"? Where does "a" begin? Nobody labelled it, and labelling
+it by hand for thousands of hours is out of the question.
+
+Before 2006 this was handled by iterative forced alignment inside an HMM pipeline —
+guess an alignment, train, re-align, repeat. It worked and it was elaborate.
+
+**CTC's answer is to refuse to choose.** Instead of picking one alignment, sum the
+probability over *all* alignments that produce the right transcript. Add a blank
+symbol meaning "no output here", allow repeats, and define a collapsing rule:
+merge repeated characters, then drop blanks. `c-aa-t` and `cc-a-tt` both collapse
+to `cat`.
+
+There are exponentially many valid alignments, and dynamic programming sums them in
+polynomial time — the same trick as the forward algorithm for HMMs.
+
+## What CTC gives up
+
+CTC makes one strong assumption: **given the audio, each output is independent of
+the others.**
+
+This is clearly false. After "cat sat on the ma" the next character is
+overwhelmingly "t", and CTC's model structure cannot express that — it looks only
+at the audio at each frame.
+
+In practice this shows up as phonetically plausible nonsense: "recognise speech"
+transcribed as "wreck a nice beach". Every frame was decoded reasonably; nothing
+enforced that the sequence be a sentence.
+
+The standard fix is to bolt on an external language model at decoding time.
+**RNN-T's fix is structural**: feed previous outputs back into the model, so it
+carries its own language model internally. That is why RNN-T, not CTC, runs on your
+phone.
+
+<Aside type="tip" title="Why streaming forces the architecture">
+An offline system can attend over the whole utterance. A live captioning system
+must emit words as you speak, so it can only look backwards. This rules out
+bidirectional encoders and full attention-based encoder–decoders, and it is the
+main reason RNN-T dominates production ASR while Whisper-style models dominate
+offline transcription.
+</Aside>
+
+## Audio as tokens
+
+The other half of this page is generation, and one idea unlocked it.
+
+A **neural codec** compresses audio into a sequence of discrete tokens — around 75
+tokens per second — from which a decoder reconstructs near-original quality. This
+is [VQ-VAE](/encoders/neural-encoders/) applied to waveforms, with a residual
+refinement so that successive codebooks encode progressively finer detail.
+
+Once audio is a token sequence, generating it is next-token prediction. Everything
+built for language models transfers. VALL-E's demonstration was striking: given
+three seconds of someone's voice as a prompt, continue in that voice saying
+arbitrary new text — voice cloning as in-context learning.
+
+<Tier level="mechanics" />
+
+## CTC, drawn
+
+<Figure
+  lead="Sum over alignments instead of choosing one."
+  caption="Many frame-level label sequences collapse to the same transcript once you merge repeats and drop blanks. CTC's loss is the total probability of all of them, computed by a forward-backward dynamic program rather than enumeration. The blank symbol does two jobs: it absorbs frames with no output, and it separates genuine double letters — without it, 'hello' could never be distinguished from 'helo'."
+>
+<svg viewBox="0 0 760 270" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="CTC collapsing multiple frame alignments to the same transcript">
+  <defs>
+    <marker id="sp1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <text class="xs" x="14" y="34">audio frames</text>
+  <g>
+    <rect class="f-blue" x="120" y="20" width="26" height="22" rx="2"/>
+    <rect class="f-blue" x="150" y="20" width="26" height="22" rx="2"/>
+    <rect class="f-blue" x="180" y="20" width="26" height="22" rx="2"/>
+    <rect class="f-blue" x="210" y="20" width="26" height="22" rx="2"/>
+    <rect class="f-blue" x="240" y="20" width="26" height="22" rx="2"/>
+    <rect class="f-blue" x="270" y="20" width="26" height="22" rx="2"/>
+    <rect class="f-blue" x="300" y="20" width="26" height="22" rx="2"/>
+  </g>
+  <text class="xs" x="344" y="35">~100 frames per second, no labels</text>
+
+  <text class="xs" x="14" y="82">alignment 1</text>
+  <text class="sm" x="120" y="82">c</text><text class="sm" x="150" y="82">–</text>
+  <text class="sm" x="180" y="82">a</text><text class="sm" x="210" y="82">a</text>
+  <text class="sm" x="240" y="82">–</text><text class="sm" x="270" y="82">t</text>
+  <text class="sm" x="300" y="82">t</text>
+
+  <text class="xs" x="14" y="112">alignment 2</text>
+  <text class="sm" x="120" y="112">c</text><text class="sm" x="150" y="112">c</text>
+  <text class="sm" x="180" y="112">–</text><text class="sm" x="210" y="112">a</text>
+  <text class="sm" x="240" y="112">–</text><text class="sm" x="270" y="112">–</text>
+  <text class="sm" x="300" y="112">t</text>
+
+  <text class="xs" x="14" y="142">alignment 3</text>
+  <text class="sm" x="120" y="142">–</text><text class="sm" x="150" y="142">c</text>
+  <text class="sm" x="180" y="142">a</text><text class="sm" x="210" y="142">–</text>
+  <text class="sm" x="240" y="142">t</text><text class="sm" x="270" y="142">t</text>
+  <text class="sm" x="300" y="142">t</text>
+
+  <path class="ar" d="M340,82 C400,82 400,110 420,110" marker-end="url(#sp1)"/>
+  <path class="ar" d="M340,112 L420,112" marker-end="url(#sp1)"/>
+  <path class="ar" d="M340,142 C400,142 400,116 420,114" marker-end="url(#sp1)"/>
+
+  <rect class="f-green" x="426" y="94" width="120" height="34" rx="4"/>
+  <text class="on-fill-sm" x="486" y="116" text-anchor="middle">"cat"</text>
+  <text class="xs" x="560" y="106">merge repeats,</text>
+  <text class="xs" x="560" y="122">then drop blanks</text>
+
+  <line class="bx" x1="14" y1="166" x2="746" y2="166" opacity="0.3"/>
+
+  <rect class="f-purple" x="14" y="180" width="340" height="46" rx="5" opacity="0.55"/>
+  <text class="on-fill-sm" x="30" y="200">loss = −log Σ over ALL valid alignments</text>
+  <text class="xs" x="30" y="218">exponentially many; forward-backward sums them in O(T·L)</text>
+
+  <rect class="f-pink" x="368" y="180" width="348" height="46" rx="5" opacity="0.5"/>
+  <text class="on-fill-sm" x="384" y="200">Cost: outputs are conditionally independent</text>
+  <text class="xs" x="384" y="218">"recognise speech" → "wreck a nice beach". Needs an external LM.</text>
+
+  <text class="xs" x="14" y="250">The blank also separates genuine doubles: without it, "hello" and "helo" would be indistinguishable after collapsing.</text>
+</svg>
+</Figure>
+
+## The three ASR architectures
+
+<Tabs>
+<TabItem label="CTC">
+
+Encoder only. Per-frame distribution over characters plus blank, trained by summing
+over alignments.
+
+**Fast** — one forward pass, all frames decoded in parallel. **Streamable** with a
+causal encoder. **Weakest** language modelling, because of the independence
+assumption.
+
+Still widely used as an auxiliary loss even in systems that decode differently: it
+provides a strong per-frame training signal that stabilises the encoder.
+
+</TabItem>
+<TabItem label="RNN-T">
+
+Adds a **prediction network** — an autoregressive model over the output so far —
+and a **joint network** combining it with the encoder at each frame.
+
+The output distribution is now conditioned on previous outputs, so the model has an
+internal language model. It remains streamable, because at each step it either
+emits a token or advances to the next frame, and both decisions depend only on past
+audio.
+
+**The dominant production architecture for streaming ASR.** More complex to train
+— the lattice is two-dimensional rather than one — and worth it.
+
+</TabItem>
+<TabItem label="Attention encoder–decoder">
+
+A standard [encoder–decoder](/encoders/encoder-decoder/): encode the whole
+utterance, decode text with cross-attention. Whisper is this.
+
+No alignment machinery at all — attention learns the correspondence implicitly.
+Best offline accuracy, and **not streamable**, since the encoder needs the full
+utterance.
+
+A known failure mode: because the decoder is a strong language model, it can
+"hallucinate" fluent text during silence or noise, generating a plausible sentence
+with no acoustic support. CTC and RNN-T are structurally less prone to this.
+
+</TabItem>
+<TabItem label="Conformer">
+
+The encoder, not the loss — usable with any of the above.
+
+Self-attention captures long-range dependencies; convolution captures local
+patterns like formant transitions. Speech needs both, and interleaving them beats
+either alone. The Conformer block sandwiches a convolution module between two
+feed-forward halves with attention in the middle.
+
+**The default speech encoder**, and one of the clearest cases where a
+domain-specific architectural prior genuinely pays.
+
+</TabItem>
+</Tabs>
+
+## Self-supervised speech
+
+Labelled speech is expensive; raw audio is abundant. The same logic as elsewhere in
+[self-supervised learning](/training/self-supervision/).
+
+**wav2vec 2.0** masks spans of latent speech representations and solves a
+contrastive task: identify the true quantised latent among distractors. Its result
+was striking — competitive ASR from **ten minutes** of labelled data plus large-scale
+pretraining.
+
+**HuBERT** replaces the contrastive objective with masked prediction of cluster
+assignments. Cluster the features (initially MFCCs, then the model's own
+representations), then predict the cluster ID of masked frames — BERT for speech,
+with the clustering supplying the vocabulary. Iterating the clustering with better
+representations is the key trick.
+
+**Whisper** went the other way: no self-supervision, just 680,000 hours of weakly
+supervised web audio-transcript pairs. Its benchmark WER on clean read speech is
+not state of the art; its *robustness* across accents, noise, and domains is far
+better, and it does multilingual recognition and translation in one model.
+
+<Aside type="caution" title="What Whisper's result actually shows">
+It is easy to read this as "scale beats method". The more precise claim is that
+**training distribution diversity beats benchmark optimisation**. Models tuned on
+LibriSpeech achieve better LibriSpeech WER and degrade on anything else. Whisper's
+messy web-scale data covers the variation real audio contains. Which you want
+depends on whether your deployment resembles your benchmark.
+</Aside>
+
+<Tier level="formal" />
+
+## The CTC objective
+
+Given input $X$ of length $T$ and target $\mathbf{y}$ of length $U \leq T$, define
+the extended alphabet $\mathcal{A}' = \mathcal{A}\cup\{\varnothing\}$ and the
+collapsing map $\mathcal{B}: \mathcal{A}'^{T}\to\mathcal{A}^{\leq T}$ that merges
+repeats then removes blanks.
+
+$$
+p(\mathbf{y}\mid X) = \sum_{\pi \in \mathcal{B}^{-1}(\mathbf{y})} \prod_{t=1}^{T} p\big(\pi_t \mid X\big), \qquad \mathcal{L}_{\text{CTC}} = -\log p(\mathbf{y}\mid X).
+$$
+
+**The conditional independence assumption is visible in that product** — each
+$\pi_t$ depends on $X$ alone, never on $\pi_{<t}$. Everything CTC gives up follows
+from it.
+
+**The forward-backward recursion.** Let $\mathbf{y}'$ be $\mathbf{y}$ with blanks
+inserted between every symbol and at both ends, so $|\mathbf{y}'| = 2U+1$. Define
+$\alpha_t(s)$ as the total probability of all paths reaching position $s$ of
+$\mathbf{y}'$ by frame $t$:
+
+$$
+\alpha_t(s) = p\big(\mathbf{y}'_s \mid X_t\big)\cdot
+\begin{cases}
+\alpha_{t-1}(s) + \alpha_{t-1}(s-1) & \text{if } \mathbf{y}'_s = \varnothing \text{ or } \mathbf{y}'_s = \mathbf{y}'_{s-2}\\[4pt]
+\alpha_{t-1}(s) + \alpha_{t-1}(s-1) + \alpha_{t-1}(s-2) & \text{otherwise}
+\end{cases}
+$$
+
+The three-term case allows skipping a blank between *distinct* symbols; the
+two-term case forbids skipping when it would merge a genuine double letter. That
+condition is the entire reason the blank exists.
+
+Cost is $O(TU)$ rather than exponential, and the whole recursion is differentiable,
+so it trains by ordinary backpropagation. Final probability:
+
+$$
+p(\mathbf{y}\mid X) = \alpha_T(2U+1) + \alpha_T(2U).
+$$
+
+## RNN-T
+
+The lattice becomes two-dimensional: a path moves right (consume a frame) or up
+(emit a token). Define
+
+$$
+p(k \mid t, u) = \operatorname{softmax}\big(J(f_t,\, g_u)\big),
+$$
+
+with $f_t$ the encoder output at frame $t$, $g_u$ the prediction network's state
+after $u$ emitted tokens, and $J$ the joint network. The alphabet includes blank,
+which advances $t$.
+
+$$
+\alpha(t,u) = \alpha(t-1,u)\,p(\varnothing \mid t-1, u) \;+\; \alpha(t,u-1)\,p(y_u \mid t, u-1).
+$$
+
+**The key difference from CTC** is the dependence on $u$ — the distribution is
+conditioned on how many tokens have already been emitted, and through $g_u$ on
+*which* ones. That is an internal language model, and it is why RNN-T does not need
+an external one. Cost is $O(TU)$ in both time and memory, which is a real training
+burden at long utterances.
+
+## Neural codecs
+
+Residual vector quantisation. A single [VQ-VAE](/encoders/neural-encoders/)
+codebook of size $K$ gives $\log_2 K$ bits per frame — far too few for audio. RVQ
+stacks $N_q$ quantisers, each encoding the *residual* left by the previous:
+
+$$
+r_0 = z, \qquad q_i = \operatorname{VQ}_i(r_{i-1}), \qquad r_i = r_{i-1} - q_i, \qquad \hat z = \sum_{i=1}^{N_q} q_i .
+$$
+
+Bitrate is
+
+$$
+B = f_{\text{frame}} \cdot N_q \cdot \log_2 K \quad \text{bits/s}.
+$$
+
+For $f_{\text{frame}} = 75$ Hz, $N_q = 8$, $K = 1024$: $75 \times 8 \times 10 = 6$
+kbps — roughly 250× compression from 16-bit 48 kHz audio, at quality competitive
+with classical codecs at much higher rates.
+
+**Quantiser dropout** during training makes the codec *scalable*: randomly use only
+the first $n \leq N_q$ quantisers, so a single trained model supports a range of
+bitrates by truncating the stack. Elegant, and it is why one EnCodec checkpoint
+serves multiple operating points.
+
+The training objective combines reconstruction in time and frequency with
+adversarial and feature-matching terms:
+
+$$
+\mathcal{L} = \lambda_t\|x - \hat x\|_1 + \lambda_f\,\mathcal{L}_{\text{spec}} + \lambda_g\,\mathcal{L}_{\text{GAN}} + \lambda_{\text{feat}}\,\mathcal{L}_{\text{feat}} + \lambda_q\,\mathcal{L}_{\text{VQ}} .
+$$
+
+**The adversarial term is not optional.** $\ell_1$ or spectral losses alone produce
+audible artefacts — the same blurring problem VAEs have with images, transposed to
+audio. The discriminator supplies the perceptual criterion that reconstruction
+losses lack.
+
+<Figure
+  lead="Residual quantisation turns a waveform into a token stream."
+  caption="One codebook gives far too few bits for audio. Residual vector quantisation stacks quantisers, each encoding what the previous one missed, so the first codebook carries coarse semantic content and later ones add progressively finer acoustic detail. At 75 frames per second with 8 quantisers over 1024 entries that is 6 kbps — and, more importantly, 600 discrete tokens per second. Once audio is tokens, generating it is next-token prediction and the entire language-model toolkit applies."
+>
+<svg viewBox="0 0 760 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Residual vector quantisation producing a token stream from audio">
+  <defs>
+    <marker id="sp2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <rect class="f-grey" x="16" y="86" width="70" height="42" rx="4"/>
+  <text class="on-fill-sm" x="51" y="104" text-anchor="middle">waveform</text>
+  <text class="xs" x="51" y="120" text-anchor="middle">48 kHz</text>
+  <path class="ar" d="M90,107 L124,107" marker-end="url(#sp2)"/>
+  <rect class="f-blue" x="130" y="86" width="76" height="42" rx="4"/>
+  <text class="on-fill-sm" x="168" y="111" text-anchor="middle">encoder</text>
+  <path class="ar" d="M210,107 L242,107" marker-end="url(#sp2)"/>
+  <text class="xs" x="226" y="98" text-anchor="middle">z</text>
+
+  <rect class="f-purple" x="248" y="34" width="96" height="34" rx="4"/>
+  <text class="on-fill-sm" x="296" y="56" text-anchor="middle">VQ₁ — coarse</text>
+  <rect class="f-purple" x="248" y="76" width="96" height="34" rx="4" opacity="0.85"/>
+  <text class="on-fill-sm" x="296" y="98" text-anchor="middle">VQ₂ — residual</text>
+  <rect class="f-purple" x="248" y="118" width="96" height="34" rx="4" opacity="0.7"/>
+  <text class="on-fill-sm" x="296" y="140" text-anchor="middle">VQ₃ — residual</text>
+  <rect class="f-purple" x="248" y="160" width="96" height="34" rx="4" opacity="0.55"/>
+  <text class="on-fill-sm" x="296" y="182" text-anchor="middle">… VQ₈ — fine</text>
+
+  <path class="ar" d="M296,68 L296,74" marker-end="url(#sp2)"/>
+  <path class="ar" d="M296,110 L296,116" marker-end="url(#sp2)"/>
+  <path class="ar" d="M296,152 L296,158" marker-end="url(#sp2)"/>
+  <text class="xs" x="200" y="180">each quantiser</text>
+  <text class="xs" x="200" y="196">encodes what the</text>
+  <text class="xs" x="200" y="212">previous one missed</text>
+
+  <path class="ar" d="M348,114 L386,114" marker-end="url(#sp2)"/>
+
+  <g>
+    <rect class="f-green" x="392" y="42" width="24" height="20" rx="2"/>
+    <rect class="f-green" x="420" y="42" width="24" height="20" rx="2"/>
+    <rect class="f-green" x="448" y="42" width="24" height="20" rx="2"/>
+    <rect class="f-green" x="476" y="42" width="24" height="20" rx="2"/>
+    <rect class="f-green" x="392" y="66" width="24" height="20" rx="2" opacity="0.8"/>
+    <rect class="f-green" x="420" y="66" width="24" height="20" rx="2" opacity="0.8"/>
+    <rect class="f-green" x="448" y="66" width="24" height="20" rx="2" opacity="0.8"/>
+    <rect class="f-green" x="476" y="66" width="24" height="20" rx="2" opacity="0.8"/>
+    <rect class="f-green" x="392" y="90" width="24" height="20" rx="2" opacity="0.6"/>
+    <rect class="f-green" x="420" y="90" width="24" height="20" rx="2" opacity="0.6"/>
+    <rect class="f-green" x="448" y="90" width="24" height="20" rx="2" opacity="0.6"/>
+    <rect class="f-green" x="476" y="90" width="24" height="20" rx="2" opacity="0.6"/>
+  </g>
+  <text class="xs" x="446" y="130" text-anchor="middle">discrete tokens</text>
+  <text class="xs" x="446" y="146" text-anchor="middle">75 frames/s × 8 = 600 tok/s</text>
+
+  <path class="ar" d="M506,80 L544,80" marker-end="url(#sp2)"/>
+  <rect class="f-amber" x="550" y="58" width="166" height="44" rx="5"/>
+  <text class="on-fill-sm" x="633" y="78" text-anchor="middle">a language model</text>
+  <text class="xs" x="633" y="94" text-anchor="middle">over audio tokens</text>
+
+  <line class="bx" x1="16" y1="234" x2="746" y2="234" opacity="0.3"/>
+  <text class="xs" x="16" y="256">Quantiser dropout during training makes the codec scalable: truncate the stack at inference for a lower bitrate,</text>
+  <text class="xs" x="16" y="272">so one checkpoint serves many operating points. VALL-E models VQ₁ autoregressively and the rest in parallel.</text>
+</svg>
+</Figure>
+
+## TTS as language modelling
+
+Once audio is tokens, text-to-speech is sequence-to-sequence over discrete symbols.
+VALL-E models
+
+$$
+p\big(c_{1:T}^{(1:N_q)} \mid \mathbf{x},\ \tilde c_{1:T'}^{(1:N_q)}\big),
+$$
+
+with $\mathbf{x}$ the phoneme sequence and $\tilde c$ codec tokens from a short
+reference recording.
+
+The two-stage structure follows from RVQ's hierarchy. The first quantiser carries
+most of the semantic content, so it is modelled **autoregressively**:
+
+$$
+p\big(c_{1:T}^{(1)}\big) = \prod_{t} p\big(c_t^{(1)} \mid c_{<t}^{(1)},\, \mathbf{x},\, \tilde c\big).
+$$
+
+Quantisers $2\ldots N_q$ carry acoustic detail and are generated
+**non-autoregressively**, conditioned on the first — which is far faster and loses
+little, because the residuals are much less structured.
+
+**Why three seconds of reference suffices.** The reference tokens are simply a
+prefix in the context. Continuing in that voice is in-context learning, exactly as
+a language model continues a style from a few sentences. No speaker embedding, no
+fine-tuning — which is both the impressive part and the reason voice cloning
+became trivially accessible.
+
+<Tier level="frontier" />
+
+## Where this stands, as of 2026
+
+**ASR is close to solved for clean speech in high-resource languages, and not for
+the rest.** Accented speech, spontaneous conversation, overlapping speakers, code
+switching, and low-resource languages all remain substantially worse, and the gap
+between benchmark WER and field performance is large.
+
+**Audio language models unified generation.** Once speech, music and sound effects
+are all token sequences, one architecture handles all of them. AudioLM established
+the semantic-plus-acoustic token hierarchy that most systems still follow.
+
+**End-to-end speech-to-speech is displacing the pipeline.** The classical route —
+ASR, then a text model, then TTS — loses prosody, emotion and timing at every
+boundary, and adds latency. Models operating directly on audio tokens throughout
+preserve those and respond faster, which matters for conversational systems.
+
+**Voice cloning from seconds of audio is a solved capability and an unsolved
+problem.** The technical achievement is real; the misuse potential is obvious.
+Watermarking and detection are active and not reliable.
+
+## Open problems
+
+- **Speaker separation in real conditions.** The cocktail party problem is
+  substantially improved and not solved. Overlapping speech remains hard.
+
+- **Long-form consistency.** Generating minutes of coherent audio with stable voice
+  and prosody drifts. Same class of problem as long-horizon anything.
+
+- **Low-resource languages.** Most of the world's languages have almost no
+  transcribed audio. Self-supervised pretraining helps and does not close the gap.
+
+- **Evaluation is expensive and subjective.** Mean Opinion Score requires human
+  listeners. Automatic metrics correlate poorly with perceived quality, so progress
+  in synthesis is measured slowly and unreliably.
+
+- **Detecting synthetic speech.** As quality improves, distinguishing real from
+  generated becomes harder. This is a security problem with no robust solution.
+
+## What to read next, in order
+
+1. **Graves et al. (2006), CTC** — the forward-backward derivation. It is the same
+   dynamic program as HMM training and worth working through once.
+2. **Gulati et al. (2020), Conformer** — the ablations on convolution-plus-attention
+   are a clean argument for domain priors.
+3. **Baevski et al. (2020), wav2vec 2.0** — for the ten-minutes-of-labels result.
+4. **Zeghidour et al. (2021), SoundStream** — residual vector quantisation and
+   quantiser dropout, which underpin everything in audio generation since.
+
+<Papers papers={frontmatter.papers} />

@@ -1,0 +1,465 @@
+---
+title: Time Series Forecasting
+description: "Why a one-layer linear model embarrassed the transformer literature, what patching fixed, and whether forecasting foundation models are real."
+sidebar:
+  order: 2
+depth: frontier
+readingTime: 30
+prereqs:
+  - label: "Transformers"
+    slug: "architectures/transformers"
+papers:
+  - title: "DeepAR: Probabilistic Forecasting with Autoregressive Recurrent Networks"
+    authors: "Salinas, Flunkert, Gasthaus"
+    year: 2017
+    url: "https://arxiv.org/abs/1704.04110"
+  - title: "N-BEATS: Neural basis expansion analysis for interpretable time series forecasting"
+    authors: "Oreshkin, Carpov, Chapados, Bengio"
+    year: 2019
+    url: "https://arxiv.org/abs/1905.10437"
+  - title: "Temporal Fusion Transformers for Interpretable Multi-horizon Time Series Forecasting"
+    authors: "Lim, Arik, Loeff, Pfister"
+    year: 2019
+    url: "https://arxiv.org/abs/1912.09363"
+  - title: "Informer: Beyond Efficient Transformer for Long Sequence Time-Series Forecasting"
+    authors: "Zhou, Zhang, Peng, et al."
+    year: 2020
+    url: "https://arxiv.org/abs/2012.07436"
+  - title: "Autoformer: Decomposition Transformers with Auto-Correlation for Long-Term Series Forecasting"
+    authors: "Wu, Xu, Wang, Long"
+    year: 2021
+    url: "https://arxiv.org/abs/2106.13008"
+  - title: "Are Transformers Effective for Time Series Forecasting? (DLinear)"
+    authors: "Zeng, Chen, Zhang, Xu"
+    year: 2022
+    url: "https://arxiv.org/abs/2205.13504"
+  - title: "A Time Series is Worth 64 Words: Long-term Forecasting with Transformers (PatchTST)"
+    authors: "Nie, Nguyen, Sinthong, Kalagnanam"
+    year: 2022
+    url: "https://arxiv.org/abs/2211.14730"
+  - title: "The M4 Competition: 100,000 time series and 61 forecasting methods"
+    authors: "Makridakis, Spiliotis, Assimakopoulos"
+    year: 2020
+    url: "https://doi.org/10.1016/j.ijforecast.2019.04.014"
+  - title: "The M5 competition: Background, organization, and implementation"
+    authors: "Makridakis, Spiliotis, Assimakopoulos"
+    year: 2022
+    url: "https://doi.org/10.1016/j.ijforecast.2021.07.007"
+  - title: "Forecasting at Scale (Prophet)"
+    authors: "Sean J. Taylor, Benjamin Letham"
+    year: 2018
+    url: "https://doi.org/10.1080/00031305.2017.1380080"
+  - title: "A decoder-only foundation model for time-series forecasting (TimesFM)"
+    authors: "Das, Kong, Sen, Zhou"
+    year: 2023
+    url: "https://arxiv.org/abs/2310.10688"
+  - title: "Chronos: Learning the Language of Time Series"
+    authors: "Ansari, Stella, Turkmen, et al."
+    year: 2024
+    url: "https://arxiv.org/abs/2403.07815"
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+<Abstract>
+For three years the forecasting literature published increasingly elaborate
+transformer variants, each beating the last. Then a 2022 paper showed a **single
+linear layer** matched or beat all of them on the standard benchmarks. That
+result is worth studying not as a curiosity but as a case study in how a
+subfield can optimise itself into a corner — and in what a good baseline is
+actually for.
+</Abstract>
+
+<KeyPoints>
+
+- **DLinear embarrassed three years of work.** One linear layer mapping the input window directly to the forecast window matched elaborate transformers on the standard long-horizon benchmarks. Those benchmarks are dominated by trend and seasonality, which a linear map captures perfectly.
+- **The lesson is about baselines, not about transformers.** Nobody had checked a trivially simple model. When a linear layer wins, either the task is easy or the benchmark is uninformative — and here it was both.
+- **Patching fixed the real problem.** Treating individual timesteps as tokens is wasteful: one point carries almost no information, and attention over thousands of them is mostly noise. PatchTST groups timesteps into patches and beats the linear baseline properly.
+- **Classical methods remain hard to beat.** The M4 winner was a hybrid of exponential smoothing and an RNN, and in M5 simple statistical baselines beat most sophisticated entries. On small, noisy, short series, statistical methods often win.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## What makes forecasting different
+
+Predicting the next word and predicting next month's sales look similar and are
+not.
+
+**The data is thin.** A language model trains on trillions of tokens. A weekly
+sales series with five years of history has 260 points. There is very little to
+learn from.
+
+**The signal is mostly structure.** Most series are a trend, plus a seasonal
+pattern, plus noise. Once you have captured those three, there is often nothing
+left — and all three are simple.
+
+**Extrapolation is required, not interpolation.** A classifier sees test data drawn
+from the training distribution. A forecaster must predict a future that is
+*definitionally* outside its training range, and the world may have changed.
+
+**Uncertainty is the product.** "Sales will be 1,000" is much less useful than
+"between 800 and 1,200 with 90% confidence", because the decision downstream —
+how much inventory to hold — depends on the spread.
+
+## The linear model result
+
+Between 2020 and 2022 a stream of papers proposed transformers for long-horizon
+forecasting, each reporting improvements over the last.
+
+Zeng et al. then tried the simplest thing anyone could: **one linear layer** mapping
+the input window straight to the output window. No attention, no encoder, no
+decoder. Optionally decompose into trend and seasonal components first and use two
+linear layers.
+
+It matched or beat every transformer on the standard benchmarks.
+
+<Aside type="danger" title="What went wrong, and it generalises">
+Nobody had run the trivial baseline. Three years of comparisons were made against
+each other rather than against a floor — so the field measured relative progress
+within a set of methods that were all, it turned out, above the floor by very
+little.
+
+The transferable lesson: **your baseline should be embarrassingly simple, and you
+should run it before anything else.** If it wins, you have learned something
+important about the task. This failure mode is not specific to forecasting.
+</Aside>
+
+## Why the linear model does so well
+
+Not because linearity is right. Because those benchmarks are easy.
+
+Electricity, traffic and weather series are dominated by strong daily and weekly
+periodicity plus a slow trend. A linear map from a long input window to the output
+window can represent exactly that — a weighted average over the window with weights
+learned to pick out the periodic structure.
+
+Attention adds the capacity to model *irregular, content-dependent* dependencies.
+If the series contains none, the capacity is unused and its parameters are pure
+variance on a dataset of a few thousand points.
+
+<Tier level="mechanics" />
+
+## What patching fixed
+
+<Figure
+  lead="A single timestep is not a token."
+  caption="Top: point-wise tokenisation gives each timestep its own token, so attention operates over thousands of nearly-uninformative positions — one scalar carries almost no semantic content, unlike a word. Bottom: patching groups consecutive timesteps into a token, which both raises the information per token and cuts sequence length by the patch size, reducing attention cost quadratically. Channel independence — sharing one model across variates rather than mixing them — was the other half of PatchTST's gain."
+>
+<svg viewBox="0 0 760 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Point-wise tokenisation versus patch tokenisation of a time series">
+  <text class="lb" x="14" y="18">Point-wise — one timestep = one token</text>
+  <g>
+    <rect class="f-pink" x="40" y="34" width="12" height="26" rx="2"/>
+    <rect class="f-pink" x="55" y="34" width="12" height="26" rx="2"/>
+    <rect class="f-pink" x="70" y="34" width="12" height="26" rx="2"/>
+    <rect class="f-pink" x="85" y="34" width="12" height="26" rx="2"/>
+    <rect class="f-pink" x="100" y="34" width="12" height="26" rx="2"/>
+    <rect class="f-pink" x="115" y="34" width="12" height="26" rx="2"/>
+    <rect class="f-pink" x="130" y="34" width="12" height="26" rx="2"/>
+    <rect class="f-pink" x="145" y="34" width="12" height="26" rx="2"/>
+    <rect class="f-pink" x="160" y="34" width="12" height="26" rx="2"/>
+    <rect class="f-pink" x="175" y="34" width="12" height="26" rx="2"/>
+    <rect class="f-pink" x="190" y="34" width="12" height="26" rx="2"/>
+    <rect class="f-pink" x="205" y="34" width="12" height="26" rx="2"/>
+    <rect class="f-pink" x="220" y="34" width="12" height="26" rx="2"/>
+    <rect class="f-pink" x="235" y="34" width="12" height="26" rx="2"/>
+    <rect class="f-pink" x="250" y="34" width="12" height="26" rx="2"/>
+    <rect class="f-pink" x="265" y="34" width="12" height="26" rx="2"/>
+  </g>
+  <text class="xs" x="292" y="52">L = 512 tokens · attention cost O(512²)</text>
+  <text class="xs" x="40" y="82">each token is ONE scalar — almost no information, unlike a word</text>
+
+  <line class="bx" x1="14" y1="100" x2="746" y2="100" opacity="0.3"/>
+
+  <text class="lb" x="14" y="126">Patched — 16 timesteps = one token</text>
+  <g>
+    <rect class="f-green" x="40" y="142" width="56" height="26" rx="3"/>
+    <rect class="f-green" x="100" y="142" width="56" height="26" rx="3"/>
+    <rect class="f-green" x="160" y="142" width="56" height="26" rx="3"/>
+    <rect class="f-green" x="220" y="142" width="56" height="26" rx="3"/>
+  </g>
+  <text class="xs" x="68" y="159" text-anchor="middle">p₁</text>
+  <text class="xs" x="128" y="159" text-anchor="middle">p₂</text>
+  <text class="xs" x="188" y="159" text-anchor="middle">p₃</text>
+  <text class="xs" x="248" y="159" text-anchor="middle">p₄</text>
+  <text class="xs" x="300" y="160">L/16 = 32 tokens · attention cost O(32²)</text>
+  <text class="xs" x="40" y="190">each token carries local shape — a pattern, not a point</text>
+
+  <line class="bx" x1="14" y1="208" x2="746" y2="208" opacity="0.3"/>
+  <rect class="f-blue" x="40" y="216" width="330" height="34" rx="4" opacity="0.55"/>
+  <text class="on-fill-sm" x="56" y="237">256× cheaper attention, more informative tokens</text>
+  <rect class="f-amber" x="386" y="216" width="330" height="34" rx="4" opacity="0.55"/>
+  <text class="on-fill-sm" x="402" y="237">+ channel independence: one shared model per variate</text>
+</svg>
+</Figure>
+
+## The two ideas in PatchTST
+
+<Steps>
+
+1. **Patching.** Group $P$ consecutive timesteps into one token. Sequence length
+   falls by $P$, attention cost by $P^2$, and each token now represents a local
+   *shape* rather than a single value.
+
+2. **Channel independence.** Process each variate with the same shared model rather
+   than mixing them in the embedding. Counter-intuitive — surely cross-series
+   information helps — but mixing early lets one noisy series contaminate the
+   others, and sharing weights across variates multiplies the effective training
+   data.
+
+</Steps>
+
+Together these beat DLinear properly, which restored the transformer position on a
+sounder footing than the earlier papers had.
+
+## The classical baselines you should run
+
+| Method | When it wins |
+|---|---|
+| **Naive / seasonal naive** | the floor. Always run it. Surprisingly hard to beat on noisy series |
+| **ETS (exponential smoothing)** | short series with clear trend and seasonality |
+| **ARIMA** | stationary series with autocorrelation structure |
+| **Theta** | won M3; still competitive and nearly parameter-free |
+| **Prophet** | business series with holidays and changepoints; interpretable, not especially accurate |
+| **Gradient boosting on lag features** | dominant in M5 and in most Kaggle forecasting competitions |
+
+That last row deserves emphasis. For tabular-style forecasting with covariates,
+**gradient-boosted trees on engineered lag and calendar features** remain extremely
+strong, and they were the backbone of most top M5 entries.
+
+<Aside type="tip" title="What the M competitions established">
+M4's winner was a *hybrid* — exponential smoothing for the structure, an RNN for
+the residual — not a pure neural model. In M5, simple statistical benchmarks beat a
+large fraction of sophisticated submissions. The consistent finding across these
+competitions is that **combining methods beats any single method**, and that
+complexity is not rewarded on its own.
+</Aside>
+
+<Tier level="formal" />
+
+## The problem
+
+Given history $\mathbf{y}_{1:T} \in \mathbb{R}^{T \times M}$ for $M$ variates,
+predict $\mathbf{y}_{T+1:T+H}$. Point forecasting minimises
+
+$$
+\mathcal{L} = \frac{1}{H}\sum_{h=1}^{H}\big\|\hat y_{T+h} - y_{T+h}\big\|^2 ,
+$$
+
+but the useful output is usually a *distribution*. DeepAR parameterises a
+likelihood — Gaussian for real-valued data, negative binomial for counts — and
+maximises
+
+$$
+\mathcal{L} = \sum_{t}\log p\big(y_t \mid \theta(h_t)\big),
+$$
+
+with $h_t$ an RNN state. Sampling forward through the recursion yields prediction
+intervals rather than a single line.
+
+**Why negative binomial for counts.** Demand data is non-negative, integer, and
+over-dispersed — the variance exceeds the mean, which a Poisson cannot represent.
+The negative binomial has a separate dispersion parameter and can. Using a Gaussian
+on count data produces negative forecasts and badly calibrated intervals, and this
+is a common error.
+
+## DLinear
+
+The model that started the argument, in full:
+
+$$
+\hat y_{T+1:T+H} = W\, y_{T-L+1:T} + b, \qquad W \in \mathbb{R}^{H \times L}.
+$$
+
+That is the entire architecture. The decomposition variant splits first:
+
+$$
+y^{\text{trend}} = \operatorname{AvgPool}_k(y), \qquad y^{\text{seas}} = y - y^{\text{trend}},
+$$
+
+$$
+\hat y = W_t\, y^{\text{trend}} + W_s\, y^{\text{seas}} .
+$$
+
+**Why this suffices on the standard benchmarks.** If a series is exactly periodic
+with period $p$ and $L \geq p$, then setting
+
+$$
+W_{h,\,l} = \mathbb{1}\{\,l \equiv (T + h) \bmod p\,\}
+$$
+
+reproduces the seasonal pattern exactly. A linear map can *perfectly* express
+seasonal repetition given a long enough window. Add a slowly varying trend, which
+is also linear over a short horizon, and you have captured most of what the ETTh,
+Electricity and Traffic datasets contain.
+
+The transformers were not failing to model something hard. There was little hard
+structure to model.
+
+## Patching, quantified
+
+Embedding a patch of $P$ timesteps:
+
+$$
+x_i = W_p\, y_{(i-1)P+1\,:\,iP} + \text{pos}_i, \qquad W_p \in \mathbb{R}^{d \times P},
+$$
+
+giving $N = \lceil L/P \rceil$ tokens instead of $L$. Attention cost:
+
+$$
+O(L^2 d) \;\longrightarrow\; O\!\left(\frac{L^2}{P^2}\,d\right).
+$$
+
+For $L = 512$, $P = 16$: a 256-fold reduction, which is what makes long input
+windows affordable — and long windows are exactly what a forecaster needs to see
+multiple seasonal cycles.
+
+**Channel independence, formally.** Rather than $f: \mathbb{R}^{L\times M} \to
+\mathbb{R}^{H\times M}$, learn $f: \mathbb{R}^{L}\to\mathbb{R}^{H}$ applied to each
+variate:
+
+$$
+\hat y^{(m)} = f_\theta\big(y^{(m)}\big), \qquad m = 1,\dots,M,
+$$
+
+with $\theta$ **shared**. Two consequences: the parameter count no longer grows
+with $M$, and the effective training set is $M$ times larger. Cross-series
+information is lost, and on the standard benchmarks that loss is smaller than the
+variance reduction gained — which is a statement about those datasets, not a
+general law.
+
+<Figure
+  lead="A linear map can reproduce seasonality exactly."
+  caption="If the series repeats with period p and the input window is at least p long, a linear layer only needs to place its weight on the timestep exactly one period back — a single one in each row of W. Seasonality is therefore not something a model has to learn cleverly; it is a copy operation. Since the standard long-horizon benchmarks are dominated by strong daily and weekly periodicity plus a slow trend, that is most of what there was to model, and the transformers' extra capacity had nothing to do."
+>
+<svg viewBox="0 0 760 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A linear layer copying a seasonal pattern forward by one period">
+  <defs>
+    <marker id="ts1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <line class="bx" x1="40" y1="120" x2="716" y2="120" opacity="0.4"/>
+  <line class="bx" x1="420" y1="30" x2="420" y2="190" stroke-dasharray="5 4" opacity="0.5"/>
+  <text class="xs" x="420" y="24" text-anchor="middle">now</text>
+
+  <path class="thick" d="M44,120 C64,66 84,66 104,120 C124,172 144,172 164,120 C184,66 204,66 224,120 C244,172 264,172 284,120 C304,66 324,66 344,120 C364,172 384,172 404,120"/>
+  <text class="xs" x="220" y="206" text-anchor="middle">input window L</text>
+
+  <path class="thick" d="M420,120 C440,66 460,66 480,120 C500,172 520,172 540,120 C560,66 580,66 600,120 C620,172 640,172 660,120 C680,66 690,80 700,96" opacity="0.6"/>
+  <text class="xs" x="560" y="206" text-anchor="middle">forecast horizon H</text>
+
+  <path class="dash" d="M284,104 C320,58 400,58 460,96" marker-end="url(#ts1)" opacity="0.85"/>
+  <path class="dash" d="M344,136 C380,186 460,186 520,152" marker-end="url(#ts1)" opacity="0.85"/>
+  <text class="xs" x="372" y="52" text-anchor="middle">copy from one period back</text>
+
+  <line class="bx" x1="40" y1="222" x2="716" y2="222" opacity="0.3"/>
+  <rect class="f-green" x="40" y="228" width="330" height="26" rx="4" opacity="0.55"/>
+  <text class="on-fill-sm" x="56" y="246">W[h, l] = 1 when l ≡ (T + h) mod p</text>
+  <rect class="f-pink" x="386" y="228" width="330" height="26" rx="4" opacity="0.5"/>
+  <text class="on-fill-sm" x="402" y="246">no attention needed — nothing irregular to model</text>
+</svg>
+</Figure>
+
+## Scale and evaluation
+
+Series live on wildly different scales, so raw error is meaningless across a
+dataset. Two standard fixes.
+
+**Instance normalisation.** Normalise each input window by its own mean and
+variance, forecast, then invert:
+
+$$
+\tilde y = \frac{y - \mu_{\text{win}}}{\sigma_{\text{win}}}, \qquad \hat y = \sigma_{\text{win}}\,\hat{\tilde y} + \mu_{\text{win}} .
+$$
+
+This also handles distribution shift between train and test, which is endemic in
+forecasting. Note that DLinear's strong results depend partly on this — it is doing
+real work.
+
+**Scaled error metrics.** MASE scales by the in-sample naive forecast error:
+
+$$
+\text{MASE} = \frac{\frac{1}{H}\sum_{h}|y_{T+h} - \hat y_{T+h}|}{\frac{1}{T-m}\sum_{t=m+1}^{T}|y_t - y_{t-m}|},
+$$
+
+with $m$ the seasonal period. **MASE < 1 means you beat seasonal naive**, which is
+the only comparison that means anything across heterogeneous series.
+
+Avoid MAPE. It is undefined at zero, unbounded when actuals are small, and
+asymmetric — it penalises over-forecasting more than under-forecasting, which
+silently biases any model tuned against it.
+
+For probabilistic forecasts use the **pinball loss** at quantile $q$:
+
+$$
+L_q(y,\hat y) = \max\big(q(y - \hat y),\ (q-1)(y - \hat y)\big),
+$$
+
+which is minimised exactly at the true $q$-quantile — a proper scoring rule, so it
+cannot be gamed by mis-stating your uncertainty.
+
+<Tier level="frontier" />
+
+## Where this stands, as of 2026
+
+**Forecasting foundation models are real and their advantage is zero-shot, not
+peak accuracy.** Chronos tokenises series values and trains a language model on
+them; TimesFM is a decoder-only model pretrained on a large time-series corpus.
+Both forecast unseen series with no training at all, and both are typically
+matched or beaten by a well-tuned model fitted to your specific series. **The value
+is in not having to fit anything**, which matters enormously when you have ten
+thousand series and no time.
+
+**Chronos's approach is worth noting for what it implies.** Quantising real values
+into a fixed vocabulary and running a standard language model works — which
+suggests much of forecasting is pattern completion over discretised shapes rather
+than anything numerically special.
+
+**The benchmark problem is acknowledged but not fixed.** The standard long-horizon
+datasets remain in use despite the DLinear result showing they cannot discriminate
+between methods. New benchmarks exist and adoption is slow.
+
+**Gradient boosting still wins on tabular-style forecasting.** For demand
+forecasting with rich covariates — promotions, prices, calendars — LightGBM on
+engineered features remains the practical default, and this has not changed since
+M5.
+
+## Open problems
+
+- **Cold start.** A new product has no history. Hierarchical and cross-series
+  methods help; nothing works well.
+
+- **Distribution shift is the norm.** A pandemic, a price change, a competitor
+  entering — all break the assumption that the future resembles the past. Detecting
+  a regime change from a short window is close to impossible.
+
+- **Hierarchical coherence.** Forecasts at product, category and region level should
+  sum consistently. Reconciliation methods exist and reconciling *probabilistic*
+  forecasts coherently is unsolved.
+
+- **Interpretability is genuinely demanded here.** Forecasts drive decisions people
+  must justify. "The model said so" is often not acceptable, which keeps simple
+  methods in production regardless of accuracy.
+
+- **Evaluation windows are too short.** Reporting on one test split conflates model
+  quality with which period you happened to hold out. Rolling-origin evaluation is
+  correct and under-used.
+
+## What to read next, in order
+
+1. **Zeng et al. (2022), DLinear** — read it as methodology criticism. Short, and
+   the lesson about baselines transfers everywhere.
+2. **Nie et al. (2022), PatchTST** — patching and channel independence, and the
+   proper response to the criticism.
+3. **Makridakis et al. (2020), M4** — for what a large, honest empirical comparison
+   looks like, and the finding that hybrids beat pure methods.
+4. **Ansari et al. (2024), Chronos** — for the tokenise-and-language-model approach
+   and what it implies about the problem.
+
+<Papers papers={frontmatter.papers} />

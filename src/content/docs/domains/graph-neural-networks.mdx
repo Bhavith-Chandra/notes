@@ -1,0 +1,549 @@
+---
+title: Graph Neural Networks
+description: "Message passing, the Weisfeiler-Lehman expressivity ceiling, and the two failure modes — oversmoothing and oversquashing — that limit how deep a GNN can usefully be."
+sidebar:
+  order: 1
+depth: frontier
+readingTime: 35
+prereqs:
+  - label: "Transformers"
+    slug: "architectures/transformers"
+papers:
+  - title: "Semi-Supervised Classification with Graph Convolutional Networks (GCN)"
+    authors: "Thomas N. Kipf, Max Welling"
+    year: 2016
+    url: "https://arxiv.org/abs/1609.02907"
+  - title: "Inductive Representation Learning on Large Graphs (GraphSAGE)"
+    authors: "Hamilton, Ying, Leskovec"
+    year: 2017
+    url: "https://arxiv.org/abs/1706.02216"
+  - title: "Neural Message Passing for Quantum Chemistry (MPNN)"
+    authors: "Gilmer, Schoenholz, Riley, Vinyals, Dahl"
+    year: 2017
+    url: "https://arxiv.org/abs/1704.01212"
+  - title: "Graph Attention Networks (GAT)"
+    authors: "Veličković, Cucurull, Casanova, et al."
+    year: 2017
+    url: "https://arxiv.org/abs/1710.10903"
+  - title: "How Powerful are Graph Neural Networks? (GIN)"
+    authors: "Xu, Hu, Leskovec, Jegelka"
+    year: 2018
+    url: "https://arxiv.org/abs/1810.00826"
+  - title: "Deeper Insights into Graph Convolutional Networks for Semi-Supervised Learning"
+    authors: "Qimai Li, Zhichao Han, Xiao-Ming Wu"
+    year: 2018
+    url: "https://arxiv.org/abs/1801.07606"
+  - title: "On the Bottleneck of Graph Neural Networks and its Practical Implications"
+    authors: "Uri Alon, Eran Yahav"
+    year: 2020
+    url: "https://arxiv.org/abs/2006.05205"
+  - title: "Do Transformers Really Perform Bad for Graph Representation? (Graphormer)"
+    authors: "Ying, Cai, Luo, et al."
+    year: 2021
+    url: "https://arxiv.org/abs/2106.05234"
+  - title: "Benchmarking Graph Neural Networks"
+    authors: "Dwivedi, Joshi, Luu, Laurent, Bengio, Bresson"
+    year: 2020
+    url: "https://arxiv.org/abs/2003.00982"
+  - title: "Highly accurate protein structure prediction with AlphaFold"
+    authors: "Jumper, Evans, Pritzel, et al."
+    year: 2021
+    url: "https://doi.org/10.1038/s41586-021-03819-2"
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+<Abstract>
+A graph neural network passes messages along edges: each node repeatedly gathers
+information from its neighbours and updates itself. That single mechanism covers
+almost every GNN ever published — and it comes with a proven ceiling. Standard
+message passing cannot distinguish any two graphs that the Weisfeiler-Lehman
+colour refinement test cannot distinguish, which rules out counting triangles and
+telling some molecules apart.
+</Abstract>
+
+<KeyPoints>
+
+- **Message passing is the whole framework.** Aggregate from neighbours, combine with your own state, repeat. GCN, GraphSAGE, GAT and GIN differ only in the aggregate and combine functions.
+- **The aggregator must be permutation-invariant, and that constrains expressivity.** Neighbours have no canonical order, so you need a set function. Mean and max lose information that sum retains — which is exactly why GIN uses sum.
+- **Expressivity is capped by the 1-WL test.** No amount of width, depth or training lets standard message passing separate graphs 1-WL cannot. Cycle counting and many molecular distinctions fall outside it.
+- **Depth hurts, for two different reasons.** Oversmoothing makes all node representations converge as layers stack; oversquashing crushes exponentially many distant nodes through a fixed-width channel. Most useful GNNs are 2–4 layers.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## Why images and text don't cover this
+
+A sentence is a sequence — every token has a position, and "third from the left"
+means something. An image is a grid — every pixel has coordinates.
+
+A social network has neither. A user has friends, and there is no first friend, no
+canonical order, no fixed count. A molecule is atoms bonded to atoms; rotate your
+drawing and it is the same molecule.
+
+**Graphs have structure without coordinates**, and that is what needs a different
+architecture. Anything you compute must give the same answer if the nodes are
+relabelled.
+
+## Message passing
+
+The algorithm is simple enough to state completely.
+
+Every node starts with a feature vector. Then, repeatedly:
+
+1. Each node collects the vectors of its neighbours.
+2. It combines them into one summary — but the summary must not depend on the
+   *order* they arrived in, so it must be something like a sum, mean or max.
+3. It updates itself from its old state plus that summary.
+
+After one round, each node knows about its immediate neighbours. After two, about
+neighbours-of-neighbours. **After $k$ rounds, each node's representation depends on
+everything within $k$ hops.**
+
+<Aside type="tip" title="Depth means radius, not capacity">
+In a CNN, more layers mean more abstraction. In a GNN, more layers mean a larger
+*neighbourhood* — you are literally choosing how far information travels. That
+reframing explains why GNNs are shallow: three layers on a small-world graph
+already reaches most of it.
+</Aside>
+
+## The ceiling
+
+Here is the surprising part, and it is a theorem rather than an observation.
+
+Standard message passing **cannot distinguish** certain pairs of structurally
+different graphs. Consider two graphs: one is a single six-node ring; the other is
+two separate three-node triangles. Every node in both has exactly two neighbours.
+Every neighbourhood looks identical at every round.
+
+The messages are the same. The representations are the same. **No GNN of this type
+can tell them apart**, however wide, however deep, however trained.
+
+This exactly matches the limit of a 1960s graph-isomorphism heuristic — the
+Weisfeiler-Lehman colour refinement test — and that correspondence is the field's
+central theoretical result. It has practical consequences: counting triangles,
+detecting rings in molecules, and several other chemically meaningful properties
+sit outside what message passing can compute.
+
+## Why deeper isn't better
+
+Two distinct problems, often conflated.
+
+**Oversmoothing.** Each round mixes a node with its neighbours. Do this enough
+times and everything converges to the same value — like repeatedly averaging a
+picture with its blurred self until it is uniformly grey. Node representations
+become indistinguishable and classification collapses.
+
+**Oversquashing.** To see a node $k$ hops away, information must funnel through
+intermediate nodes. The number of nodes at distance $k$ grows exponentially; the
+vector carrying them is fixed-width. Exponentially much information is compressed
+into constant space, and most of it is destroyed.
+
+These pull in the same direction — keep it shallow — but they are different
+mechanisms, and the fixes differ.
+
+<Tier level="mechanics" />
+
+## One layer, drawn
+
+<Figure
+  lead="Gather, aggregate, update — and the neighbourhood grows with depth."
+  caption="Left: one layer of message passing. The aggregator must be permutation-invariant because neighbours arrive in no particular order, and that requirement is what limits expressivity — sum retains multiset information that mean and max discard. Right: the receptive field after k layers is the k-hop neighbourhood, which on a small-world graph covers most of the network within three steps. Depth in a GNN is a choice about radius, not about abstraction."
+>
+<svg viewBox="0 0 760 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A message passing layer and the growth of the receptive field with depth">
+  <defs>
+    <marker id="gn1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <text class="lb" x="170" y="18" text-anchor="middle">One layer at node v</text>
+
+  <circle class="f-green" cx="120" cy="50" r="15"/>
+  <text class="xs" x="120" y="55" text-anchor="middle">u₁</text>
+  <circle class="f-green" cx="60" cy="110" r="15"/>
+  <text class="xs" x="60" y="115" text-anchor="middle">u₂</text>
+  <circle class="f-green" cx="120" cy="170" r="15"/>
+  <text class="xs" x="120" y="175" text-anchor="middle">u₃</text>
+
+  <circle class="f-blue" cx="190" cy="110" r="20"/>
+  <text class="on-fill-sm" x="190" y="115" text-anchor="middle">v</text>
+
+  <path class="ar" d="M133,60 L173,98" marker-end="url(#gn1)"/>
+  <path class="ar" d="M78,110 L166,110" marker-end="url(#gn1)"/>
+  <path class="ar" d="M133,160 L173,122" marker-end="url(#gn1)"/>
+
+  <path class="ar" d="M212,110 L252,110" marker-end="url(#gn1)"/>
+  <rect class="f-purple" x="258" y="90" width="96" height="42" rx="5"/>
+  <text class="on-fill-sm" x="306" y="108" text-anchor="middle">AGGREGATE</text>
+  <text class="xs" x="306" y="124" text-anchor="middle">must be order-free</text>
+
+  <path class="ar" d="M358,111 L392,111" marker-end="url(#gn1)"/>
+  <rect class="f-amber" x="398" y="90" width="86" height="42" rx="5"/>
+  <text class="on-fill-sm" x="441" y="108" text-anchor="middle">COMBINE</text>
+  <text class="xs" x="441" y="124" text-anchor="middle">with h_v</text>
+
+  <path class="ar" d="M488,111 L520,111" marker-end="url(#gn1)"/>
+  <circle class="f-blue" cx="546" cy="110" r="20"/>
+  <text class="on-fill-sm" x="546" y="115" text-anchor="middle">h′_v</text>
+
+  <text class="xs" x="258" y="164">sum  → most expressive (retains multiset)</text>
+  <text class="xs" x="258" y="180">mean → loses counts</text>
+  <text class="xs" x="258" y="196">max  → loses counts and duplicates</text>
+
+  <line class="bx" x1="20" y1="212" x2="740" y2="212" opacity="0.3"/>
+
+  <text class="lb" x="20" y="236">Receptive field after k layers</text>
+  <circle class="f-blue" cx="250" cy="252" r="10"/>
+  <circle class="bx" cx="250" cy="252" r="18" opacity="0.65"/>
+  <circle class="bx" cx="250" cy="252" r="26" opacity="0.45"/>
+  <text class="xs" x="288" y="248">k = 1 : neighbours</text>
+  <text class="xs" x="288" y="264">k = 2 : neighbours of neighbours</text>
+  <text class="xs" x="470" y="248">k = 3 : on a small-world graph,</text>
+  <text class="xs" x="470" y="264">already most of the network</text>
+</svg>
+</Figure>
+
+## The four canonical variants
+
+<Tabs>
+<TabItem label="GCN">
+
+Symmetric-normalised mean over the neighbourhood including self-loops:
+
+$$
+H^{(l+1)} = \sigma\!\left(\tilde D^{-1/2}\tilde A\, \tilde D^{-1/2} H^{(l)} W^{(l)}\right).
+$$
+
+The $\tilde D^{-1/2}$ on both sides is the detail worth understanding. Plain
+$\tilde D^{-1}\tilde A$ (row normalisation) is a random walk; the symmetric version
+keeps the operator's eigenvalues in $[-1,1]$, which keeps repeated application
+stable. Without it, activations explode or vanish with depth.
+
+Simple, fast, and the mean aggregation is exactly what limits its expressivity.
+
+</TabItem>
+<TabItem label="GraphSAGE">
+
+Two contributions that mattered more than the architecture:
+
+**Neighbour sampling.** Sample a fixed number of neighbours rather than using all
+of them. This bounds the computation per node, which is what makes GNNs work on
+graphs with high-degree hubs — without it, one celebrity account with ten million
+followers dominates the batch.
+
+**Inductive learning.** Learn an aggregation *function* rather than per-node
+embeddings, so the model generalises to nodes never seen during training. GCN as
+originally formulated is transductive — the whole graph must be present at training
+time — which is unusable for a graph that grows.
+
+</TabItem>
+<TabItem label="GAT">
+
+Learn attention weights over neighbours instead of fixing them:
+
+$$
+\alpha_{ij} = \frac{\exp\big(\text{LeakyReLU}(a^{\top}[Wh_i \,\|\, Wh_j])\big)}{\sum_{k\in\mathcal{N}(i)}\exp\big(\text{LeakyReLU}(a^{\top}[Wh_i \,\|\, Wh_k])\big)} .
+$$
+
+The graph supplies the mask; attention supplies the weights. This is exactly a
+transformer restricted to attend only along edges — which is the observation that
+later motivated graph transformers.
+
+Better than uniform averaging when neighbours differ in relevance, and it does not
+raise the expressivity ceiling: attention weights are still a function of the
+neighbourhood multiset.
+
+</TabItem>
+<TabItem label="GIN">
+
+Designed backwards from the theory. Xu et al. asked what aggregator would be
+*maximally* expressive, and derived:
+
+$$
+h_v^{(l+1)} = \operatorname{MLP}^{(l)}\!\left((1+\epsilon)\,h_v^{(l)} + \sum_{u\in\mathcal{N}(v)} h_u^{(l)}\right).
+$$
+
+**Sum, not mean or max.** Sum is injective on multisets (given suitable features);
+mean cannot distinguish $\{a,b\}$ from $\{a,a,b,b\}$, and max cannot distinguish
+$\{a,b\}$ from $\{a,a,b\}$. The MLP then approximates an arbitrary injective
+function of that sum.
+
+GIN is provably as powerful as the 1-WL test — the ceiling for message passing —
+and no more.
+
+</TabItem>
+</Tabs>
+
+## Oversmoothing versus oversquashing
+
+| | Oversmoothing | Oversquashing |
+|---|---|---|
+| Symptom | all nodes converge to the same vector | distant information never arrives |
+| Cause | repeated averaging is a low-pass filter | exponential neighbourhood, fixed-width channel |
+| Shows up on | homophilous graphs, deep stacks | tasks needing long-range dependencies |
+| Fixes | residual connections, PairNorm, jumping knowledge | graph rewiring, virtual nodes, graph transformers |
+
+They are frequently conflated because both say "don't go deep". The distinction
+matters when choosing a fix: residual connections help oversmoothing and do nothing
+for oversquashing, because the bottleneck is bandwidth, not signal decay.
+
+<Aside type="caution" title="Check homophily before reaching for a GNN">
+GNNs assume connected nodes are similar — *homophily*. On heterophilous graphs
+(fraud networks, where fraudsters connect to legitimate accounts precisely to blend
+in), neighbourhood averaging actively destroys the signal. A plain MLP on node
+features frequently beats a GCN there, and this is a commonly-skipped baseline.
+</Aside>
+
+<Tier level="formal" />
+
+## The message passing framework
+
+Gilmer et al.'s formulation, which subsumes essentially every GNN:
+
+$$
+m_v^{(l+1)} = \bigoplus_{u \in \mathcal{N}(v)} M_l\big(h_v^{(l)},\, h_u^{(l)},\, e_{uv}\big),
+\qquad
+h_v^{(l+1)} = U_l\big(h_v^{(l)},\, m_v^{(l+1)}\big),
+$$
+
+with $\bigoplus$ a permutation-invariant aggregator, $M_l$ the message function,
+and $U_l$ the update function. For graph-level tasks a final readout pools all
+nodes:
+
+$$
+\hat y = R\big(\{h_v^{(L)} : v \in V\}\big).
+$$
+
+**Permutation equivariance** is the defining property:
+
+$$
+f(PAP^{\top},\, PX) = P\,f(A, X)
+$$
+
+for any permutation matrix $P$. Relabel the nodes and the outputs permute
+identically. This is the graph analogue of a CNN's translation equivariance, and it
+is why the aggregator must be a set function.
+
+## The Weisfeiler-Lehman bound
+
+The 1-WL colour refinement algorithm:
+
+$$
+c_v^{(0)} = \text{initial label}, \qquad
+c_v^{(l+1)} = \operatorname{HASH}\!\Big(c_v^{(l)},\ \{\!\{\, c_u^{(l)} : u \in \mathcal{N}(v) \,\}\!\}\Big),
+$$
+
+where $\{\!\{\cdot\}\!\}$ denotes a multiset. If two graphs' colour multisets differ
+at any round, they are non-isomorphic. If they never differ, the test cannot
+decide.
+
+**Xu et al.'s theorem.** Any message-passing GNN maps two graphs to the same
+representation whenever 1-WL assigns them the same colouring. So:
+
+$$
+\text{expressivity(MPNN)} \;\leq\; \text{expressivity(1-WL)} .
+$$
+
+The proof is a straightforward induction: if $c_u^{(l)} = c_{u'}^{(l)}$ for
+corresponding nodes at layer $l$, then the aggregated multisets are equal, so the
+updates are equal at layer $l+1$.
+
+**Achieving the bound requires injectivity.** GIN attains it because sum over a
+multiset of countable features is injective, and by universal approximation an MLP
+can represent the required injective map. Mean fails:
+
+$$
+\operatorname{mean}(\{a, b\}) = \operatorname{mean}(\{a,a,b,b\}),
+$$
+
+so any mean-aggregating GNN is *strictly* weaker than 1-WL — this is the formal
+reason GCN and GAT sit below GIN.
+
+**What lies outside.** 1-WL cannot count cycles or triangles, cannot distinguish
+regular graphs of the same degree, and cannot compute clustering coefficients.
+Since these are chemically and socially meaningful, the bound is a practical
+limitation rather than a curiosity. Higher-order $k$-WL variants are strictly more
+powerful and cost $O(n^k)$, which is why they are rare in practice.
+
+<Figure
+  lead="Two graphs no message-passing GNN can tell apart."
+  caption="A six-node ring and two disjoint triangles. Every node in both graphs has exactly two neighbours, and after any number of rounds every neighbourhood multiset is identical — so the colours never diverge and the graph-level representations are equal. This is not a training failure or a capacity limit: it is a proof. Since triangle counting and ring detection matter in chemistry, the bound is a practical constraint rather than a curiosity."
+>
+<svg viewBox="0 0 760 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Six-cycle versus two triangles, indistinguishable to the 1-WL test">
+  <text class="lb" x="150" y="18" text-anchor="middle">Graph A — one 6-ring</text>
+  <circle class="f-blue" cx="150" cy="46" r="13"/>
+  <circle class="f-blue" cx="204" cy="78" r="13"/>
+  <circle class="f-blue" cx="204" cy="142" r="13"/>
+  <circle class="f-blue" cx="150" cy="174" r="13"/>
+  <circle class="f-blue" cx="96" cy="142" r="13"/>
+  <circle class="f-blue" cx="96" cy="78" r="13"/>
+  <path class="bx" d="M161,53 L193,71 M204,91 L204,129 M193,149 L161,167 M139,167 L107,149 M96,129 L96,91 M107,71 L139,53" stroke-width="1.6"/>
+  <text class="xs" x="150" y="204" text-anchor="middle">every node: degree 2</text>
+
+  <line class="bx" x1="300" y1="14" x2="300" y2="248" opacity="0.3"/>
+
+  <text class="lb" x="450" y="18" text-anchor="middle">Graph B — two triangles</text>
+  <circle class="f-green" cx="400" cy="50" r="13"/>
+  <circle class="f-green" cx="360" cy="112" r="13"/>
+  <circle class="f-green" cx="440" cy="112" r="13"/>
+  <path class="bx" d="M390,60 L370,102 M410,60 L430,102 M373,112 L427,112" stroke-width="1.6"/>
+
+  <circle class="f-green" cx="400" cy="150" r="13" opacity="0"/>
+  <circle class="f-green" cx="530" cy="50" r="13"/>
+  <circle class="f-green" cx="490" cy="112" r="13"/>
+  <circle class="f-green" cx="570" cy="112" r="13"/>
+  <path class="bx" d="M520,60 L500,102 M540,60 L560,102 M503,112 L557,112" stroke-width="1.6"/>
+  <text class="xs" x="465" y="204" text-anchor="middle">every node: degree 2</text>
+
+  <line class="bx" x1="40" y1="222" x2="716" y2="222" opacity="0.3"/>
+  <rect class="f-pink" x="40" y="228" width="676" height="26" rx="4" opacity="0.5"/>
+  <text class="on-fill-sm" x="56" y="246">Identical colour multisets at every round → identical representations. No width, depth or training changes this.</text>
+</svg>
+</Figure>
+
+## Oversmoothing, formally
+
+For a GCN, propagation applies $\hat A = \tilde D^{-1/2}\tilde A \tilde D^{-1/2}$
+repeatedly. Its eigenvalues satisfy $\lambda_i \in (-1, 1]$ with $\lambda_1 = 1$.
+Writing $H^{(0)}$ in the eigenbasis $\{u_i\}$:
+
+$$
+\hat A^{L} H^{(0)} = \sum_i \lambda_i^{L}\,\langle u_i, H^{(0)}\rangle\, u_i \;\xrightarrow{L\to\infty}\; \langle u_1, H^{(0)}\rangle\, u_1 .
+$$
+
+Every component except the top eigenvector decays geometrically. The limit depends
+on $H^{(0)}$ only through its projection onto $u_1$ — which for the normalised
+adjacency is determined by node degrees. **All node representations converge to a
+function of degree alone**, and everything that distinguished them is gone.
+
+The rate is governed by the spectral gap $1 - |\lambda_2|$: a large gap means fast
+smoothing, so well-connected graphs oversmooth in fewer layers.
+
+**Why residual connections help.** With $H^{(l+1)} = \hat A H^{(l)} W + H^{(l)}$,
+the effective operator is $\hat A W + I$, whose spectrum is shifted away from the
+contraction — the identity term preserves a component of the original signal at
+every layer. Exactly the same mechanism as in
+[backpropagation](/foundations/backpropagation/).
+
+## Oversquashing, formally
+
+Alon & Yahav's argument. The number of nodes within $k$ hops grows roughly as
+
+$$
+|\mathcal{N}_k(v)| \sim \bar d^{\,k}
+$$
+
+for average degree $\bar d$. All of that information must pass through node $v$'s
+representation, of fixed size $h$. So the information per source node scales as
+
+$$
+\frac{h}{\bar d^{\,k}},
+$$
+
+decaying exponentially in $k$. A task requiring a specific fact from 5 hops away on
+a degree-10 graph is trying to route one signal out of $10^5$ through a
+fixed-width channel.
+
+The formal measure is the Jacobian sensitivity:
+
+$$
+\left\|\frac{\partial h_v^{(L)}}{\partial h_u^{(0)}}\right\|
+$$
+
+for $u$ at distance $L$ from $v$. Bounds show this decays exponentially in the
+distance, controlled by the graph's **Ricci curvature** at the bottleneck edges —
+negatively curved edges are the ones that squash. This is why rewiring methods
+target exactly those edges.
+
+**Note the contrast with oversmoothing.** Oversmoothing is signal *decay*;
+oversquashing is *bandwidth*. Adding residual connections fixes the first and not
+the second, because a residual does not widen the channel.
+
+## Graph transformers
+
+Attend over all node pairs rather than only along edges, injecting graph structure
+through the attention bias instead of the mask:
+
+$$
+A_{ij} = \frac{(h_i W_Q)(h_j W_K)^{\top}}{\sqrt{d}} + b_{\phi(i,j)} + c_{\text{edge}(i,j)},
+$$
+
+with $\phi(i,j)$ the shortest-path distance and $b$ a learned per-distance bias.
+Graphormer adds a *centrality* encoding to node features as well.
+
+**What this buys.** Every node reaches every other in one layer, so oversquashing
+disappears — there is no bottleneck to squash through. And because shortest-path
+distance is a stronger signal than the WL colouring, Graphormer provably exceeds
+1-WL expressivity.
+
+**What it costs.** $O(n^2)$ attention, so it is limited to small graphs —
+molecules, mostly, where $n$ is tens of atoms. It is not an option for a
+million-node social network, which is why message passing persists.
+
+<Tier level="frontier" />
+
+## Where this stands, as of 2026
+
+**Graph transformers dominate molecular property prediction; message passing
+dominates large-scale graphs.** The split is entirely about $n$. For molecules,
+quadratic attention is affordable and the expressivity gain is real. For web-scale
+graphs it is not, and sampled message passing remains the only practical option.
+
+**AlphaFold is the field's landmark application**, and worth being precise about:
+it is not a plain GNN. Its Evoformer operates on a pair representation with
+triangle updates enforcing geometric consistency — closer to a graph transformer
+with domain-specific structure than to a message-passing network. The lesson
+generally drawn is that heavy domain structure beats generic architectures on
+scientific problems.
+
+**Positional encodings partially lift the WL ceiling.** Laplacian eigenvectors,
+random-walk encodings, and shortest-path features all inject information message
+passing cannot derive, raising expressivity without $k$-WL's cost. This is the most
+active area and none of the schemes is clearly best.
+
+**Benchmarks were bad and are improving.** Dwivedi et al. showed that the standard
+small citation datasets could not distinguish architectures — differences fell
+inside seed variance. Many pre-2020 GNN comparisons should be read with that in
+mind. Larger, better-designed benchmarks have since replaced them.
+
+## Open problems
+
+- **Expressivity beyond 1-WL is expensive.** $k$-WL costs $O(n^k)$. Positional
+  encodings are cheap heuristics without clean guarantees. There is no known
+  method that is both provably more expressive and scalable.
+
+- **Heterophily is under-served.** Most architectures assume connected nodes are
+  similar. Fraud detection, adversarial networks, and many biological graphs
+  violate this, and specialised methods do not transfer well between them.
+
+- **Scaling is a systems problem.** Neighbour explosion makes minibatching genuinely
+  hard — sampling introduces variance, and full-batch training does not fit. Neither
+  answer is satisfactory.
+
+- **Dynamic graphs are unsolved.** Most methods assume a static graph. Real graphs
+  change continuously, and recomputing embeddings on every edge insertion is
+  infeasible.
+
+- **No foundation model for graphs.** Unlike text or images, graphs from different
+  domains share no common vocabulary — a molecule and a social network have nothing
+  transferable. Whether a general graph pretraining objective exists is genuinely
+  open.
+
+## What to read next, in order
+
+1. **Xu et al. (2018), GIN** — the WL connection. The most important theoretical
+   result here and the paper is readable.
+2. **Alon & Yahav (2020)** — oversquashing, with the bottleneck experiment that
+   makes it concrete.
+3. **Hamilton et al. (2017), GraphSAGE** — for sampling and inductive learning,
+   which is what makes GNNs deployable.
+4. **Dwivedi et al. (2020)** — read it before trusting any GNN benchmark comparison.
+
+<Papers papers={frontmatter.papers} />

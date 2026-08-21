@@ -109,6 +109,11 @@ export default defineConfig({
           items: [{ autogenerate: { directory: 'systems' } }],
         },
         {
+          label: 'Domains',
+          collapsed: true,
+          items: [{ autogenerate: { directory: 'domains' } }],
+        },
+        {
           label: 'Reference',
           collapsed: true,
           items: [{ autogenerate: { directory: 'reference' } }],
