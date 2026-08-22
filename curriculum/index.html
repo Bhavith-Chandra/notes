@@ -1,0 +1,540 @@
+<!DOCTYPE html><html lang="en" dir="ltr" data-theme="dark" data-has-toc data-has-sidebar class="astro-vdxcvpsm"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>Reading Order | ML Atlas</title><link rel="canonical" href="https://bhavith-chandra.github.io/notes/curriculum/"/><link rel="sitemap" href="/notes/sitemap-index.xml"/><link rel="shortcut icon" href="/notes/favicon.svg" type="image/svg+xml"/><meta name="generator" content="Astro v7.2.4"/><meta name="generator" content="Starlight v0.41.7"/><meta property="og:title" content="Reading Order"/><meta property="og:type" content="article"/><meta property="og:url" content="https://bhavith-chandra.github.io/notes/curriculum/"/><meta property="og:locale" content="en"/><meta property="og:description" content="The whole atlas in prerequisite order — nine sections, 49 pages, about 30 hours — plus three shorter tracks for people who need a specific subset."/><meta property="og:site_name" content="ML Atlas"/><meta name="twitter:card" content="summary_large_image"/><meta name="description" content="The whole atlas in prerequisite order — nine sections, 49 pages, about 30 hours — plus three shorter tracks for people who need a specific subset."/><script>
+	window.StarlightThemeProvider = (() => {
+		const storedTheme =
+			typeof localStorage !== 'undefined' && localStorage.getItem('starlight-theme');
+		const theme =
+			storedTheme ||
+			(window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+		document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark';
+		return {
+			updatePickers(theme = storedTheme || 'auto') {
+				document.querySelectorAll('starlight-theme-select').forEach((picker) => {
+					const select = picker.querySelector('select');
+					if (select) select.value = theme;
+					/** @type {HTMLTemplateElement | null} */
+					const tmpl = document.querySelector(`#theme-icons`);
+					const newIcon = tmpl && tmpl.content.querySelector('.' + theme);
+					if (newIcon) {
+						const oldIcon = picker.querySelector('svg.label-icon');
+						if (oldIcon) {
+							oldIcon.replaceChildren(...newIcon.cloneNode(true).childNodes);
+						}
+					}
+				});
+			},
+		};
+	})();
+</script><template id="theme-icons"><svg aria-hidden="true" class="light astro-n5k4ipy7" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M5 12a1 1 0 0 0-1-1H3a1 1 0 0 0 0 2h1a1 1 0 0 0 1-1Zm.64 5-.71.71a1 1 0 0 0 0 1.41 1 1 0 0 0 1.41 0l.71-.71A1 1 0 0 0 5.64 17ZM12 5a1 1 0 0 0 1-1V3a1 1 0 0 0-2 0v1a1 1 0 0 0 1 1Zm5.66 2.34a1 1 0 0 0 .7-.29l.71-.71a1 1 0 1 0-1.41-1.41l-.66.71a1 1 0 0 0 0 1.41 1 1 0 0 0 .66.29Zm-12-.29a1 1 0 0 0 1.41 0 1 1 0 0 0 0-1.41l-.71-.71a1.004 1.004 0 1 0-1.43 1.41l.73.71ZM21 11h-1a1 1 0 0 0 0 2h1a1 1 0 0 0 0-2Zm-2.64 6A1 1 0 0 0 17 18.36l.71.71a1 1 0 0 0 1.41 0 1 1 0 0 0 0-1.41l-.76-.66ZM12 6.5a5.5 5.5 0 1 0 5.5 5.5A5.51 5.51 0 0 0 12 6.5Zm0 9a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Zm0 3.5a1 1 0 0 0-1 1v1a1 1 0 0 0 2 0v-1a1 1 0 0 0-1-1Z"/></svg><svg aria-hidden="true" class="dark astro-n5k4ipy7" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21.64 13a1 1 0 0 0-1.05-.14 8.049 8.049 0 0 1-3.37.73 8.15 8.15 0 0 1-8.14-8.1 8.59 8.59 0 0 1 .25-2A1 1 0 0 0 8 2.36a10.14 10.14 0 1 0 14 11.69 1 1 0 0 0-.36-1.05Zm-9.5 6.69A8.14 8.14 0 0 1 7.08 5.22v.27a10.15 10.15 0 0 0 10.14 10.14 9.784 9.784 0 0 0 2.1-.22 8.11 8.11 0 0 1-7.18 4.32v-.04Z"/></svg><svg aria-hidden="true" class="auto astro-n5k4ipy7" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21 14h-1V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v7H3a1 1 0 0 0-1 1v2a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-2a1 1 0 0 0-1-1ZM6 7a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7H6V7Zm14 10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-1h16v1Z"/></svg></template><link rel="stylesheet" href="/notes/_astro/print.ehPL0gv-.css" media="print"><link rel="stylesheet" href="/notes/_astro/common.Dl9UQXQS.css"><style>@layer starlight.components{.card:where(.astro-zts4jgjd){--sl-card-border:var(--sl-color-purple);--sl-card-bg:var(--sl-color-purple-low);border:1px solid var(--sl-color-gray-5);background-color:var(--sl-color-black);flex-direction:column;gap:clamp(.5rem,.125rem + 1vw,1rem);padding:clamp(1rem,.125rem + 3vw,2.5rem)}.card:where(.astro-zts4jgjd):nth-child(4n+1){--sl-card-border:var(--sl-color-orange);--sl-card-bg:var(--sl-color-orange-low)}.card:where(.astro-zts4jgjd):nth-child(4n+3){--sl-card-border:var(--sl-color-green);--sl-card-bg:var(--sl-color-green-low)}.card:where(.astro-zts4jgjd):nth-child(4n+4){--sl-card-border:var(--sl-color-red);--sl-card-bg:var(--sl-color-red-low)}.card:where(.astro-zts4jgjd):nth-child(4n+5){--sl-card-border:var(--sl-color-blue);--sl-card-bg:var(--sl-color-blue-low)}.title:where(.astro-zts4jgjd){font-weight:600;font-size:var(--sl-text-h4);color:var(--sl-color-white);line-height:var(--sl-line-height-headings);align-items:center;gap:1rem}.card:where(.astro-zts4jgjd) .icon:where(.astro-zts4jgjd){border:1px solid var(--sl-card-border);background-color:var(--sl-card-bg);border-radius:.25rem;flex-shrink:0;padding:.2em}.card:where(.astro-zts4jgjd) .body:where(.astro-zts4jgjd){font-size:clamp(var(--sl-text-sm), calc(.5rem + 1vw), var(--sl-text-body));margin:0}}
+@layer starlight.components{.card-grid:where(.astro-lmor3ela){grid-template-columns:100%;gap:1rem;display:grid}.card-grid:where(.astro-lmor3ela)>*{margin-top:0!important}@media (width>=50rem){.card-grid:where(.astro-lmor3ela){grid-template-columns:1fr 1fr;gap:1.5rem}.stagger:where(.astro-lmor3ela){--stagger-height:5rem;padding-bottom:var(--stagger-height)}.stagger:where(.astro-lmor3ela)>:nth-child(2n){transform:translateY(var(--stagger-height))}}}
+@layer starlight.components{svg:where(.astro-n5k4ipy7){color:var(--sl-icon-color);font-size:var(--sl-icon-size,1em);width:1em;height:1em}}
+@layer starlight.components{starlight-tabs:where(.astro-hbt4ddzs){display:block}.tablist-wrapper:where(.astro-hbt4ddzs){overflow-x:auto}:where(.astro-hbt4ddzs)[role=tablist]{border-bottom:2px solid var(--sl-color-gray-5);padding:0;list-style:none;display:flex}.tab:where(.astro-hbt4ddzs){display:flex}.tab:where(.astro-hbt4ddzs)>:where(.astro-hbt4ddzs)[role=tab]{--sl-tab-color-border:var(--sl-color-gray-5);line-height:var(--sl-line-height-headings);box-shadow:0 2px 0 var(--sl-tab-color-border);color:var(--sl-color-gray-3);outline-offset:var(--sl-outline-offset-inside);overflow-wrap:initial;align-items:center;gap:.5rem;padding:.275rem 1.25rem;text-decoration:none;display:flex}.tab:where(.astro-hbt4ddzs) :where(.astro-hbt4ddzs)[role=tab][aria-selected=true]{--sl-tab-color-border:var(--sl-color-text-accent);color:var(--sl-color-white);font-weight:600}.tablist-wrapper:where(.astro-hbt4ddzs)~[role=tabpanel]{margin-top:1rem}}
+@layer starlight.components{.sl-link-card:where(.astro-vodiqeol){border:1px solid var(--sl-color-gray-5);box-shadow:var(--sl-shadow-sm);border-radius:.5rem;grid-template-columns:1fr auto;gap:.5rem;padding:1rem;display:grid;position:relative}a:where(.astro-vodiqeol){line-height:var(--sl-line-height-headings);text-decoration:none}a:where(.astro-vodiqeol):before{content:"";position:absolute;inset:0}.stack:where(.astro-vodiqeol){flex-direction:column;gap:.5rem}.title:where(.astro-vodiqeol){color:var(--sl-color-white);font-weight:600;font-size:var(--sl-text-lg)}.description:where(.astro-vodiqeol){color:var(--sl-color-gray-3);line-height:1.5}.icon:where(.astro-vodiqeol){color:var(--sl-color-gray-3)}.sl-link-card:where(.astro-vodiqeol):hover{background:var(--sl-color-gray-7,var(--sl-color-gray-6));border-color:var(--sl-color-gray-2)}.sl-link-card:where(.astro-vodiqeol):hover .icon:where(.astro-vodiqeol){color:var(--sl-color-white)}}
+@layer starlight.components{.sl-steps{--bullet-size:calc(var(--sl-line-height) * 1rem);--bullet-margin:.375rem;counter-reset:steps-counter var(--sl-steps-start,0);padding-inline-start:0;list-style:none}.sl-steps>li{counter-increment:steps-counter;padding-inline-start:calc(var(--bullet-size) + 1rem);min-height:calc(var(--bullet-size) + var(--bullet-margin));padding-bottom:1px;position:relative}.sl-steps>li+li{margin-top:0}.sl-steps>li:before{content:counter(steps-counter);top:0;width:var(--bullet-size);height:var(--bullet-size);line-height:var(--bullet-size);font-size:var(--sl-text-xs);text-align:center;color:var(--sl-color-white);background-color:var(--sl-color-gray-6);box-shadow:inset 0 0 0 1px var(--sl-color-gray-5);border-radius:99rem;font-weight:600;position:absolute;inset-inline-start:0}.sl-steps>li:after{--guide-width:1px;content:"";top:calc(var(--bullet-size) + var(--bullet-margin));bottom:var(--bullet-margin);width:var(--guide-width);background-color:var(--sl-color-hairline-light);position:absolute;inset-inline-start:calc((var(--bullet-size) - var(--guide-width)) / 2)}}@layer starlight.content{.sl-steps>li>:first-child{--lh:calc(1em * var(--sl-line-height));--shift-y:calc(.5 * (var(--bullet-size) - var(--lh)));transform:translateY(var(--shift-y));margin-bottom:var(--shift-y)}.sl-steps>li>:first-child:where(h1,h2,h3,h4,h5,h6){--lh:calc(1em * var(--sl-line-height-headings))}@supports (--prop:1lh){.sl-steps>li>:first-child{--lh:1lh}}}
+@layer starlight.components{starlight-file-tree:where(.astro-r3uioum7){--x-space:1.5rem;--y-space:.125rem;--y-pad:0;border:1px solid var(--sl-color-gray-5);background-color:var(--sl-color-gray-6);font-size:var(--sl-text-xs);font-family:var(--__sl-font-mono);padding:1rem;display:block;overflow-x:auto}starlight-file-tree:where(.astro-r3uioum7) .directory>details{padding:0;background:0 0;border:0;padding-inline-start:var(--x-space)}starlight-file-tree:where(.astro-r3uioum7) .directory>details>summary{padding:var(--y-pad) .625rem;color:var(--sl-color-white);border:0;max-width:100%;margin-inline-start:calc(-1 * var(--x-space));font-weight:400}starlight-file-tree:where(.astro-r3uioum7) .directory>details>summary::marker,starlight-file-tree:where(.astro-r3uioum7) .directory>details>summary::-webkit-details-marker{color:var(--sl-color-gray-3)}starlight-file-tree:where(.astro-r3uioum7) .directory>details>summary:hover,starlight-file-tree:where(.astro-r3uioum7) .directory>details>summary:hover .tree-icon{cursor:pointer;color:var(--sl-color-text-accent);fill:currentColor}starlight-file-tree:where(.astro-r3uioum7) .directory>details>summary:hover~ul{border-color:var(--sl-color-gray-4)}starlight-file-tree:where(.astro-r3uioum7) .directory>details>summary:hover .highlight .tree-icon{color:var(--sl-color-text-invert);fill:currentColor}starlight-file-tree:where(.astro-r3uioum7) ul{border-inline-start:1px solid var(--sl-color-gray-5);margin-inline-start:.5rem;padding:0;padding-inline-start:.125rem;list-style:none}starlight-file-tree:where(.astro-r3uioum7)>ul{border:0;margin:0;padding:0}starlight-file-tree:where(.astro-r3uioum7) li{margin:var(--y-space) 0;padding:var(--y-pad) 0}starlight-file-tree:where(.astro-r3uioum7) .file{color:var(--sl-color-white);margin-inline-start:calc(var(--x-space) - .125rem)}starlight-file-tree:where(.astro-r3uioum7) .tree-entry{flex-wrap:wrap;align-items:flex-start;max-width:calc(100% - 1rem);display:inline-flex}@media (width>=30em){starlight-file-tree:where(.astro-r3uioum7) .tree-entry{flex-wrap:nowrap}}starlight-file-tree:where(.astro-r3uioum7) .tree-entry>:first-child{flex-shrink:0}starlight-file-tree:where(.astro-r3uioum7) .empty{color:var(--sl-color-gray-3);padding-inline-start:.375rem}starlight-file-tree:where(.astro-r3uioum7) .comment{color:var(--sl-color-gray-3);min-width:12rem;max-width:24rem;padding-inline-start:1.625rem}starlight-file-tree:where(.astro-r3uioum7) .highlight{color:var(--sl-color-text-invert);background-color:var(--sl-color-text-accent);border-radius:.25rem;padding-inline-end:.5rem;display:inline-block}starlight-file-tree:where(.astro-r3uioum7) svg{fill:var(--sl-color-gray-3);vertical-align:middle;width:.875rem;height:.875rem;margin-inline:.25rem .375rem;display:inline}starlight-file-tree:where(.astro-r3uioum7) .highlight svg.tree-icon{fill:currentColor}}
+</style><script type="module" src="/notes/_astro/page.Dwipeu-R.js"></script></head><body class="astro-vdxcvpsm"><a class="sl-skip-link astro-vxeigawq" href="#_top">Skip to content</a><div class="page sl-flex astro-gqpr5s5a"><header class="header astro-gqpr5s5a"><div class="header astro-nczgtkxc"><div class="title-wrapper sl-flex astro-nczgtkxc"><a href="/notes/" class="site-title sl-flex astro-clw6ags5"><span class="astro-clw6ags5" translate="no">ML Atlas</span></a></div><div class="sl-flex print:hidden astro-nczgtkxc"><site-search class="astro-nczgtkxc astro-r5ar4xm7" data-translations="{&quot;placeholder&quot;:&quot;Search&quot;}"><button data-open-modal disabled aria-label="Search" aria-keyshortcuts="Control+K" class="astro-r5ar4xm7"><svg aria-hidden="true" class="astro-r5ar4xm7 astro-n5k4ipy7" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21.71 20.29 18 16.61A9 9 0 1 0 16.61 18l3.68 3.68a.999.999 0 0 0 1.42 0 1 1 0 0 0 0-1.39ZM11 18a7 7 0 1 1 0-14 7 7 0 0 1 0 14Z"/></svg><span class="sl-hidden md:sl-block astro-r5ar4xm7" aria-hidden="true">Search</span><kbd class="sl-hidden md:sl-flex astro-r5ar4xm7" style="display: none;"><kbd class="astro-r5ar4xm7">Ctrl</kbd><kbd class="astro-r5ar4xm7">K</kbd></kbd></button><dialog style="padding:0" aria-label="Search" class="astro-r5ar4xm7"><div class="dialog-frame sl-flex astro-r5ar4xm7"><button data-close-modal class="sl-flex md:sl-hidden astro-r5ar4xm7">Cancel</button><div class="search-container astro-r5ar4xm7"><div id="starlight__search" class="astro-r5ar4xm7"></div></div></div></dialog></site-search><script>
+	(() => {
+		const openBtn = document.querySelector('button[data-open-modal]');
+		const shortcut = openBtn?.querySelector('kbd');
+		if (!openBtn || !(shortcut instanceof HTMLElement)) return;
+		const platformKey = shortcut.querySelector('kbd');
+		if (platformKey && /(Mac|iPhone|iPod|iPad)/i.test(navigator.platform)) {
+			platformKey.textContent = '⌘';
+			openBtn.setAttribute('aria-keyshortcuts', 'Meta+K');
+		}
+		shortcut.style.display = '';
+	})();
+</script><script type="module" src="/notes/_astro/Search.astro_astro_type_script_index_0_lang.CST4qaEa.js"></script></div><div class="sl-hidden md:sl-flex print:hidden right-group astro-nczgtkxc"><div class="sl-flex social-icons astro-nczgtkxc"></div><starlight-theme-select><label style="--sl-select-width: 6.25em" class="astro-r2p65idu"><span class="sr-only astro-r2p65idu">Select theme</span><svg aria-hidden="true" class="icon label-icon astro-r2p65idu astro-n5k4ipy7" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21 14h-1V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v7H3a1 1 0 0 0-1 1v2a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-2a1 1 0 0 0-1-1ZM6 7a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7H6V7Zm14 10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-1h16v1Z"/></svg><select autocomplete="off" class="astro-r2p65idu"><option value="dark" class="astro-r2p65idu">Dark</option><option value="light" class="astro-r2p65idu">Light</option><option value="auto" selected class="astro-r2p65idu">Auto</option></select><svg aria-hidden="true" class="icon caret astro-r2p65idu astro-n5k4ipy7" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M17 9.17a1 1 0 0 0-1.41 0L12 12.71 8.46 9.17a1 1 0 1 0-1.41 1.42l4.24 4.24a1.002 1.002 0 0 0 1.42 0L17 10.59a1.002 1.002 0 0 0 0-1.42Z"/></svg></label></starlight-theme-select><script>
+	StarlightThemeProvider.updatePickers();
+</script><script type="module">var e=`starlight-theme`,t=e=>e===`auto`||e===`dark`||e===`light`?e:`auto`,n=()=>t(typeof localStorage<`u`&&localStorage.getItem(e));function r(t){typeof localStorage<`u`&&localStorage.setItem(e,t===`light`||t===`dark`?t:``)}var i=()=>matchMedia(`(prefers-color-scheme: light)`).matches?`light`:`dark`;function a(e){StarlightThemeProvider.updatePickers(e),document.documentElement.dataset.theme=e===`auto`?i():e,r(e)}matchMedia(`(prefers-color-scheme: light)`).addEventListener(`change`,()=>{n()===`auto`&&a(`auto`)});var o=class extends HTMLElement{constructor(){super(),a(n()),this.querySelector(`select`)?.addEventListener(`change`,e=>{e.currentTarget instanceof HTMLSelectElement&&a(t(e.currentTarget.value))})}};customElements.define(`starlight-theme-select`,o);</script><script type="module">var e=class extends HTMLElement{constructor(){super();let e=this.querySelector(`select`);e&&(e.addEventListener(`change`,e=>{e.currentTarget instanceof HTMLSelectElement&&(window.location.pathname=e.currentTarget.value)}),window.addEventListener(`pageshow`,t=>{if(!t.persisted)return;let n=e.querySelector(`option[selected]`)?.index;n!==e.selectedIndex&&(e.selectedIndex=n??0)}))}};customElements.define(`starlight-lang-select`,e);</script></div></div></header><nav class="sidebar print:hidden astro-gqpr5s5a" aria-label="Main"><starlight-menu-button class="print:hidden astro-vvx7mffu"><button aria-expanded="false" aria-label="Menu" aria-controls="starlight__sidebar" class="sl-flex md:sl-hidden astro-vvx7mffu"><svg aria-hidden="true" class="open-menu astro-vvx7mffu astro-n5k4ipy7" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M3 8h18a1 1 0 1 0 0-2H3a1 1 0 0 0 0 2Zm18 8H3a1 1 0 0 0 0 2h18a1 1 0 0 0 0-2Zm0-5H3a1 1 0 0 0 0 2h18a1 1 0 0 0 0-2Z"/></svg><svg aria-hidden="true" class="close-menu astro-vvx7mffu astro-n5k4ipy7" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="m13.41 12 6.3-6.29a1.004 1.004 0 1 0-1.42-1.42L12 10.59l-6.29-6.3a1.004 1.004 0 0 0-1.42 1.42l6.3 6.29-6.3 6.29a1 1 0 0 0 0 1.42.998.998 0 0 0 1.42 0l6.29-6.3 6.29 6.3a.999.999 0 0 0 1.42 0 1 1 0 0 0 0-1.42L13.41 12Z"/></svg></button></starlight-menu-button><script type="module">var e=class extends HTMLElement{btn=this.querySelector(`button`);constructor(){super(),this.btn.addEventListener(`click`,()=>this.toggleExpanded());let e=this.closest(`nav`);e&&e.addEventListener(`keyup`,e=>this.closeOnEscape(e)),matchMedia(`(min-width: 50em)`).addEventListener(`change`,()=>this.setExpanded(!1))}setExpanded(e){this.setAttribute(`aria-expanded`,String(e)),document.body.toggleAttribute(`data-mobile-menu-expanded`,e),document.querySelectorAll(`.main-frame, .sl-skip-link`).forEach(t=>{t.toggleAttribute(`inert`,e)})}toggleExpanded(){this.setExpanded(this.getAttribute(`aria-expanded`)!==`true`)}closeOnEscape(e){e.code===`Escape`&&(this.setExpanded(!1),this.btn.focus())}};customElements.define(`starlight-menu-button`,e);</script><div id="starlight__sidebar" class="sidebar-pane astro-gqpr5s5a"><div class="sidebar-content sl-flex astro-gqpr5s5a"><sl-sidebar-state-persist data-hash="0fp6m93" class="astro-f5yvicm7"><script aria-hidden="true">
+		(() => {
+			try {
+				if (!matchMedia('(min-width: 50em)').matches) return;
+				/** @type {HTMLElement | null} */
+				const target = document.querySelector('sl-sidebar-state-persist');
+				const state = JSON.parse(sessionStorage.getItem('sl-sidebar-state') || '0');
+				if (!target || !state || target.dataset.hash !== state.hash) return;
+				window._starlightScrollRestore = state.scroll;
+				customElements.define(
+					'sl-sidebar-restore',
+					class SidebarRestore extends HTMLElement {
+						connectedCallback() {
+							try {
+								const idx = parseInt(this.dataset.index || '');
+								const details = this.closest('details');
+								if (details && typeof state.open[idx] === 'boolean') details.open = state.open[idx];
+							} catch {}
+						}
+					}
+				);
+			} catch {}
+		})();
+	</script><ul class="top-level astro-ojxuodky"><li class="astro-ojxuodky"><details open class="astro-ojxuodky"><summary class="astro-ojxuodky"><span class="group-label astro-ojxuodky"><span class="large astro-ojxuodky">Start here</span></span><svg aria-hidden="true" class="caret astro-ojxuodky astro-n5k4ipy7" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="0"></sl-sidebar-restore><ul class="astro-ojxuodky"><li class="astro-ojxuodky"><a href="/notes/" class="astro-ojxuodky"><span class="astro-ojxuodky">What this is</span></a></li><li class="astro-ojxuodky"><a href="/notes/how-to-read/" class="astro-ojxuodky"><span class="astro-ojxuodky">How to read a page</span></a></li><li class="astro-ojxuodky"><a href="/notes/curriculum/" aria-current="page" class="astro-ojxuodky"><span class="astro-ojxuodky">Reading order</span></a></li></ul></details></li><li class="astro-ojxuodky"><details open class="astro-ojxuodky"><summary class="astro-ojxuodky"><span class="group-label astro-ojxuodky"><span class="large astro-ojxuodky">1 · Foundations</span></span><svg aria-hidden="true" class="caret astro-ojxuodky astro-n5k4ipy7" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="1"></sl-sidebar-restore><ul class="astro-ojxuodky"><li class="astro-ojxuodky"><a href="/notes/foundations/backpropagation/" class="astro-ojxuodky"><span class="astro-ojxuodky">Backpropagation</span></a></li><li class="astro-ojxuodky"><a href="/notes/foundations/probability-for-ml/" class="astro-ojxuodky"><span class="astro-ojxuodky">Probability for ML</span></a></li><li class="astro-ojxuodky"><a href="/notes/foundations/tokenization/" class="astro-ojxuodky"><span class="astro-ojxuodky">Tokenization</span></a></li><li class="astro-ojxuodky"><a href="/notes/foundations/representations/" class="astro-ojxuodky"><span class="astro-ojxuodky">Representations</span></a></li><li class="astro-ojxuodky"><a href="/notes/foundations/latent-spaces/" class="astro-ojxuodky"><span class="astro-ojxuodky">Latent spaces, in depth</span></a></li><li class="astro-ojxuodky"><a href="/notes/foundations/state-representations/" class="astro-ojxuodky"><span class="astro-ojxuodky">Catalogue: state representations</span></a></li><li class="astro-ojxuodky"><a href="/notes/foundations/generalization/" class="astro-ojxuodky"><span class="astro-ojxuodky">Generalization</span></a></li><li class="astro-ojxuodky"><a href="/notes/foundations/evaluation/" class="astro-ojxuodky"><span class="astro-ojxuodky">Evaluation</span></a></li><li class="astro-ojxuodky"><a href="/notes/foundations/interpretability/" class="astro-ojxuodky"><span class="astro-ojxuodky">Interpretability</span></a></li><li class="astro-ojxuodky"><a href="/notes/foundations/causal-inference/" class="astro-ojxuodky"><span class="astro-ojxuodky">Causal Inference</span></a></li></ul></details></li><li class="astro-ojxuodky"><details open class="astro-ojxuodky"><summary class="astro-ojxuodky"><span class="group-label astro-ojxuodky"><span class="large astro-ojxuodky">2 · Encoders</span></span><svg aria-hidden="true" class="caret astro-ojxuodky astro-n5k4ipy7" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="2"></sl-sidebar-restore><ul class="astro-ojxuodky"><li class="astro-ojxuodky"><a href="/notes/encoders/" class="astro-ojxuodky"><span class="astro-ojxuodky">Encoders: overview</span></a></li><li class="astro-ojxuodky"><a href="/notes/encoders/neural-encoders/" class="astro-ojxuodky"><span class="astro-ojxuodky">Neural Encoders</span></a></li><li class="astro-ojxuodky"><a href="/notes/encoders/encoder-decoder/" class="astro-ojxuodky"><span class="astro-ojxuodky">Encoder–Decoder Architectures</span></a></li><li class="astro-ojxuodky"><a href="/notes/encoders/feature-encoding/" class="astro-ojxuodky"><span class="astro-ojxuodky">Feature Encoding</span></a></li></ul></details></li><li class="astro-ojxuodky"><details class="astro-ojxuodky"><summary class="astro-ojxuodky"><span class="group-label astro-ojxuodky"><span class="large astro-ojxuodky">3 · Architectures</span></span><svg aria-hidden="true" class="caret astro-ojxuodky astro-n5k4ipy7" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="3"></sl-sidebar-restore><ul class="astro-ojxuodky"><li class="astro-ojxuodky"><a href="/notes/architectures/transformers/" class="astro-ojxuodky"><span class="astro-ojxuodky">Transformers</span></a></li><li class="astro-ojxuodky"><a href="/notes/architectures/state-space-models/" class="astro-ojxuodky"><span class="astro-ojxuodky">State Space Models</span></a></li><li class="astro-ojxuodky"><a href="/notes/architectures/mixture-of-experts/" class="astro-ojxuodky"><span class="astro-ojxuodky">Mixture of Experts</span></a></li><li class="astro-ojxuodky"><a href="/notes/architectures/generative-models/" class="astro-ojxuodky"><span class="astro-ojxuodky">Catalogue: generative models</span></a></li><li class="astro-ojxuodky"><a href="/notes/architectures/diffusion/" class="astro-ojxuodky"><span class="astro-ojxuodky">Diffusion Models</span></a></li><li class="astro-ojxuodky"><a href="/notes/architectures/energy-based-models/" class="astro-ojxuodky"><span class="astro-ojxuodky">Energy-Based Models</span></a></li><li class="astro-ojxuodky"><a href="/notes/architectures/jepa/" class="astro-ojxuodky"><span class="astro-ojxuodky">Joint-Embedding Predictive Architectures</span></a></li><li class="astro-ojxuodky"><a href="/notes/architectures/multimodal/" class="astro-ojxuodky"><span class="astro-ojxuodky">Multimodal Models</span></a></li></ul></details></li><li class="astro-ojxuodky"><details class="astro-ojxuodky"><summary class="astro-ojxuodky"><span class="group-label astro-ojxuodky"><span class="large astro-ojxuodky">4 · Embeddings</span></span><svg aria-hidden="true" class="caret astro-ojxuodky astro-n5k4ipy7" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="4"></sl-sidebar-restore><ul class="astro-ojxuodky"><li class="astro-ojxuodky"><a href="/notes/embeddings/" class="astro-ojxuodky"><span class="astro-ojxuodky">Embeddings — Start Here</span></a></li><li class="astro-ojxuodky"><a href="/notes/embeddings/word-embeddings/" class="astro-ojxuodky"><span class="astro-ojxuodky">Word Embeddings</span></a></li><li class="astro-ojxuodky"><a href="/notes/embeddings/text-embeddings/" class="astro-ojxuodky"><span class="astro-ojxuodky">Text Embeddings</span></a></li><li class="astro-ojxuodky"><a href="/notes/embeddings/vector-search/" class="astro-ojxuodky"><span class="astro-ojxuodky">Vector Search and Production Embeddings</span></a></li></ul></details></li><li class="astro-ojxuodky"><details class="astro-ojxuodky"><summary class="astro-ojxuodky"><span class="group-label astro-ojxuodky"><span class="large astro-ojxuodky">5 · Training &amp; Objectives</span></span><svg aria-hidden="true" class="caret astro-ojxuodky astro-n5k4ipy7" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="5"></sl-sidebar-restore><ul class="astro-ojxuodky"><li class="astro-ojxuodky"><a href="/notes/training/optimization/" class="astro-ojxuodky"><span class="astro-ojxuodky">Optimization</span></a></li><li class="astro-ojxuodky"><a href="/notes/training/self-supervision/" class="astro-ojxuodky"><span class="astro-ojxuodky">Self-Supervised Learning</span></a></li><li class="astro-ojxuodky"><a href="/notes/training/fine-tuning/" class="astro-ojxuodky"><span class="astro-ojxuodky">Fine-Tuning and PEFT</span></a></li><li class="astro-ojxuodky"><a href="/notes/training/post-training/" class="astro-ojxuodky"><span class="astro-ojxuodky">Post-Training and Alignment</span></a></li><li class="astro-ojxuodky"><a href="/notes/training/reinforcement-learning/" class="astro-ojxuodky"><span class="astro-ojxuodky">Reinforcement Learning</span></a></li><li class="astro-ojxuodky"><a href="/notes/training/in-context-learning/" class="astro-ojxuodky"><span class="astro-ojxuodky">In-Context Learning</span></a></li><li class="astro-ojxuodky"><a href="/notes/training/ai-safety/" class="astro-ojxuodky"><span class="astro-ojxuodky">AI Safety and Alignment</span></a></li></ul></details></li><li class="astro-ojxuodky"><details class="astro-ojxuodky"><summary class="astro-ojxuodky"><span class="group-label astro-ojxuodky"><span class="large astro-ojxuodky">6 · World Models &amp; Planning</span></span><svg aria-hidden="true" class="caret astro-ojxuodky astro-n5k4ipy7" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="6"></sl-sidebar-restore><ul class="astro-ojxuodky"><li class="astro-ojxuodky"><a href="/notes/world-models/" class="astro-ojxuodky"><span class="astro-ojxuodky">World Models</span></a></li><li class="astro-ojxuodky"><a href="/notes/world-models/planning-and-mpc/" class="astro-ojxuodky"><span class="astro-ojxuodky">Planning and MPC</span></a></li><li class="astro-ojxuodky"><a href="/notes/world-models/hierarchy/" class="astro-ojxuodky"><span class="astro-ojxuodky">Hierarchical Planning</span></a></li><li class="astro-ojxuodky"><a href="/notes/world-models/catalogue/" class="astro-ojxuodky"><span class="astro-ojxuodky">Catalogue: every variant</span></a></li></ul></details></li><li class="astro-ojxuodky"><details class="astro-ojxuodky"><summary class="astro-ojxuodky"><span class="group-label astro-ojxuodky"><span class="large astro-ojxuodky">7 · Domains</span></span><svg aria-hidden="true" class="caret astro-ojxuodky astro-n5k4ipy7" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="7"></sl-sidebar-restore><ul class="astro-ojxuodky"><li class="astro-ojxuodky"><a href="/notes/domains/graph-neural-networks/" class="astro-ojxuodky"><span class="astro-ojxuodky">Graph Neural Networks</span></a></li><li class="astro-ojxuodky"><a href="/notes/domains/time-series/" class="astro-ojxuodky"><span class="astro-ojxuodky">Time Series Forecasting</span></a></li><li class="astro-ojxuodky"><a href="/notes/domains/speech-audio/" class="astro-ojxuodky"><span class="astro-ojxuodky">Speech and Audio</span></a></li></ul></details></li><li class="astro-ojxuodky"><details class="astro-ojxuodky"><summary class="astro-ojxuodky"><span class="group-label astro-ojxuodky"><span class="large astro-ojxuodky">8 · Systems</span></span><svg aria-hidden="true" class="caret astro-ojxuodky astro-n5k4ipy7" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="8"></sl-sidebar-restore><ul class="astro-ojxuodky"><li class="astro-ojxuodky"><a href="/notes/systems/distributed-training/" class="astro-ojxuodky"><span class="astro-ojxuodky">Distributed Training</span></a></li><li class="astro-ojxuodky"><a href="/notes/systems/inference/" class="astro-ojxuodky"><span class="astro-ojxuodky">Inference and Serving</span></a></li><li class="astro-ojxuodky"><a href="/notes/systems/retrieval/" class="astro-ojxuodky"><span class="astro-ojxuodky">Retrieval and RAG</span></a></li><li class="astro-ojxuodky"><a href="/notes/systems/agents/" class="astro-ojxuodky"><span class="astro-ojxuodky">Agents and Tool Use</span></a></li></ul></details></li><li class="astro-ojxuodky"><details class="astro-ojxuodky"><summary class="astro-ojxuodky"><span class="group-label astro-ojxuodky"><span class="large astro-ojxuodky">9 · Hardware &amp; Compute</span></span><svg aria-hidden="true" class="caret astro-ojxuodky astro-n5k4ipy7" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="9"></sl-sidebar-restore><ul class="astro-ojxuodky"><li class="astro-ojxuodky"><a href="/notes/hardware/" class="astro-ojxuodky"><span class="astro-ojxuodky">Hardware — Start Here</span></a></li><li class="astro-ojxuodky"><a href="/notes/hardware/accelerators/" class="astro-ojxuodky"><span class="astro-ojxuodky">Accelerators and the Memory Hierarchy</span></a></li><li class="astro-ojxuodky"><a href="/notes/hardware/compute-budgeting/" class="astro-ojxuodky"><span class="astro-ojxuodky">Compute Budgeting</span></a></li><li class="astro-ojxuodky"><a href="/notes/hardware/choosing-hardware/" class="astro-ojxuodky"><span class="astro-ojxuodky">Choosing Hardware</span></a></li></ul></details></li><li class="astro-ojxuodky"><details class="astro-ojxuodky"><summary class="astro-ojxuodky"><span class="group-label astro-ojxuodky"><span class="large astro-ojxuodky">Reference</span></span><svg aria-hidden="true" class="caret astro-ojxuodky astro-n5k4ipy7" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.25rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></summary><sl-sidebar-restore data-index="10"></sl-sidebar-restore><ul class="astro-ojxuodky"><li class="astro-ojxuodky"><a href="/notes/reference/glossary/" class="astro-ojxuodky"><span class="astro-ojxuodky">Glossary</span></a></li></ul></details></li></ul><script aria-hidden="true">
+		(() => {
+			const scroller = document.getElementById('starlight__sidebar');
+			if (!window._starlightScrollRestore || !scroller) return;
+			scroller.scrollTop = window._starlightScrollRestore;
+			delete window._starlightScrollRestore;
+		})();
+	</script></sl-sidebar-state-persist><div class="md:sl-hidden"><div class="mobile-preferences sl-flex astro-b5gddk54"><div class="social-icons astro-b5gddk54"></div><starlight-theme-select><label style="--sl-select-width: 6.25em" class="astro-r2p65idu"><span class="sr-only astro-r2p65idu">Select theme</span><svg aria-hidden="true" class="icon label-icon astro-r2p65idu astro-n5k4ipy7" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M21 14h-1V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v7H3a1 1 0 0 0-1 1v2a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3v-2a1 1 0 0 0-1-1ZM6 7a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v7H6V7Zm14 10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-1h16v1Z"/></svg><select autocomplete="off" class="astro-r2p65idu"><option value="dark" class="astro-r2p65idu">Dark</option><option value="light" class="astro-r2p65idu">Light</option><option value="auto" selected class="astro-r2p65idu">Auto</option></select><svg aria-hidden="true" class="icon caret astro-r2p65idu astro-n5k4ipy7" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path d="M17 9.17a1 1 0 0 0-1.41 0L12 12.71 8.46 9.17a1 1 0 1 0-1.41 1.42l4.24 4.24a1.002 1.002 0 0 0 1.42 0L17 10.59a1.002 1.002 0 0 0 0-1.42Z"/></svg></label></starlight-theme-select><script>
+	StarlightThemeProvider.updatePickers();
+</script></div></div></div></div></nav><div class="main-frame astro-gqpr5s5a"><script type="module">var e=document.getElementById(`starlight__sidebar`),t=e?.querySelector(`sl-sidebar-state-persist`),n=`sl-sidebar-state`,r=()=>{let r=[],i=t?.dataset.hash||``;try{let e=sessionStorage.getItem(n),t=JSON.parse(e||`{}`);Array.isArray(t.open)&&t.hash===i&&(r=t.open)}catch{}return{hash:i,open:r,scroll:e?.scrollTop||0}},i=e=>{try{sessionStorage.setItem(n,JSON.stringify(e))}catch{}},a=()=>i(r()),o=(e,t)=>{let n=r();n.open[t]=e,i(n)};t?.addEventListener(`click`,e=>{if(!(e.target instanceof Element))return;let t=e.target.closest(`summary`)?.closest(`details`);if(!t)return;let n=t.querySelector(`sl-sidebar-restore`),r=parseInt(n?.dataset.index||``);isNaN(r)||o(!t.open,r)}),addEventListener(`visibilitychange`,()=>{document.visibilityState===`hidden`&&a()});</script><div class="lg:sl-flex astro-abfeecmu"><aside class="right-sidebar-container print:hidden astro-abfeecmu"><div class="right-sidebar astro-abfeecmu"><div class="lg:sl-hidden astro-q5mffni3"><mobile-starlight-toc data-min-h="2" data-max-h="3" class="astro-5ulgm6bh"><nav aria-labelledby="starlight__on-this-page--mobile" class="astro-5ulgm6bh"><details id="starlight__mobile-toc" class="astro-5ulgm6bh"><summary id="starlight__on-this-page--mobile" class="sl-flex astro-5ulgm6bh"><span class="toggle sl-flex astro-5ulgm6bh">On this page<svg aria-hidden="true" class="caret astro-5ulgm6bh astro-n5k4ipy7" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1rem;"><path d="m14.83 11.29-4.24-4.24a1 1 0 1 0-1.42 1.41L12.71 12l-3.54 3.54a1 1 0 0 0 0 1.41 1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.24-4.24a1.002 1.002 0 0 0 0-1.42Z"/></svg></span><span class="display-current astro-5ulgm6bh"></span></summary><div class="dropdown astro-5ulgm6bh"><ul class="isMobile astro-cxyftcne" style="--depth: 0;"><li style="--depth: 0;" class="astro-cxyftcne"><a href="#_top" style="--depth: 0;" class="astro-cxyftcne"><span style="--depth: 0;" class="astro-cxyftcne">Overview</span></a></li><li style="--depth: 0;" class="astro-cxyftcne"><a href="#the-nine-sections-and-why-in-this-order" style="--depth: 0;" class="astro-cxyftcne"><span style="--depth: 0;" class="astro-cxyftcne">The nine sections, and why in this order</span></a></li><li style="--depth: 0;" class="astro-cxyftcne"><a href="#three-tracks" style="--depth: 0;" class="astro-cxyftcne"><span style="--depth: 0;" class="astro-cxyftcne">Three tracks</span></a></li><li style="--depth: 0;" class="astro-cxyftcne"><a href="#everything-in-order" style="--depth: 0;" class="astro-cxyftcne"><span style="--depth: 0;" class="astro-cxyftcne">Everything, in order</span></a><ul class="isMobile astro-cxyftcne" style="--depth: 1;"><li style="--depth: 1;" class="astro-cxyftcne"><a href="#1--foundations--6-h" style="--depth: 1;" class="astro-cxyftcne"><span style="--depth: 1;" class="astro-cxyftcne">1 · Foundations — 6 h</span></a></li><li style="--depth: 1;" class="astro-cxyftcne"><a href="#2--encoders--23-h" style="--depth: 1;" class="astro-cxyftcne"><span style="--depth: 1;" class="astro-cxyftcne">2 · Encoders — 2.3 h</span></a></li><li style="--depth: 1;" class="astro-cxyftcne"><a href="#3--architectures--58-h" style="--depth: 1;" class="astro-cxyftcne"><span style="--depth: 1;" class="astro-cxyftcne">3 · Architectures — 5.8 h</span></a></li><li style="--depth: 1;" class="astro-cxyftcne"><a href="#4--embeddings--25-h" style="--depth: 1;" class="astro-cxyftcne"><span style="--depth: 1;" class="astro-cxyftcne">4 · Embeddings — 2.5 h</span></a></li><li style="--depth: 1;" class="astro-cxyftcne"><a href="#5--training--objectives--43-h" style="--depth: 1;" class="astro-cxyftcne"><span style="--depth: 1;" class="astro-cxyftcne">5 · Training &amp; Objectives — 4.3 h</span></a></li><li style="--depth: 1;" class="astro-cxyftcne"><a href="#6--world-models--planning--29-h" style="--depth: 1;" class="astro-cxyftcne"><span style="--depth: 1;" class="astro-cxyftcne">6 · World Models &amp; Planning — 2.9 h</span></a></li><li style="--depth: 1;" class="astro-cxyftcne"><a href="#7--domains--17-h" style="--depth: 1;" class="astro-cxyftcne"><span style="--depth: 1;" class="astro-cxyftcne">7 · Domains — 1.7 h</span></a></li><li style="--depth: 1;" class="astro-cxyftcne"><a href="#8--systems--24-h" style="--depth: 1;" class="astro-cxyftcne"><span style="--depth: 1;" class="astro-cxyftcne">8 · Systems — 2.4 h</span></a></li><li style="--depth: 1;" class="astro-cxyftcne"><a href="#9--hardware--compute--21-h" style="--depth: 1;" class="astro-cxyftcne"><span style="--depth: 1;" class="astro-cxyftcne">9 · Hardware &amp; Compute — 2.1 h</span></a></li><li style="--depth: 1;" class="astro-cxyftcne"><a href="#reference" style="--depth: 1;" class="astro-cxyftcne"><span style="--depth: 1;" class="astro-cxyftcne">Reference</span></a></li></ul></li><li style="--depth: 0;" class="astro-cxyftcne"><a href="#how-the-order-is-maintained" style="--depth: 0;" class="astro-cxyftcne"><span style="--depth: 0;" class="astro-cxyftcne">How the order is maintained</span></a></li></ul></div></details></nav></mobile-starlight-toc><script type="module" src="/notes/_astro/MobileTableOfContents.astro_astro_type_script_index_0_lang.BcSo_yiZ.js"></script></div><div class="right-sidebar-panel sl-hidden lg:sl-block astro-q5mffni3"><div class="sl-container astro-q5mffni3"><starlight-toc data-min-h="2" data-max-h="3"><nav aria-labelledby="starlight__on-this-page"><h2 id="starlight__on-this-page">On this page</h2><ul class="astro-cxyftcne" style="--depth: 0;"><li style="--depth: 0;" class="astro-cxyftcne"><a href="#_top" style="--depth: 0;" class="astro-cxyftcne"><span style="--depth: 0;" class="astro-cxyftcne">Overview</span></a></li><li style="--depth: 0;" class="astro-cxyftcne"><a href="#the-nine-sections-and-why-in-this-order" style="--depth: 0;" class="astro-cxyftcne"><span style="--depth: 0;" class="astro-cxyftcne">The nine sections, and why in this order</span></a></li><li style="--depth: 0;" class="astro-cxyftcne"><a href="#three-tracks" style="--depth: 0;" class="astro-cxyftcne"><span style="--depth: 0;" class="astro-cxyftcne">Three tracks</span></a></li><li style="--depth: 0;" class="astro-cxyftcne"><a href="#everything-in-order" style="--depth: 0;" class="astro-cxyftcne"><span style="--depth: 0;" class="astro-cxyftcne">Everything, in order</span></a><ul class="astro-cxyftcne" style="--depth: 1;"><li style="--depth: 1;" class="astro-cxyftcne"><a href="#1--foundations--6-h" style="--depth: 1;" class="astro-cxyftcne"><span style="--depth: 1;" class="astro-cxyftcne">1 · Foundations — 6 h</span></a></li><li style="--depth: 1;" class="astro-cxyftcne"><a href="#2--encoders--23-h" style="--depth: 1;" class="astro-cxyftcne"><span style="--depth: 1;" class="astro-cxyftcne">2 · Encoders — 2.3 h</span></a></li><li style="--depth: 1;" class="astro-cxyftcne"><a href="#3--architectures--58-h" style="--depth: 1;" class="astro-cxyftcne"><span style="--depth: 1;" class="astro-cxyftcne">3 · Architectures — 5.8 h</span></a></li><li style="--depth: 1;" class="astro-cxyftcne"><a href="#4--embeddings--25-h" style="--depth: 1;" class="astro-cxyftcne"><span style="--depth: 1;" class="astro-cxyftcne">4 · Embeddings — 2.5 h</span></a></li><li style="--depth: 1;" class="astro-cxyftcne"><a href="#5--training--objectives--43-h" style="--depth: 1;" class="astro-cxyftcne"><span style="--depth: 1;" class="astro-cxyftcne">5 · Training &amp; Objectives — 4.3 h</span></a></li><li style="--depth: 1;" class="astro-cxyftcne"><a href="#6--world-models--planning--29-h" style="--depth: 1;" class="astro-cxyftcne"><span style="--depth: 1;" class="astro-cxyftcne">6 · World Models &amp; Planning — 2.9 h</span></a></li><li style="--depth: 1;" class="astro-cxyftcne"><a href="#7--domains--17-h" style="--depth: 1;" class="astro-cxyftcne"><span style="--depth: 1;" class="astro-cxyftcne">7 · Domains — 1.7 h</span></a></li><li style="--depth: 1;" class="astro-cxyftcne"><a href="#8--systems--24-h" style="--depth: 1;" class="astro-cxyftcne"><span style="--depth: 1;" class="astro-cxyftcne">8 · Systems — 2.4 h</span></a></li><li style="--depth: 1;" class="astro-cxyftcne"><a href="#9--hardware--compute--21-h" style="--depth: 1;" class="astro-cxyftcne"><span style="--depth: 1;" class="astro-cxyftcne">9 · Hardware &amp; Compute — 2.1 h</span></a></li><li style="--depth: 1;" class="astro-cxyftcne"><a href="#reference" style="--depth: 1;" class="astro-cxyftcne"><span style="--depth: 1;" class="astro-cxyftcne">Reference</span></a></li></ul></li><li style="--depth: 0;" class="astro-cxyftcne"><a href="#how-the-order-is-maintained" style="--depth: 0;" class="astro-cxyftcne"><span style="--depth: 0;" class="astro-cxyftcne">How the order is maintained</span></a></li></ul></nav></starlight-toc><script type="module" src="/notes/_astro/TableOfContents.astro_astro_type_script_index_0_lang.Csloo1VZ.js"></script></div></div></div></aside><div class="main-pane astro-abfeecmu"><main data-pagefind-body class="astro-vdxcvpsm" lang="en" dir="ltr"><div class="content-panel astro-oil7k7jf"><div class="sl-container astro-oil7k7jf"><h1 id="_top" class="astro-2sm4b3ln">Reading Order</h1></div></div><div class="content-panel astro-oil7k7jf"><div class="sl-container astro-oil7k7jf"><div class="sl-markdown-content"><p>The sidebar is ordered, not alphabetical. Sections are numbered in prerequisite
+order: <strong>nothing in a section depends on a section below it</strong>, and within a
+section pages are ordered the same way. Read top to bottom and you will never hit
+a term that has not been introduced.</p>
+<p>That is a real constraint, enforced by a check in the build — <code dir="auto">npm run check:order</code> fails if any page lists a prerequisite from a later section. It is
+the reason a few pages sit somewhere you might not expect: <strong>AI Safety</strong> is in
+Training rather than Foundations because it only makes sense after RLHF, and
+<strong>Embeddings</strong> comes after Architectures because text embedding models are
+transformers.</p>
+<p>Reading everything is about <strong>30 hours</strong>. Most people should not do that; the
+tracks below are the shorter routes.</p>
+<div class="sl-heading-wrapper level-h2"><h2 id="the-nine-sections-and-why-in-this-order">The nine sections, and why in this order</h2><a class="sl-anchor-link" href="#the-nine-sections-and-why-in-this-order"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “The nine sections, and why in this order”</span></a></div>
+<figure class="atlas-figure"><svg viewBox="0 0 760 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Dependency order of the nine sections"><defs><marker id="cur-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="currentColor" opacity="0.6"></path></marker></defs><rect class="f-blue" x="24" y="120" width="118" height="56" rx="5"></rect><text class="on-fill-sm" x="83" y="142" text-anchor="middle">1 Foundations</text><text class="on-fill-sm" x="83" y="162" text-anchor="middle">6 h</text><path class="ar" d="M146,148 L172,148" marker-end="url(#cur-a)"></path><rect class="f-blue" x="176" y="120" width="106" height="56" rx="5"></rect><text class="on-fill-sm" x="229" y="142" text-anchor="middle">2 Encoders</text><text class="on-fill-sm" x="229" y="162" text-anchor="middle">2.3 h</text><path class="ar" d="M286,148 L312,148" marker-end="url(#cur-a)"></path><rect class="f-purple" x="316" y="120" width="118" height="56" rx="5"></rect><text class="on-fill-sm" x="375" y="142" text-anchor="middle">3 Architectures</text><text class="on-fill-sm" x="375" y="162" text-anchor="middle">5.8 h</text><path class="ar" d="M438,134 L466,86" marker-end="url(#cur-a)"></path><path class="ar" d="M438,162 L466,162" marker-end="url(#cur-a)"></path><rect class="f-green" x="470" y="58" width="112" height="52" rx="5"></rect><text class="on-fill-sm" x="526" y="80" text-anchor="middle">4 Embeddings</text><text class="on-fill-sm" x="526" y="98" text-anchor="middle">2.5 h</text><rect class="f-green" x="470" y="136" width="112" height="52" rx="5"></rect><text class="on-fill-sm" x="526" y="158" text-anchor="middle">5 Training</text><text class="on-fill-sm" x="526" y="176" text-anchor="middle">4.3 h</text><path class="ar" d="M586,84 L640,84" marker-end="url(#cur-a)"></path><path class="ar" d="M586,158 L640,140" marker-end="url(#cur-a)"></path><path class="ar" d="M586,168 L640,196" marker-end="url(#cur-a)"></path><path class="ar" d="M586,178 L640,250" marker-end="url(#cur-a)"></path><rect class="f-amber" x="644" y="60" width="94" height="46" rx="5"></rect><text class="on-fill-sm" x="691" y="80" text-anchor="middle">6 World</text><text class="on-fill-sm" x="691" y="96" text-anchor="middle">Models · 2.9 h</text><rect class="f-amber" x="644" y="120" width="94" height="46" rx="5"></rect><text class="on-fill-sm" x="691" y="140" text-anchor="middle">7 Domains</text><text class="on-fill-sm" x="691" y="156" text-anchor="middle">1.7 h</text><rect class="f-amber" x="644" y="180" width="94" height="46" rx="5"></rect><text class="on-fill-sm" x="691" y="200" text-anchor="middle">8 Systems</text><text class="on-fill-sm" x="691" y="216" text-anchor="middle">2.4 h</text><rect class="f-pink" x="644" y="240" width="94" height="46" rx="5"></rect><text class="on-fill-sm" x="691" y="260" text-anchor="middle">9 Hardware</text><text class="on-fill-sm" x="691" y="276" text-anchor="middle">2.1 h</text><text class="xs" x="644" y="304">6, 7, 8 and 9 are</text><text class="xs" x="644" y="318">mutually independent</text><text class="xs" x="24" y="206">Everything</text><text class="xs" x="24" y="220">downstream</text><text class="xs" x="24" y="234">assumes</text><text class="xs" x="24" y="248">backprop and</text><text class="xs" x="24" y="262">probability.</text><text class="xs" x="316" y="206">Transformers is the</text><text class="xs" x="316" y="220">single most-referenced</text><text class="xs" x="316" y="234">page on the site.</text></svg><figcaption><strong>Each section depends only on sections to its left.</strong> The dependency structure the sidebar encodes. Foundations is genuinely foundational — every other section draws on backpropagation and probability. Encoders comes second because the encoder–decoder split is the vocabulary the architecture pages use. Architectures precedes Embeddings because modern text embedders are fine-tuned transformers. Training comes after both because it is about objectives applied to those architectures. World Models, Domains and Systems are three different ways of building on everything before them, and are independent of one another — you can read any of them without the others. Hardware is last because it is about the cost of everything above, and reads best once you know what you would be spending it on.</figcaption></figure>
+<div class="sl-heading-wrapper level-h2"><h2 id="three-tracks">Three tracks</h2><a class="sl-anchor-link" href="#three-tracks"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Three tracks”</span></a></div>
+<p>Pick the one that matches why you are here. Each is a complete, self-contained
+route — the pages are still in prerequisite order within the track.</p>
+<starlight-tabs class="astro-hbt4ddzs"><div class="tablist-wrapper not-content astro-hbt4ddzs"><ul role="tablist" class="astro-hbt4ddzs"><li role="presentation" class="tab astro-hbt4ddzs"><a role="tab" href="#tab-panel-25" id="tab-25" aria-selected="true" tabindex="0" class="astro-hbt4ddzs">New to the field</a></li><li role="presentation" class="tab astro-hbt4ddzs"><a role="tab" href="#tab-panel-26" id="tab-26" aria-selected="false" tabindex="-1" class="astro-hbt4ddzs">Heading for research</a></li><li role="presentation" class="tab astro-hbt4ddzs"><a role="tab" href="#tab-panel-27" id="tab-27" aria-selected="false" tabindex="-1" class="astro-hbt4ddzs">Building a system</a></li></ul></div><div id="tab-panel-25" aria-labelledby="tab-25" role="tabpanel"><p><strong>About 8 hours.</strong> Enough to read a modern paper’s introduction and follow a
+technical conversation without bluffing.</p><ol role="list" class="sl-steps">
+<li><a href="/notes/how-to-read/">How to read a page</a> — 5 min. What the four tiers mean.</li>
+<li><a href="/notes/foundations/backpropagation/">Backpropagation</a> — 30 min. How learning happens at all.</li>
+<li><a href="/notes/foundations/probability-for-ml/">Probability for ML</a> — 30 min. The notation everything else uses.</li>
+<li><a href="/notes/foundations/tokenization/">Tokenization</a> — 35 min. What a model actually sees. Explains several famous “failures” that are not reasoning failures.</li>
+<li><a href="/notes/foundations/representations/">Representations</a> — 35 min. The central idea of the field.</li>
+<li><a href="/notes/encoders/">Encoders</a> — 25 min. The word means three different things; sort them out early.</li>
+<li><a href="/notes/encoders/neural-encoders/">Neural Encoders</a> — 45 min. Autoencoders through VAEs, VQ-VAE and contrastive.</li>
+<li><a href="/notes/architectures/transformers/">Transformers</a> — 45 min. The architecture behind nearly everything current.</li>
+<li><a href="/notes/training/optimization/">Optimization</a> — 35 min. Why Adam, why warmup, why any of it works.</li>
+<li><a href="/notes/training/self-supervision/">Self-Supervised Learning</a> — 40 min. Where the training signal comes from without labels.</li>
+<li><a href="/notes/training/post-training/">Post-Training and Alignment</a> — 40 min. How a raw pretrained model becomes an assistant.</li>
+<li><a href="/notes/foundations/generalization/">Generalization</a> — 30 min. Why overparameterised models work, which classical theory said they should not.</li>
+<li><a href="/notes/foundations/evaluation/">Evaluation</a> — 30 min. How to tell whether a reported number means anything.</li>
+<li><a href="/notes/hardware/">Hardware — Start Here</a> — 12 min. What things cost, in one page.</li>
+</ol><p>Stop at any tier of any page. Tier 1 of all fourteen is roughly three hours and
+still leaves you with a correct picture.</p></div><div id="tab-panel-26" aria-labelledby="tab-26" role="tabpanel" hidden><p><strong>About 20 hours.</strong> The full path to reading current papers and having opinions
+about them.</p><p>Everything in the first track, then:</p><ol role="list" class="sl-steps">
+<li><a href="/notes/foundations/latent-spaces/">Latent Spaces</a> — 55 min. The geometry, in depth. The longest and probably the most useful page here.</li>
+<li><a href="/notes/foundations/state-representations/">State Representations</a> — 45 min. What a state must contain, and the sufficiency argument.</li>
+<li><a href="/notes/encoders/encoder-decoder/">Encoder–Decoder Architectures</a> — 35 min.</li>
+<li><a href="/notes/architectures/state-space-models/">State Space Models</a> — 35 min. The credible attention alternative.</li>
+<li><a href="/notes/architectures/mixture-of-experts/">Mixture of Experts</a> — 35 min. Decoupling parameters from compute.</li>
+<li><a href="/notes/architectures/generative-models/">The Generative Model Zoo</a> — 55 min. Every family, and what each trades away.</li>
+<li><a href="/notes/architectures/diffusion/">Diffusion Models</a> — 45 min.</li>
+<li><a href="/notes/architectures/energy-based-models/">Energy-Based Models</a> — 55 min. The framing that unifies most of the above.</li>
+<li><a href="/notes/architectures/jepa/">JEPA</a> — 40 min. The non-generative alternative, and the argument for it.</li>
+<li><a href="/notes/architectures/multimodal/">Multimodal Models</a> — 35 min.</li>
+<li><a href="/notes/training/fine-tuning/">Fine-Tuning and PEFT</a> — 30 min.</li>
+<li><a href="/notes/training/reinforcement-learning/">Reinforcement Learning</a> — 40 min.</li>
+<li><a href="/notes/training/in-context-learning/">In-Context Learning</a> — 35 min. Four competing explanations that turn out not to compete.</li>
+<li><a href="/notes/training/ai-safety/">AI Safety and Alignment</a> — 35 min.</li>
+<li><a href="/notes/foundations/interpretability/">Interpretability</a> — 40 min. Superposition, circuits, sparse autoencoders.</li>
+<li><a href="/notes/foundations/causal-inference/">Causal Inference</a> — 35 min.</li>
+<li><a href="/notes/world-models/">World Models</a> → <a href="/notes/world-models/planning-and-mpc/">Planning and MPC</a> → <a href="/notes/world-models/hierarchy/">Hierarchical Planning</a> → <a href="/notes/world-models/catalogue/">The World Model Zoo</a> — 2.9 h.</li>
+</ol><p>Then pick a domain page (<a href="/notes/domains/graph-neural-networks/">graphs</a>, <a href="/notes/domains/time-series/">time
+series</a>, <a href="/notes/domains/speech-audio/">speech</a>) if it touches
+your area, and read <a href="/notes/hardware/compute-budgeting/">Compute Budgeting</a> so your
+proposals have numbers in them.</p></div><div id="tab-panel-27" aria-labelledby="tab-27" role="tabpanel" hidden><p><strong>About 9 hours.</strong> The path for someone shipping something rather than writing a
+paper. Skips most of the theory and none of the things that break in production.</p><ol role="list" class="sl-steps">
+<li><a href="/notes/architectures/transformers/">Transformers</a> — 45 min. Read at least tiers 1–2.</li>
+<li><a href="/notes/foundations/tokenization/">Tokenization</a> — 35 min. Directly explains cost, context limits and several classes of bug.</li>
+<li><a href="/notes/embeddings/">Embeddings — Start Here</a> — 28 min. The four questions that determine whether an embedding is right for you.</li>
+<li><a href="/notes/embeddings/text-embeddings/">Text Embeddings</a> — 44 min. How to choose a model, and why MTEB rank will mislead you.</li>
+<li><a href="/notes/embeddings/vector-search/">Vector Search</a> — 40 min. Quantization, index internals, reindexing, and the fact that embeddings are invertible.</li>
+<li><a href="/notes/systems/retrieval/">Retrieval and RAG</a> — 35 min. The pipeline and where each stage fails.</li>
+<li><a href="/notes/training/fine-tuning/">Fine-Tuning and PEFT</a> — 30 min. LoRA, QLoRA, and when not to bother.</li>
+<li><a href="/notes/systems/inference/">Inference and Serving</a> — 35 min. Why decoding is memory-bound and what to do about it.</li>
+<li><a href="/notes/hardware/">Hardware — Start Here</a> — 12 min, then <a href="/notes/hardware/compute-budgeting/">Compute Budgeting</a> — 42 min and <a href="/notes/hardware/choosing-hardware/">Choosing Hardware</a> — 36 min.</li>
+<li><a href="/notes/foundations/evaluation/">Evaluation</a> — 30 min. So you can tell whether any of it worked.</li>
+<li><a href="/notes/systems/agents/">Agents and Tool Use</a> — 35 min, if that is what you are building.</li>
+<li><a href="/notes/systems/distributed-training/">Distributed Training</a> — 40 min, only if you are training rather than serving.</li>
+</ol></div></starlight-tabs><script type="module">var e=class e extends HTMLElement{static#e=new Map;tabs;panels;#t;#n=`starlight-synced-tabs__`;constructor(){super();let t=this.querySelector(`[role="tablist"]`);if(this.tabs=[...t.querySelectorAll(`[role="tab"]`)],this.panels=[...this.querySelectorAll(`:scope > [role="tabpanel"]`)],this.#t=this.dataset.syncKey,this.#t){let t=e.#e.get(this.#t)??[];t.push(this),e.#e.set(this.#t,t)}this.tabs.forEach((e,n)=>{e.addEventListener(`click`,e=>{e.preventDefault();let r=t.querySelector(`[aria-selected="true"]`);e.currentTarget!==r&&this.switchTab(e.currentTarget,n)}),e.addEventListener(`keydown`,e=>{let t=this.tabs.indexOf(e.currentTarget),n=e.key===`ArrowLeft`?t-1:e.key===`ArrowRight`?t+1:e.key===`Home`?0:e.key===`End`?this.tabs.length-1:null;n!==null&&this.tabs[n]&&(e.preventDefault(),this.switchTab(this.tabs[n],n))})})}switchTab(t,n,r=!0){if(!t)return;let i=r?this.getBoundingClientRect().top:0;this.tabs.forEach(e=>{e.setAttribute(`aria-selected`,`false`),e.setAttribute(`tabindex`,`-1`)}),this.panels.forEach(e=>{e.hidden=!0});let a=this.panels[n];a&&(a.hidden=!1),t.removeAttribute(`tabindex`),t.setAttribute(`aria-selected`,`true`),r&&(t.focus(),e.#i(this,t),window.scrollTo({top:window.scrollY+(this.getBoundingClientRect().top-i),behavior:`instant`}))}#r(e){!this.#t||typeof localStorage>`u`||localStorage.setItem(this.#n+this.#t,e)}static#i(t,n){let r=t.#t,i=e.#a(n);if(!r||!i)return;let a=e.#e.get(r);if(a){for(let n of a){if(n===t)continue;let r=n.tabs.findIndex(t=>e.#a(t)===i);r!==-1&&n.switchTab(n.tabs[r],r,!1)}t.#r(i)}}static#a(e){return e.textContent?.trim()}};customElements.define(`starlight-tabs`,e);</script>
+<div class="sl-heading-wrapper level-h2"><h2 id="everything-in-order">Everything, in order</h2><a class="sl-anchor-link" href="#everything-in-order"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Everything, in order”</span></a></div>
+<p>The complete list. Times are for reading all four tiers.</p>
+<aside aria-label="Tip" class="starlight-aside starlight-aside--tip"><p class="starlight-aside__title" aria-hidden="true"><svg aria-hidden="true" class="starlight-aside__icon astro-n5k4ipy7" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1em;"><path fill-rule="evenodd" d="M1.44 8.855v-.001l3.527-3.516c.34-.344.802-.541 1.285-.548h6.649l.947-.947c3.07-3.07 6.207-3.072 7.62-2.868a1.821 1.821 0 0 1 1.557 1.557c.204 1.413.203 4.55-2.868 7.62l-.946.946v6.649a1.845 1.845 0 0 1-.549 1.286l-3.516 3.528a1.844 1.844 0 0 1-3.11-.944l-.858-4.275-4.52-4.52-2.31-.463-1.964-.394A1.847 1.847 0 0 1 .98 10.693a1.843 1.843 0 0 1 .46-1.838Zm5.379 2.017-3.873-.776L6.32 6.733h4.638l-4.14 4.14Zm8.403-5.655c2.459-2.46 4.856-2.463 5.89-2.33.134 1.035.13 3.432-2.329 5.891l-6.71 6.71-3.561-3.56 6.71-6.711Zm-1.318 15.837-.776-3.873 4.14-4.14v4.639l-3.364 3.374Z" clip-rule="evenodd"/><path d="M9.318 18.345a.972.972 0 0 0-1.86-.561c-.482 1.435-1.687 2.204-2.934 2.619a8.22 8.22 0 0 1-1.23.302c.062-.365.157-.79.303-1.229.415-1.247 1.184-2.452 2.62-2.935a.971.971 0 1 0-.62-1.842c-.12.04-.236.084-.35.13-2.02.828-3.012 2.588-3.493 4.033a10.383 10.383 0 0 0-.51 2.845l-.001.016v.063c0 .536.434.972.97.972H2.24a7.21 7.21 0 0 0 .878-.065c.527-.063 1.248-.19 2.02-.447 1.445-.48 3.205-1.472 4.033-3.494a5.828 5.828 0 0 0 .147-.407Z"/></svg>Tip</p><div class="starlight-aside__content"><p>Section totals assume you read every page. Almost nobody should. The
+<a href="/notes/reference/glossary/">glossary</a> is 173 entries and is the fastest way to fill a
+specific gap without reading a whole page.</p></div></aside>
+<div class="sl-heading-wrapper level-h3"><h3 id="1--foundations--6-h">1 · Foundations — 6 h</h3><a class="sl-anchor-link" href="#1--foundations--6-h"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “1 · Foundations — 6 h”</span></a></div>
+<p>The prerequisites. Every other section assumes the first two pages here.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>#</th><th>Page</th><th>Time</th></tr></thead><tbody><tr><td>1</td><td><a href="/notes/foundations/backpropagation/">Backpropagation</a></td><td>30m</td></tr><tr><td>2</td><td><a href="/notes/foundations/probability-for-ml/">Probability for ML</a></td><td>30m</td></tr><tr><td>3</td><td><a href="/notes/foundations/tokenization/">Tokenization</a></td><td>35m</td></tr><tr><td>4</td><td><a href="/notes/foundations/representations/">Representations</a></td><td>35m</td></tr><tr><td>5</td><td><a href="/notes/foundations/latent-spaces/">Latent Spaces</a></td><td>55m</td></tr><tr><td>6</td><td><a href="/notes/foundations/state-representations/">State Representations</a></td><td>45m</td></tr><tr><td>7</td><td><a href="/notes/foundations/generalization/">Generalization</a></td><td>30m</td></tr><tr><td>8</td><td><a href="/notes/foundations/evaluation/">Evaluation</a></td><td>30m</td></tr><tr><td>9</td><td><a href="/notes/foundations/interpretability/">Interpretability</a></td><td>40m</td></tr><tr><td>10</td><td><a href="/notes/foundations/causal-inference/">Causal Inference</a></td><td>35m</td></tr></tbody></table>
+<div class="sl-heading-wrapper level-h3"><h3 id="2--encoders--23-h">2 · Encoders — 2.3 h</h3><a class="sl-anchor-link" href="#2--encoders--23-h"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “2 · Encoders — 2.3 h”</span></a></div>
+<p>The encoder–decoder vocabulary that the architecture pages assume.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>#</th><th>Page</th><th>Time</th></tr></thead><tbody><tr><td>0</td><td><a href="/notes/encoders/">Encoders — overview</a></td><td>25m</td></tr><tr><td>1</td><td><a href="/notes/encoders/neural-encoders/">Neural Encoders</a></td><td>45m</td></tr><tr><td>2</td><td><a href="/notes/encoders/encoder-decoder/">Encoder–Decoder Architectures</a></td><td>35m</td></tr><tr><td>3</td><td><a href="/notes/encoders/feature-encoding/">Feature Encoding</a></td><td>30m</td></tr></tbody></table>
+<div class="sl-heading-wrapper level-h3"><h3 id="3--architectures--58-h">3 · Architectures — 5.8 h</h3><a class="sl-anchor-link" href="#3--architectures--58-h"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “3 · Architectures — 5.8 h”</span></a></div>
+<p>Sequence models first, then the generative family, then the alternatives to it.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>#</th><th>Page</th><th>Time</th></tr></thead><tbody><tr><td>1</td><td><a href="/notes/architectures/transformers/">Transformers</a></td><td>45m</td></tr><tr><td>2</td><td><a href="/notes/architectures/state-space-models/">State Space Models</a></td><td>35m</td></tr><tr><td>3</td><td><a href="/notes/architectures/mixture-of-experts/">Mixture of Experts</a></td><td>35m</td></tr><tr><td>4</td><td><a href="/notes/architectures/generative-models/">The Generative Model Zoo</a></td><td>55m</td></tr><tr><td>5</td><td><a href="/notes/architectures/diffusion/">Diffusion Models</a></td><td>45m</td></tr><tr><td>6</td><td><a href="/notes/architectures/energy-based-models/">Energy-Based Models</a></td><td>55m</td></tr><tr><td>7</td><td><a href="/notes/architectures/jepa/">JEPA</a></td><td>40m</td></tr><tr><td>8</td><td><a href="/notes/architectures/multimodal/">Multimodal Models</a></td><td>35m</td></tr></tbody></table>
+<div class="sl-heading-wrapper level-h3"><h3 id="4--embeddings--25-h">4 · Embeddings — 2.5 h</h3><a class="sl-anchor-link" href="#4--embeddings--25-h"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “4 · Embeddings — 2.5 h”</span></a></div>
+<p>After Architectures, because modern text embedders are fine-tuned transformers.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>#</th><th>Page</th><th>Time</th></tr></thead><tbody><tr><td>0</td><td><a href="/notes/embeddings/">Embeddings — overview</a></td><td>28m</td></tr><tr><td>1</td><td><a href="/notes/embeddings/word-embeddings/">Word Embeddings</a></td><td>40m</td></tr><tr><td>2</td><td><a href="/notes/embeddings/text-embeddings/">Text Embeddings</a></td><td>44m</td></tr><tr><td>3</td><td><a href="/notes/embeddings/vector-search/">Vector Search and Production Embeddings</a></td><td>40m</td></tr></tbody></table>
+<div class="sl-heading-wrapper level-h3"><h3 id="5--training--objectives--43-h">5 · Training &#x26; Objectives — 4.3 h</h3><a class="sl-anchor-link" href="#5--training--objectives--43-h"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “5 · Training &#x26; Objectives — 4.3 h”</span></a></div>
+<p>Mechanics, then pretraining, then adaptation, then the consequences.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>#</th><th>Page</th><th>Time</th></tr></thead><tbody><tr><td>1</td><td><a href="/notes/training/optimization/">Optimization</a></td><td>35m</td></tr><tr><td>2</td><td><a href="/notes/training/self-supervision/">Self-Supervised Learning</a></td><td>40m</td></tr><tr><td>3</td><td><a href="/notes/training/fine-tuning/">Fine-Tuning and PEFT</a></td><td>30m</td></tr><tr><td>4</td><td><a href="/notes/training/post-training/">Post-Training and Alignment</a></td><td>40m</td></tr><tr><td>5</td><td><a href="/notes/training/reinforcement-learning/">Reinforcement Learning</a></td><td>40m</td></tr><tr><td>6</td><td><a href="/notes/training/in-context-learning/">In-Context Learning</a></td><td>35m</td></tr><tr><td>7</td><td><a href="/notes/training/ai-safety/">AI Safety and Alignment</a></td><td>35m</td></tr></tbody></table>
+<div class="sl-heading-wrapper level-h3"><h3 id="6--world-models--planning--29-h">6 · World Models &#x26; Planning — 2.9 h</h3><a class="sl-anchor-link" href="#6--world-models--planning--29-h"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “6 · World Models &#x26; Planning — 2.9 h”</span></a></div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>#</th><th>Page</th><th>Time</th></tr></thead><tbody><tr><td>0</td><td><a href="/notes/world-models/">World Models — overview</a></td><td>35m</td></tr><tr><td>1</td><td><a href="/notes/world-models/planning-and-mpc/">Planning and MPC</a></td><td>35m</td></tr><tr><td>2</td><td><a href="/notes/world-models/hierarchy/">Hierarchical Planning</a></td><td>35m</td></tr><tr><td>3</td><td><a href="/notes/world-models/catalogue/">The World Model Zoo</a></td><td>70m</td></tr></tbody></table>
+<div class="sl-heading-wrapper level-h3"><h3 id="7--domains--17-h">7 · Domains — 1.7 h</h3><a class="sl-anchor-link" href="#7--domains--17-h"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “7 · Domains — 1.7 h”</span></a></div>
+<p>Independent of each other. Read only what touches your work.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>#</th><th>Page</th><th>Time</th></tr></thead><tbody><tr><td>1</td><td><a href="/notes/domains/graph-neural-networks/">Graph Neural Networks</a></td><td>35m</td></tr><tr><td>2</td><td><a href="/notes/domains/time-series/">Time Series Forecasting</a></td><td>30m</td></tr><tr><td>3</td><td><a href="/notes/domains/speech-audio/">Speech and Audio</a></td><td>35m</td></tr></tbody></table>
+<div class="sl-heading-wrapper level-h3"><h3 id="8--systems--24-h">8 · Systems — 2.4 h</h3><a class="sl-anchor-link" href="#8--systems--24-h"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “8 · Systems — 2.4 h”</span></a></div>
+<p>Train it, serve it, then build on top of it.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>#</th><th>Page</th><th>Time</th></tr></thead><tbody><tr><td>1</td><td><a href="/notes/systems/distributed-training/">Distributed Training</a></td><td>40m</td></tr><tr><td>2</td><td><a href="/notes/systems/inference/">Inference and Serving</a></td><td>35m</td></tr><tr><td>3</td><td><a href="/notes/systems/retrieval/">Retrieval and RAG</a></td><td>35m</td></tr><tr><td>4</td><td><a href="/notes/systems/agents/">Agents and Tool Use</a></td><td>35m</td></tr></tbody></table>
+<div class="sl-heading-wrapper level-h3"><h3 id="9--hardware--compute--21-h">9 · Hardware &#x26; Compute — 2.1 h</h3><a class="sl-anchor-link" href="#9--hardware--compute--21-h"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “9 · Hardware &#x26; Compute — 2.1 h”</span></a></div>
+<p>Last, because it is about the cost of everything above.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>#</th><th>Page</th><th>Time</th></tr></thead><tbody><tr><td>0</td><td><a href="/notes/hardware/">Hardware — cheat sheet</a></td><td>12m</td></tr><tr><td>1</td><td><a href="/notes/hardware/accelerators/">Accelerators and the Memory Hierarchy</a></td><td>38m</td></tr><tr><td>2</td><td><a href="/notes/hardware/compute-budgeting/">Compute Budgeting</a></td><td>42m</td></tr><tr><td>3</td><td><a href="/notes/hardware/choosing-hardware/">Choosing Hardware</a></td><td>36m</td></tr></tbody></table>
+<div class="sl-heading-wrapper level-h3"><h3 id="reference">Reference</h3><a class="sl-anchor-link" href="#reference"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “Reference”</span></a></div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Page</th><th>Time</th></tr></thead><tbody><tr><td><a href="/notes/reference/glossary/">Glossary</a> — 173 entries, each linking to the page that treats it properly</td><td>26m</td></tr></tbody></table>
+<div class="sl-heading-wrapper level-h2"><h2 id="how-the-order-is-maintained">How the order is maintained</h2><a class="sl-anchor-link" href="#how-the-order-is-maintained"><span aria-hidden="true" class="sl-anchor-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="m12.11 15.39-3.88 3.88a2.52 2.52 0 0 1-3.5 0 2.47 2.47 0 0 1 0-3.5l3.88-3.88a1 1 0 1 0-1.42-1.42l-3.88 3.89a4.48 4.48 0 0 0 6.33 6.33l3.89-3.88a1 1 0 0 0-1.42-1.42m8.58-12.08a4.49 4.49 0 0 0-6.33 0l-3.89 3.88a1 1 0 1 0 1.42 1.42l3.88-3.88a2.52 2.52 0 0 1 3.5 0 2.47 2.47 0 0 1 0 3.5l-3.88 3.88a1 1 0 0 0 0 1.42 1 1 0 0 0 1.42 0l3.88-3.89a4.49 4.49 0 0 0 0-6.33M8.83 15.17a1 1 0 0 0 .71.29 1 1 0 0 0 .71-.29l4.92-4.92a1 1 0 1 0-1.42-1.42l-4.92 4.92a1 1 0 0 0 0 1.42"></path></svg></span><span class="sr-only" data-pagefind-ignore>Section titled “How the order is maintained”</span></a></div>
+<p>Ordering that is not enforced decays. Three mechanisms keep this one honest:</p>
+<ol role="list" class="sl-steps">
+<li>
+<p><strong><code dir="auto">sidebar.order</code> in every page’s frontmatter.</strong> Index pages are always 0, and no two pages in a directory may share a number — Starlight breaks ties by filename, which is not a curriculum.</p>
+</li>
+<li>
+<p><strong><code dir="auto">prereqs</code> in frontmatter</strong>, rendered at the top of each page. These are the actual dependency edges.</p>
+</li>
+<li>
+<p><strong><code dir="auto">npm run check:order</code></strong>, which fails the build if any page has no order, if two pages in a directory collide, if an index page is not 0, or — the important one — if any page lists a prerequisite from a <em>later</em> section. A forward prerequisite means the section order is wrong, and the check makes that impossible to ignore.</p>
+</li>
+</ol>
+<p>If you add a page, place it by asking what the reader must already know, not by
+what it is about. The check will tell you if you got it wrong.</p></div><footer class="sl-flex astro-xhxjzfa7"><div class="meta sl-flex astro-xhxjzfa7"><p>Last updated: <time datetime="2026-08-22T05:59:02.000Z">Aug 22, 2026</time></p></div><div class="pagination-links print:hidden astro-jgq3vlii" dir="ltr"><a href="/notes/how-to-read/" rel="prev" class="astro-jgq3vlii"><svg aria-hidden="true" class="astro-jgq3vlii astro-n5k4ipy7" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.5rem;"><path d="M17 11H9.41l3.3-3.29a1.004 1.004 0 1 0-1.42-1.42l-5 5a1 1 0 0 0-.21.33 1 1 0 0 0 0 .76 1 1 0 0 0 .21.33l5 5a1.002 1.002 0 0 0 1.639-.325 1 1 0 0 0-.219-1.095L9.41 13H17a1 1 0 0 0 0-2Z"/></svg><span class="astro-jgq3vlii">Previous<br class="astro-jgq3vlii"><span class="link-title astro-jgq3vlii">How to read a page</span></span></a><a href="/notes/foundations/backpropagation/" rel="next" class="astro-jgq3vlii"><svg aria-hidden="true" class="astro-jgq3vlii astro-n5k4ipy7" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="--sl-icon-size: 1.5rem;"><path d="M17.92 11.62a1.001 1.001 0 0 0-.21-.33l-5-5a1.003 1.003 0 1 0-1.42 1.42l3.3 3.29H7a1 1 0 0 0 0 2h7.59l-3.3 3.29a1.002 1.002 0 0 0 .325 1.639 1 1 0 0 0 1.095-.219l5-5a1 1 0 0 0 .21-.33 1 1 0 0 0 0-.76Z"/></svg><span class="astro-jgq3vlii">Next<br class="astro-jgq3vlii"><span class="link-title astro-jgq3vlii">Backpropagation</span></span></a></div></footer></div></div></main></div></div></div></div></body></html>
