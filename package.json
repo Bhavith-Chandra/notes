@@ -9,7 +9,8 @@
     "preview": "astro preview",
     "check": "astro check",
     "deploy": "bash scripts/deploy.sh",
-    "check:contrast": "node scripts/check-contrast.mjs"
+    "check:contrast": "node scripts/check-contrast.mjs",
+    "check:mdx": "python3 scripts/mdx-lint.py"
   },
   "dependencies": {
     "@astrojs/starlight": "^0.41.7",

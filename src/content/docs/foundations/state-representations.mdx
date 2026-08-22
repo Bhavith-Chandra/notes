@@ -1,0 +1,777 @@
+---
+title: "State Representations"
+description: "Every kind of state a system can carry — raw, engineered, belief, predictive, successor, bisimulation, value-equivalent, object-centric — and which one your problem actually needs."
+sidebar:
+  order: 2
+  label: "Catalogue: state representations"
+depth: frontier
+readingTime: 45
+prereqs:
+  - label: "Representations"
+    slug: "foundations/representations"
+papers:
+  - title: "Improving Generalization for Temporal Difference Learning: The Successor Representation"
+    authors: "Peter Dayan"
+    year: 1993
+    url: "https://doi.org/10.1162/neco.1993.5.4.613"
+  - title: "Planning and acting in partially observable stochastic domains"
+    authors: "Kaelbling, Littman, Cassandra"
+    year: 1998
+    url: "https://doi.org/10.1016/S0004-3702(98)00023-X"
+  - title: "Stochastic dynamic programming with factored representations"
+    authors: "Boutilier, Dearden, Goldszmidt"
+    year: 2000
+    url: "https://doi.org/10.1016/S0004-3702(00)00033-3"
+  - title: "Predictive Representations of State"
+    authors: "Littman, Sutton, Singh"
+    year: 2001
+    url: "https://proceedings.neurips.cc/paper/2001/hash/1e4d36177d71bbb3558e43af9577d70e-Abstract.html"
+  - title: "Metrics for Finite Markov Decision Processes"
+    authors: "Ferns, Panangaden, Precup"
+    year: 2004
+    url: "https://arxiv.org/abs/1207.4114"
+  - title: "Towards a Unified Theory of State Abstraction for MDPs"
+    authors: "Li, Walsh, Littman"
+    year: 2006
+    url: "http://rbr.cs.umass.edu/aimath06/proceedings/P21.pdf"
+  - title: "Successor Features for Transfer in Reinforcement Learning"
+    authors: "Barreto, Dabney, Munos, Hunt, Schaul, van Hasselt, Silver"
+    year: 2016
+    url: "https://arxiv.org/abs/1606.05312"
+  - title: "The Option-Critic Architecture"
+    authors: "Bacon, Harb, Precup"
+    year: 2016
+    url: "https://arxiv.org/abs/1609.05140"
+  - title: "MONet: Unsupervised Scene Decomposition and Representation"
+    authors: "Burgess, Matthey, Watters, et al."
+    year: 2019
+    url: "https://arxiv.org/abs/1901.11390"
+  - title: "DeepMDP: Learning Continuous Latent Space Models for Representation Learning"
+    authors: "Gelada, Kumar, Buckman, Nachum, Bellemare"
+    year: 2019
+    url: "https://arxiv.org/abs/1906.02736"
+  - title: "CURL: Contrastive Unsupervised Representations for Reinforcement Learning"
+    authors: "Srinivas, Laskin, Abbeel"
+    year: 2020
+    url: "https://arxiv.org/abs/2004.04136"
+  - title: "Image Augmentation Is All You Need: Regularizing Deep Reinforcement Learning from Pixels (DrQ)"
+    authors: "Kostrikov, Yarats, Fergus"
+    year: 2020
+    url: "https://arxiv.org/abs/2004.13649"
+  - title: "Object-Centric Learning with Slot Attention"
+    authors: "Locatello, Weissenborn, Unterthiner, et al."
+    year: 2020
+    url: "https://arxiv.org/abs/2006.15055"
+  - title: "Learning Invariant Representations for Reinforcement Learning without Reconstruction (DBC)"
+    authors: "Zhang, McAllister, Calandra, Gal, Levine"
+    year: 2020
+    url: "https://arxiv.org/abs/2006.10742"
+  - title: "Data-Efficient Reinforcement Learning with Self-Predictive Representations (SPR)"
+    authors: "Schwarzer, Anand, Goel, Hjelm, Courville, Bachman"
+    year: 2020
+    url: "https://arxiv.org/abs/2007.05929"
+  - title: "The Value Equivalence Principle for Model-Based Reinforcement Learning"
+    authors: "Grimm, Barreto, Singh, Silver"
+    year: 2020
+    url: "https://arxiv.org/abs/2011.03506"
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps, Tabs, TabItem, Card } from '@astrojs/starlight/components';
+
+<Abstract>
+A *state* is whatever a system carries forward in time to decide what to do next.
+That leaves an enormous amount unspecified, and the choices are not
+interchangeable — a belief state, a successor representation and a
+value-equivalent latent answer different questions and fail in different ways.
+This page catalogues every kind, states precisely what each one is *sufficient
+for*, and gives the one criterion that unifies them: **a representation is
+adequate exactly when discarding what it discards costs you nothing you needed.**
+</Abstract>
+
+<KeyPoints>
+
+- **Sufficiency is always relative to a question.** There is no "correct" state. A representation is sufficient for prediction, or for a fixed reward, or for a family of rewards, or for optimal control — and these are genuinely different, strictly ordered requirements.
+- **Markov is the property everything is chasing.** A state is Markov if the future is independent of the past *given* it. Every representation here is an attempt to construct something Markov from observations that are not.
+- **The most abstract representation that preserves what you need is the best one.** Extra detail is not free: it costs sample complexity, invites [model exploitation](/world-models/planning-and-mpc/), and does not generalise. This is the whole argument for value-equivalence over reconstruction.
+- **Predictive and successor representations are the two genuinely different ideas here.** Both define state by what it *predicts* rather than what it *contains* — PSRs by future observations, successor representations by future state occupancy. Both make certain transfers trivial that are otherwise hard.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## What a state is for
+
+You are playing a game. At each moment you must decide what to do. **What do you
+need to remember?**
+
+Not everything you have ever seen — that would be unmanageable and mostly
+irrelevant. Not just the current screen either, because a single frame does not
+tell you whether the ball is moving up or down.
+
+You need exactly enough that **nothing else from the past would change your
+decision.** That is the whole specification, and it has a name.
+
+## The Markov property
+
+A state is **Markov** if, given it, the future is independent of the past. Knowing
+how you got here adds nothing.
+
+$$
+P(\text{future} \mid \text{state}, \text{past}) = P(\text{future} \mid \text{state})
+$$
+
+This is the property everything on this page is trying to construct. Raw
+observations usually are *not* Markov — one video frame does not contain velocity,
+one sensor reading does not contain the robot's hidden joint temperature — so you
+have to build something that is.
+
+<Aside type="tip" title="The two failure directions">
+**Too little state** and you cannot act well, because the information you needed is
+gone and no amount of computation recovers it. **Too much state** and you need vastly
+more data to learn anything, because you are learning over a space where most
+distinctions do not matter. Almost every design choice here is a position on that
+axis.
+</Aside>
+
+## Sufficient for what?
+
+Here is the idea that organises the entire catalogue, and it is worth slowing down
+for.
+
+"Sufficient" is not a property of a representation. It is a property of a
+**representation and a question together**. Consider four increasingly demanding
+questions:
+
+<Steps>
+
+1. **Can I predict the next observation?** The hardest requirement — you must retain
+   everything that affects anything you might see, including irrelevant detail.
+
+2. **Can I predict reward under one reward function?** Much weaker. You can discard
+   everything that does not affect *this* reward.
+
+3. **Can I predict reward under any reward in a family?** In between. You keep what
+   any member of the family might need.
+
+4. **Can I act optimally?** Weakest of all, in a specific sense: two states with
+   the same optimal action and value can be merged even if they look completely
+   different and predict different futures.
+
+</Steps>
+
+**These are strictly ordered.** Anything sufficient for (1) is sufficient for the
+rest. The reverse fails — and that failure is not a defect, it is the *point*. A
+representation sufficient only for (4) can be enormously more compact, and
+compactness is what buys sample efficiency.
+
+## The catalogue at a glance
+
+<Figure
+  lead="Every representation trades detail for tractability."
+  caption="Reading downward, each level discards more and is sufficient for less. Raw observations retain everything including noise. Belief states retain everything relevant to prediction under uncertainty. Bisimulation merges states that behave identically. Value-equivalent representations keep only what affects reward, value and policy — which is why MuZero's latent cannot be decoded back into a screen, and why nobody minds. The right level is the lowest one that still answers your question."
+>
+<svg viewBox="0 0 760 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Hierarchy of state representations by how much they discard">
+  <defs>
+    <marker id="sr1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <text class="xs" x="40" y="26">retains everything</text>
+  <text class="xs" x="40" y="378">retains only what decides</text>
+  <path class="ar" d="M28,34 L28,366" marker-end="url(#sr1)" opacity="0.4"/>
+
+  <rect class="f-pink" x="120" y="34" width="500" height="44" rx="5"/>
+  <text class="on-fill-sm" x="140" y="54">Raw observation  ·  o_t</text>
+  <text class="xs" x="140" y="70">no processing · not Markov · retains all noise and irrelevance</text>
+
+  <rect class="f-amber" x="140" y="88" width="480" height="44" rx="5"/>
+  <text class="on-fill-sm" x="160" y="108">History / stacked frames  ·  last k observations</text>
+  <text class="xs" x="160" y="124">Markov if k is large enough · grows without bound</text>
+
+  <rect class="f-amber" x="160" y="142" width="460" height="44" rx="5"/>
+  <text class="on-fill-sm" x="180" y="162">Belief state  ·  b_t = P(s | history)</text>
+  <text class="xs" x="180" y="178">provably Markov and sufficient for prediction · continuous, high-dimensional</text>
+
+  <rect class="f-blue" x="180" y="196" width="440" height="44" rx="5"/>
+  <text class="on-fill-sm" x="200" y="216">Predictive state (PSR)  ·  predictions of future tests</text>
+  <text class="xs" x="200" y="232">grounded in observables only · no hidden-state assumption needed</text>
+
+  <rect class="f-blue" x="200" y="250" width="420" height="44" rx="5"/>
+  <text class="on-fill-sm" x="220" y="270">Bisimulation / latent  ·  merge behaviourally identical states</text>
+  <text class="xs" x="220" y="286">sufficient for a reward family · discards visual detail that never matters</text>
+
+  <rect class="f-purple" x="220" y="304" width="400" height="44" rx="5"/>
+  <text class="on-fill-sm" x="240" y="324">Value-equivalent  ·  defined by r, v, π only</text>
+  <text class="xs" x="240" y="340">maximally compact · no decoder · tied to one reward function</text>
+
+  <text class="xs" x="640" y="56">sufficient for:</text>
+  <text class="xs" x="640" y="112">prediction</text>
+  <text class="xs" x="640" y="166">prediction</text>
+  <text class="xs" x="640" y="220">prediction</text>
+  <text class="xs" x="640" y="274">a reward family</text>
+  <text class="xs" x="640" y="328">one reward</text>
+
+  <line class="bx" x1="40" y1="360" x2="720" y2="360" opacity="0.3"/>
+  <text class="xs" x="120" y="390">Going down costs generality and buys sample efficiency. The best choice is the lowest level that still answers your question.</text>
+</svg>
+</Figure>
+
+<Tier level="mechanics" />
+
+## The families
+
+<Tabs>
+<TabItem label="Raw & engineered">
+
+**Raw observation.** Use $o_t$ directly. Simple, and almost never Markov — a single
+frame has no velocity, a single reading has no trend.
+
+**Frame stacking.** Concatenate the last $k$ observations. The standard fix in
+Atari (DQN used $k=4$), and it works because velocity is recoverable from
+consecutive frames. Fails when the required memory exceeds $k$, and the state
+grows linearly in $k$.
+
+**Hand-engineered features.** A domain expert writes down what matters: joint
+angles, ball position, inventory counts. Compact, interpretable, and it caps you at
+what the expert thought of. Still the right answer for well-understood
+low-dimensional systems, and this is under-appreciated — a robot with accurate
+proprioception rarely needs a learned encoder.
+
+</TabItem>
+<TabItem label="Belief states">
+
+The principled answer for partial observability. Maintain a **distribution** over
+the true hidden state:
+
+$$
+b_t(s) = P\big(s_t = s \mid o_{1:t},\, a_{1:t-1}\big).
+$$
+
+Updated by Bayes' rule as observations arrive. **The belief state is provably
+Markov and provably sufficient** — a POMDP over observations becomes a fully
+observed MDP over beliefs.
+
+**Why this is not the end of the story.** The belief is a probability distribution,
+so for $|S|$ discrete states it lives on an $(|S|-1)$-simplex — continuous, and
+high-dimensional the moment $|S|$ is large. Planning in belief space is
+PSPACE-hard in general. It is the correct object and rarely a tractable one.
+
+Modern latent-state models are best read as **learned approximations to belief
+states**: an RSSM's stochastic latent is doing the job of $b_t$, learned rather than
+computed.
+
+</TabItem>
+<TabItem label="Predictive states">
+
+A genuinely different idea, and underrated.
+
+Instead of "what is the hidden state?", ask "**what will I observe if I do
+things?**" A *test* is a sequence of actions and the observations they would
+produce. The predictive state is the vector of probabilities of a set of core
+tests succeeding.
+
+$$
+p_t = \big[\,P(t_1 \mid h_t),\ P(t_2\mid h_t),\ \dots,\ P(t_k\mid h_t)\,\big].
+$$
+
+**Why this matters.** A PSR is grounded entirely in **observable quantities**. There
+is no hidden state to posit, no model of unobservables to get wrong, and the
+representation is verifiable against data by construction. Littman et al. showed
+PSRs are at least as compact as POMDPs and sometimes exponentially more so.
+
+**Why they stayed niche.** Discovering the core tests is hard, learning algorithms
+were fragile, and deep latent models arrived and worked well enough empirically.
+The idea is better than its adoption, and it is worth knowing because it reappears:
+**a JEPA world model defines state by what it predicts, which is the same move.**
+
+</TabItem>
+<TabItem label="Successor representation">
+
+Dayan's 1993 idea, and one of the most elegant here.
+
+Separate **where you will go** from **what it is worth**. The successor
+representation stores expected discounted future occupancy:
+
+$$
+M(s, s') = \mathbb{E}\left[\sum_{t=0}^{\infty}\gamma^{t}\,\mathbb{1}\{s_t = s'\}\ \Big|\ s_0 = s\right].
+$$
+
+Then for any reward vector $r$:
+
+$$
+V(s) = \sum_{s'} M(s,s')\,r(s') = \big[Mr\big](s).
+$$
+
+**The payoff is immediate.** Change the reward, and you recompute the value with a
+single matrix-vector product — **no re-learning of dynamics at all**. The SR
+captures the environment's structure independent of what you want from it.
+
+**Successor features** generalise this to continuous spaces: replace state
+indicators with features $\phi(s)$ and assume $r(s) = \phi(s)^\top w$. Then
+$\psi(s) = \mathbb{E}[\sum \gamma^t \phi(s_t)]$ and $Q(s,a) = \psi(s,a)^\top w$ —
+transfer across any reward that is linear in your features.
+
+**It is also a genuine model of biology.** Successor-representation-like coding has
+been proposed for hippocampal place cells, which is unusually strong convergence
+between an RL construct and neuroscience.
+
+</TabItem>
+<TabItem label="Bisimulation">
+
+**Merge states that behave identically.** Two states are bisimilar if they have the
+same immediate reward and transition to bisimilar states with the same
+probabilities. It is the correct notion of "these are the same situation" for
+control.
+
+Exact bisimulation is too brittle — a floating-point difference breaks it — so
+Ferns et al. defined a **bisimulation metric**:
+
+$$
+d(s_i, s_j) = \max_a\Big[\,\big|r_{s_i}^a - r_{s_j}^a\big| + \gamma\,W_1\big(P^a_{s_i},\, P^a_{s_j};\, d\big)\Big],
+$$
+
+with $W_1$ the Wasserstein distance under $d$ itself — a fixed point, computed by
+iteration.
+
+**DBC** (Zhang et al. 2020) made this practical: learn an encoder whose latent
+distances *approximate* the bisimulation metric. The result is a representation
+that provably ignores task-irrelevant visual variation — background clutter,
+distractor objects, lighting — because those do not affect reward or transitions.
+
+**This is the theoretically cleanest answer to "what should a latent state
+contain?"** and the practical difficulty is that estimating the Wasserstein term
+from samples is noisy.
+
+</TabItem>
+<TabItem label="Value-equivalent">
+
+The most aggressive abstraction. Do not require the latent to represent the
+observation *at all* — require only that it predicts reward, value and policy
+correctly.
+
+Grimm et al. formalised it: two models are value-equivalent with respect to a
+policy set $\Pi$ and value set $\mathcal{V}$ if they induce identical Bellman
+updates:
+
+$$
+\mathcal{T}^{\pi}_{m_1} v = \mathcal{T}^{\pi}_{m_2} v \quad \forall\, \pi\in\Pi,\ v\in\mathcal{V}.
+$$
+
+**The key theorem**: the space of value-equivalent models *shrinks* as $\Pi$ and
+$\mathcal{V}$ grow, and searching over value-equivalent models is strictly easier
+than searching over accurate ones. You are not approximating the world; you are
+approximating its *decision-relevant shadow*.
+
+MuZero is the flagship. Its latent has no decoder and cannot be turned back into a
+game screen — see the [world model catalogue](/world-models/catalogue/).
+
+**The cost**: the representation is defined relative to a reward, so it does not
+transfer to a new task, and it cannot be learned from reward-free data.
+
+</TabItem>
+<TabItem label="Object-centric">
+
+Represent the scene as a **set of objects**, each with its own vector, rather than
+one monolithic embedding.
+
+**Slot Attention** is the standard mechanism: $K$ "slots" compete via an attention
+softmax *over slots* rather than over inputs, so each input feature is assigned to
+one slot, and slots iteratively refine to bind to distinct objects.
+
+**Why anyone wants this.** Compositional generalisation. If a scene is a set of
+object vectors, a model can in principle handle three cubes having only seen two,
+because the representation composes. A monolithic embedding of "two cubes" has no
+structure that extends.
+
+**Why it has not taken over.** It works on synthetic scenes with clean object
+boundaries and degrades on natural images, where "object" is not well-defined
+(is a person's arm an object?). The binding problem — which features belong to
+which object — is not solved in general.
+
+</TabItem>
+</Tabs>
+
+## How the modern learned versions are trained
+
+The families above are *what* to represent. These are *how* to get there from
+pixels.
+
+| Method | Signal | What it produces |
+|---|---|---|
+| **Reconstruction** (PlaNet, Dreamer) | rebuild the observation | retains everything, including irrelevant detail |
+| **Contrastive** (CURL) | augmented views of the same state agree | invariance to whatever you augmented |
+| **Self-predictive** (SPR) | predict your own future latents | dynamics-aware, no decoder, no negatives |
+| **Bisimulation** (DBC) | latent distance ≈ behavioural distance | provably discards task-irrelevant variation |
+| **Value-equivalent** (MuZero) | predict r, v, π | maximally compact, reward-specific |
+| **Augmentation only** (DrQ) | none — just augment the input | often matches the above |
+
+<Aside type="danger" title="The DrQ result, which the field partly ignored">
+Kostrikov et al. showed that simply applying random crops and shifts to the input —
+with **no** representation-learning objective at all — matched or beat CURL and
+several contemporaries on the standard pixel-control benchmarks.
+
+The implication is uncomfortable and worth stating: a substantial part of what was
+attributed to clever representation learning was regularisation. **Run the
+augmentation-only baseline before believing a representation-learning result.** This
+is the same lesson as [DLinear in forecasting](/domains/time-series/), in a
+different subfield.
+</Aside>
+
+<Tier level="formal" />
+
+## Sufficiency, formally
+
+Let $\phi: \mathcal{O}^* \to \mathcal{Z}$ map histories to a representation. Define
+increasingly weak sufficiency conditions.
+
+**Observation-sufficient (predictive).** For all histories $h, h'$:
+
+$$
+\phi(h) = \phi(h') \implies P\big(o_{t+1:\infty}\mid h,\, a_{t:\infty}\big) = P\big(o_{t+1:\infty}\mid h',\, a_{t:\infty}\big).
+$$
+
+**Reward-sufficient (model-irrelevance abstraction).**
+
+$$
+\phi(s) = \phi(s') \implies R(s,a) = R(s',a)\ \wedge\ \sum_{s''\in\phi^{-1}(z)}\!\!P(s''\mid s,a) = \!\!\sum_{s''\in\phi^{-1}(z)}\!\!P(s''\mid s',a)\ \ \forall a, z.
+$$
+
+**$Q^\pi$-irrelevance.** $\phi(s)=\phi(s') \implies Q^\pi(s,a) = Q^{\pi}(s',a)$ for
+all $\pi, a$.
+
+**$a^*$-irrelevance.** $\phi(s)=\phi(s') \implies \arg\max_a Q^*(s,a) =
+\arg\max_a Q^*(s',a)$.
+
+Li, Walsh & Littman's hierarchy:
+
+$$
+\text{observation} \subset \text{model-irrelevance} \subset Q^\pi \subset Q^* \subset a^* .
+$$
+
+**Read the containments carefully.** Each is a *set of abstractions*, and the
+larger sets contain coarser abstractions. So $a^*$-irrelevance permits the most
+aggressive merging — and their theorem is that value iteration converges to the
+optimal policy under model-irrelevance and $Q^*$-irrelevance abstractions, but
+**not necessarily** under $a^*$-irrelevance, because merging states with the same
+optimal action can break the Bellman backup. Aggressiveness has a limit and it is a
+precise one.
+
+<Figure
+  lead="Two states that look nothing alike can be the same state."
+  caption="On the left, four observations differing only in background clutter and lighting. A reconstruction-trained encoder must keep those differences, because it has to rebuild them. A bisimulation-trained encoder collapses all four to one point, because none of the differences affects reward or transitions — and the value bound guarantees the collapse costs at most d/(1−γ). On the right, the opposite case: two visually near-identical frames that must NOT be merged, because a single pixel encodes whether the door is locked. Visual similarity and behavioural similarity are unrelated, and only the second one matters."
+>
+<svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Bisimulation merges visually different but behaviourally identical states">
+  <defs>
+    <marker id="sr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <text class="lb" x="180" y="20" text-anchor="middle">Different pixels, same behaviour</text>
+  <rect class="f-blue" x="30" y="34" width="60" height="44" rx="4"/>
+  <text class="xs" x="60" y="60" text-anchor="middle">o₁</text>
+  <rect class="f-green" x="98" y="34" width="60" height="44" rx="4"/>
+  <text class="xs" x="128" y="60" text-anchor="middle">o₂</text>
+  <rect class="f-amber" x="166" y="34" width="60" height="44" rx="4"/>
+  <text class="xs" x="196" y="60" text-anchor="middle">o₃</text>
+  <rect class="f-pink" x="234" y="34" width="60" height="44" rx="4"/>
+  <text class="xs" x="264" y="60" text-anchor="middle">o₄</text>
+  <text class="xs" x="162" y="94" text-anchor="middle">differ only in background, lighting, distractors</text>
+
+  <path class="ar" d="M100,112 L100,140" marker-end="url(#sr2)"/>
+  <text class="xs" x="112" y="130">reconstruction</text>
+  <rect class="f-pink" x="30" y="144" width="150" height="44" rx="4" opacity="0.55"/>
+  <text class="on-fill-sm" x="105" y="164" text-anchor="middle">4 distinct latents</text>
+  <text class="xs" x="105" y="180" text-anchor="middle">must rebuild the clutter</text>
+
+  <path class="ar" d="M240,112 L240,140" marker-end="url(#sr2)"/>
+  <text class="xs" x="252" y="130">bisimulation</text>
+  <rect class="f-green" x="196" y="144" width="150" height="44" rx="4" opacity="0.7"/>
+  <text class="on-fill-sm" x="271" y="164" text-anchor="middle">1 latent</text>
+  <text class="xs" x="271" y="180" text-anchor="middle">clutter affects nothing</text>
+
+  <rect class="f-green" x="30" y="204" width="316" height="30" rx="4" opacity="0.45"/>
+  <text class="on-fill-sm" x="188" y="224" text-anchor="middle">|V*(sᵢ) − V*(sⱼ)| ≤ d(sᵢ,sⱼ) / (1 − γ)</text>
+  <text class="xs" x="188" y="252" text-anchor="middle">the merge costs a bounded amount — a guarantee</text>
+  <text class="xs" x="188" y="268" text-anchor="middle">reconstruction never offers</text>
+
+  <line class="bx" x1="380" y1="14" x2="380" y2="286" opacity="0.3"/>
+
+  <text class="lb" x="570" y="20" text-anchor="middle">Same pixels, different behaviour</text>
+  <rect class="f-blue" x="440" y="34" width="90" height="60" rx="4"/>
+  <text class="xs" x="485" y="68" text-anchor="middle">o₅</text>
+  <rect class="f-blue" x="560" y="34" width="90" height="60" rx="4"/>
+  <text class="xs" x="605" y="68" text-anchor="middle">o₆</text>
+  <circle class="f-pink" cx="640" cy="46" r="4"/>
+  <text class="xs" x="545" y="112" text-anchor="middle">one pixel differs — the door is locked</text>
+
+  <path class="ar" d="M545,124 L545,150" marker-end="url(#sr2)"/>
+  <rect class="f-pink" x="430" y="154" width="230" height="44" rx="4" opacity="0.5"/>
+  <text class="on-fill-sm" x="545" y="174" text-anchor="middle">must stay separate</text>
+  <text class="xs" x="545" y="190" text-anchor="middle">reward differs → bisimulation distance is large</text>
+
+  <text class="xs" x="545" y="224" text-anchor="middle">A pixel-distance encoder merges these.</text>
+  <text class="xs" x="545" y="240" text-anchor="middle">A bisimulation encoder does not.</text>
+  <text class="xs" x="545" y="266" text-anchor="middle">Visual similarity is not behavioural similarity —</text>
+  <text class="xs" x="545" y="282" text-anchor="middle">in either direction.</text>
+</svg>
+</Figure>
+
+## Belief states
+
+For a POMDP $(\mathcal{S},\mathcal{A},\mathcal{O},T,O,R,\gamma)$, the belief update
+is
+
+$$
+b'(s') = \frac{O(o\mid s',a)\sum_{s} T(s'\mid s,a)\,b(s)}{P(o\mid b,a)},
+\qquad
+P(o\mid b,a) = \sum_{s'}O(o\mid s',a)\sum_s T(s'\mid s,a)b(s).
+$$
+
+**The sufficiency theorem.** $b_t$ is a sufficient statistic of the history for
+predicting the future — no additional information from $o_{1:t}$ improves
+prediction. So the POMDP over $\mathcal{S}$ is exactly an MDP over the belief
+simplex $\Delta(\mathcal{S})$.
+
+**And the catch.** $\Delta(\mathcal{S})$ is $(|S|-1)$-dimensional and continuous.
+The optimal value function over beliefs is piecewise linear and convex —
+representable as a set of $\alpha$-vectors:
+
+$$
+V^{*}(b) = \max_{\alpha\in\Gamma}\ \alpha^{\top} b ,
+$$
+
+but $|\Gamma|$ grows doubly exponentially in the horizon in the worst case. Exact
+POMDP planning is PSPACE-complete for finite horizons and undecidable for infinite
+ones. **This intractability is why the field learns approximate latent states
+instead**, and an RSSM's stochastic path is precisely a learned, compressed stand-in
+for $b_t$.
+
+## Predictive state representations
+
+A **test** is $t = a_1o_1a_2o_2\cdots a_ko_k$. Its prediction given history $h$ is
+
+$$
+p(t \mid h) = P\big(o_1\cdots o_k \mid h,\, a_1\cdots a_k\big).
+$$
+
+The **system dynamics matrix** $D$ has rows indexed by histories, columns by tests,
+entries $p(t\mid h)$. A set of tests $Q = \{q_1,\dots,q_k\}$ is a **core set** if
+its columns span the column space of $D$; then every test's prediction is a
+function of the core predictions:
+
+$$
+p(t \mid h) = f_t\big(p(q_1\mid h),\dots,p(q_k\mid h)\big),
+$$
+
+linear in the case of linear PSRs. The predictive state is
+$p(h) = [p(q_1\mid h),\dots,p(q_k\mid h)]^\top$, and it is updated in closed form
+after each action-observation pair:
+
+$$
+p_i(hao) = \frac{m_{aoq_i}^{\top}\,p(h)}{m_{ao}^{\top}\,p(h)} .
+$$
+
+**The compactness result**: the number of core tests equals $\operatorname{rank}(D)$,
+which is at most $|S|$ and can be far smaller. So a PSR is never larger than the
+equivalent POMDP and is sometimes exponentially smaller.
+
+**The conceptual point, which is the durable one.** State is *defined by
+predictions about observables*. There is no unobservable posited, so the
+representation is falsifiable against data. This is exactly the move a
+[JEPA world model](/architectures/jepa/) makes — define the latent by what it
+predicts — arrived at independently two decades earlier.
+
+## Successor representation and features
+
+Tabular SR, as a matrix:
+
+$$
+M = \sum_{t=0}^{\infty}\gamma^{t}\,P^{t} = \big(I - \gamma P\big)^{-1},
+$$
+
+the resolvent of the transition matrix. Value becomes $V = M r$ — **linear in the
+reward**. Change $r$, recompute in one product.
+
+It obeys a Bellman equation of its own, so it is learnable by TD:
+
+$$
+M(s,s') \leftarrow M(s,s') + \alpha\Big[\mathbb{1}\{s = s'\} + \gamma M(s_{t+1}, s') - M(s,s')\Big].
+$$
+
+**Successor features.** Assume $r(s,a,s') = \phi(s,a,s')^{\top}w$. Define
+
+$$
+\psi^{\pi}(s,a) = \mathbb{E}^{\pi}\left[\sum_{t=0}^{\infty}\gamma^{t}\phi_{t+1}\ \Big|\ s_t=s, a_t=a\right],
+\qquad
+Q^{\pi}_{w}(s,a) = \psi^{\pi}(s,a)^{\top} w .
+$$
+
+**Generalised policy improvement.** Given policies $\pi_1,\dots,\pi_n$ with known
+$\psi^{\pi_i}$, and a *new* reward $w$, the policy
+
+$$
+\pi(s) = \arg\max_a\ \max_i\ \psi^{\pi_i}(s,a)^{\top}w
+$$
+
+is guaranteed at least as good as every $\pi_i$ on the new task — with **no
+learning at all**. That is a genuine transfer theorem, and it holds whenever the
+new reward is linear in $\phi$.
+
+**The limitation is exactly that condition.** Rewards outside the span of $\phi$ get
+no guarantee, and choosing $\phi$ is the unsolved part.
+
+## Bisimulation metrics
+
+$$
+d(s_i,s_j) = \max_{a\in\mathcal{A}}\Big[\big|R(s_i,a) - R(s_j,a)\big| + \gamma\,W_1\big(P(\cdot\mid s_i,a),\ P(\cdot\mid s_j,a);\ d\big)\Big].
+$$
+
+$d$ appears on both sides — it is defined as the fixed point of an operator
+$\mathcal{F}$. Ferns et al. showed $\mathcal{F}$ is a contraction with modulus
+$\gamma$, so by Banach the fixed point exists and is unique, and value iteration
+on the metric converges.
+
+**The value bound** is what makes it useful:
+
+$$
+\big|V^{*}(s_i) - V^{*}(s_j)\big| \;\leq\; \frac{d(s_i,s_j)}{1-\gamma}.
+$$
+
+States close in bisimulation distance have close optimal values, so **collapsing
+them costs a bounded amount**. This is a guarantee no reconstruction-based
+representation offers.
+
+DBC's practical version learns $\phi$ minimising
+
+$$
+J(\phi) = \Big(\big\|\phi(s_i) - \phi(s_j)\big\|_1 - \big|\hat r_i - \hat r_j\big| - \gamma\,W_2\big(\hat P(\cdot\mid \bar\phi(s_i), a_i),\ \hat P(\cdot\mid\bar\phi(s_j), a_j)\big)\Big)^2,
+$$
+
+using a Gaussian latent dynamics model so the $W_2$ term has a closed form. The
+encoder is trained so that **latent distance equals behavioural distance** — task-
+irrelevant variation is then provably compressed away, because it contributes
+nothing to either term.
+
+## Value equivalence, formally
+
+For model $m = (\mathcal{P}, \mathcal{R})$, policy set $\Pi$ and value set
+$\mathcal{V}$, define
+
+$$
+\mathcal{M}(\Pi,\mathcal{V}) = \big\{\, m\ :\ \mathcal{T}^{\pi}_{m} v = \mathcal{T}^{\pi}_{m^{*}} v\quad \forall \pi\in\Pi,\ v\in\mathcal{V} \,\big\},
+$$
+
+the set of models value-equivalent to the true one.
+
+**Monotonicity.** $\Pi \subseteq \Pi'$ and $\mathcal{V}\subseteq\mathcal{V}'$ imply
+$\mathcal{M}(\Pi',\mathcal{V}')\subseteq\mathcal{M}(\Pi,\mathcal{V})$. Fewer
+constraints, more admissible models.
+
+**The two extremes are informative.** With $\Pi$ all policies and $\mathcal{V}$ all
+value functions, $\mathcal{M}$ contains only the true model — you are back to exact
+modelling. With small $\Pi, \mathcal{V}$, the set is large and contains models far
+simpler than the truth that nonetheless induce the same decisions.
+
+**So the practical claim is a capacity argument**: with limited capacity, aim at the
+value-equivalent set rather than at the true model, because members of that set can
+be represented and the truth cannot. This is the formal statement of why MuZero's
+latent is allowed to be unlike the world.
+
+<Tier level="frontier" />
+
+## Where this stands, as of 2026
+
+**Self-predictive representations are the practical default.** Predicting your own
+future latents — SPR, and the whole [JEPA](/architectures/jepa/) family — gives
+dynamics-aware representations without a decoder, without negatives, and without
+requiring reward. This converged from two directions: the RL representation
+literature and the self-supervised vision literature arrived at the same objective.
+
+**Bisimulation is the best theory and the weakest practice.** The value bound is
+exactly the guarantee you want, and estimating Wasserstein distances between
+learned transition distributions from samples is noisy enough that DBC-style
+methods are finicky. Nobody has closed the gap between the theory's cleanliness and
+the estimator's variance.
+
+**Augmentation remains a suspiciously strong baseline.** DrQ's result has been
+replicated and is still not fully absorbed — many representation-learning papers in
+RL do not report an augmentation-only control, and they should.
+
+**Object-centric representations are stuck at the natural-image boundary.** Slot
+Attention and successors work well on synthetic scenes and degrade on real ones,
+because "object" is not a well-posed notion outside curated data. This is the main
+obstacle to the compositional generalisation the approach was meant to deliver.
+
+**Successor features are having a quiet revival** in the context of transfer and
+of reward-free pretraining, because the linear-reward assumption is much more
+palatable when $\phi$ is a large pretrained feature vector.
+
+## Open problems
+
+- **Choosing the abstraction level automatically.** Nothing decides how much to
+  discard. It is a design choice made by sweep, and the correct answer depends on a
+  reward family you may not know in advance.
+
+- **Reward-free representations that transfer.** Value-equivalence needs reward;
+  self-prediction does not but gives no guarantee about decision-relevance. A
+  representation that is both reward-free and provably sufficient for control is not
+  available.
+
+- **The binding problem.** Deciding which features belong to which object, in
+  natural scenes, remains unsolved. Every object-centric method assumes a
+  segmentation the world does not provide.
+
+- **Estimating behavioural metrics from samples.** Bisimulation distance requires
+  comparing distributions; the estimators are high-variance in exactly the
+  high-dimensional settings where the metric would be most useful.
+
+- **Non-stationarity.** All of this assumes a fixed environment. When dynamics
+  change, a representation tuned to old dynamics is wrong, and there is no
+  established way to detect that from the representation alone.
+
+## Choosing one
+
+<Card title="A decision procedure" icon="right-arrow">
+**Low-dimensional, well-understood system?** Hand-engineered features. Genuinely.
+Do not learn what you can write down.
+
+**Partial observability with a known model?** Belief state — it is the correct
+object. Approximate it if exact planning is intractable.
+
+**Pixels, one task, reward available?** Value-equivalent or self-predictive, plus
+augmentation. Run the augmentation-only baseline first.
+
+**Pixels, many tasks, one environment?** Successor features, if rewards are
+plausibly linear in your features. The transfer guarantee is real.
+
+**Distractors and task-irrelevant visual variation?** Bisimulation-based, if you can
+make the estimator behave.
+
+**Reward-free data only?** Self-predictive / JEPA. It is the only family that trains
+without reward and still learns dynamics.
+
+**Need compositional generalisation over objects?** Object-centric — accepting that
+it currently works on clean scenes.
+</Card>
+
+## Reading path
+
+1. **Li, Walsh & Littman (2006)** — the sufficiency hierarchy. Short, and it is the
+   organising theory for this whole page.
+2. **Dayan (1993)** — the successor representation. One of the most elegant ideas in
+   RL, and the paper is readable.
+3. **Littman, Sutton & Singh (2001)** — predictive state representations, for the
+   "define state by predictions" move.
+4. **Ferns et al. (2004)** and **Zhang et al. (2020)** — the bisimulation metric and
+   its deep-learning realisation, read in that order.
+5. **Grimm et al. (2020)** — value equivalence, for the formal version of what
+   MuZero is doing.
+
+<Papers papers={frontmatter.papers} />
