@@ -330,7 +330,7 @@ itself address the model ignoring or misreading what it retrieved. See
 
 **Reward hacking** — optimising the specified reward in ways that violate the
 intent behind it. Not a bug in the optimiser but a consequence of the reward
-being a proxy. See [AI Safety](/foundations/ai-safety/).
+being a proxy. See [AI Safety](/training/ai-safety/).
 
 **RLHF** — reinforcement learning from human feedback: fit a reward model to
 human preference comparisons, then optimise the policy against it. The standard
@@ -374,7 +374,7 @@ Representations](/foundations/state-representations/).
 
 **Sycophancy** — a model agreeing with the user's stated position rather than
 reporting its best estimate. A predictable consequence of optimising against
-human approval ratings. See [AI Safety](/foundations/ai-safety/).
+human approval ratings. See [AI Safety](/training/ai-safety/).
 
 **Task vector** — a single activation direction, extracted from a prompt
 containing demonstrations, that carries the task and can be transplanted into a

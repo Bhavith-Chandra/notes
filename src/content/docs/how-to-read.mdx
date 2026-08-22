@@ -4,7 +4,7 @@ description: The four depth tiers, what each one assumes, and how to author a ne
 ---
 
 import Tier from '../../components/Tier.astro';
-import { Aside, FileTree } from '@astrojs/starlight/components';
+import { Aside, FileTree, Steps } from '@astrojs/starlight/components';
 
 Every topic page in this atlas has the same four-tier spine. The tiers are
 cumulative: each one assumes you have read the ones above it, and nothing else.
@@ -87,8 +87,48 @@ Copy `src/content/docs/_template.mdx` to start a new page. The structure is:
     - nerfies.css            all the visual styling
 </FileTree>
 
+## Ordering rules
+
+The sidebar is a curriculum, not a table of contents. Four invariants keep it
+that way, and `npm run check:order` fails the build on any violation:
+
+<Steps>
+
+1. **Every page has a numeric `sidebar.order`.**
+
+2. **No two pages in a directory share an order.** Starlight breaks ties by
+   filename, which produces an arbitrary reading order that looks intentional.
+
+3. **Every `index.mdx` is order 0.**
+
+4. **No page lists a prereq from a later sidebar group.** A forward prerequisite
+   means the *group order* is wrong, not the page — fix the order, or move the
+   page. This is why AI Safety lives under Training rather than Foundations, and
+   why Embeddings sits after Architectures.
+
+</Steps>
+
+Place a new page by asking what the reader must already know, not by what it is
+about. The check will tell you if you got it wrong.
+
 ## Adding a new section to the sidebar
 
-Create the directory under `src/content/docs/`, then add a group to the `sidebar`
-array in `astro.config.mjs` with `autogenerate: { directory: '<name>' }`. Order
-within a group is controlled by each page's `sidebar.order` frontmatter.
+Create the directory under `src/content/docs/`, then:
+
+<Steps>
+
+1. Add a group to the `sidebar` array in `astro.config.mjs` with
+   `autogenerate: { directory: '<name>' }`, positioned so nothing in it depends
+   on a group below it.
+
+2. Add the directory name to `GROUP_ORDER` in `scripts/check-order.mjs`, in the
+   same position. The check compares against this list, so the two must agree.
+
+3. Add the section to `/curriculum/` and to the card grid on the home page.
+
+4. Run `npm run check` — order, MDX lint and contrast in one command.
+
+</Steps>
+
+Moving an existing page means its URL changes. Add the old path to `redirects` in
+`astro.config.mjs` rather than breaking the link.

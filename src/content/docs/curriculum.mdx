@@ -1,0 +1,338 @@
+---
+title: Reading Order
+description: "The whole atlas in prerequisite order — nine sections, 49 pages, about 30 hours — plus three shorter tracks for people who need a specific subset."
+sidebar:
+  order: 3
+depth: intuition
+readingTime: 10
+---
+
+import Figure from '../../components/Figure.astro';
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+The sidebar is ordered, not alphabetical. Sections are numbered in prerequisite
+order: **nothing in a section depends on a section below it**, and within a
+section pages are ordered the same way. Read top to bottom and you will never hit
+a term that has not been introduced.
+
+That is a real constraint, enforced by a check in the build — `npm run
+check:order` fails if any page lists a prerequisite from a later section. It is
+the reason a few pages sit somewhere you might not expect: **AI Safety** is in
+Training rather than Foundations because it only makes sense after RLHF, and
+**Embeddings** comes after Architectures because text embedding models are
+transformers.
+
+Reading everything is about **30 hours**. Most people should not do that; the
+tracks below are the shorter routes.
+
+## The nine sections, and why in this order
+
+<Figure
+  lead="Each section depends only on sections to its left."
+  caption="The dependency structure the sidebar encodes. Foundations is genuinely foundational — every other section draws on backpropagation and probability. Encoders comes second because the encoder–decoder split is the vocabulary the architecture pages use. Architectures precedes Embeddings because modern text embedders are fine-tuned transformers. Training comes after both because it is about objectives applied to those architectures. World Models, Domains and Systems are three different ways of building on everything before them, and are independent of one another — you can read any of them without the others. Hardware is last because it is about the cost of everything above, and reads best once you know what you would be spending it on."
+>
+<svg viewBox="0 0 760 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Dependency order of the nine sections">
+  <defs>
+    <marker id="cur-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor" opacity="0.6"/>
+    </marker>
+  </defs>
+
+  <rect class="f-blue" x="24" y="120" width="118" height="56" rx="5"/>
+  <text class="on-fill-sm" x="83" y="142" text-anchor="middle">1 Foundations</text>
+  <text class="on-fill-sm" x="83" y="162" text-anchor="middle">6 h</text>
+
+  <path class="ar" d="M146,148 L172,148" marker-end="url(#cur-a)"/>
+
+  <rect class="f-blue" x="176" y="120" width="106" height="56" rx="5"/>
+  <text class="on-fill-sm" x="229" y="142" text-anchor="middle">2 Encoders</text>
+  <text class="on-fill-sm" x="229" y="162" text-anchor="middle">2.3 h</text>
+
+  <path class="ar" d="M286,148 L312,148" marker-end="url(#cur-a)"/>
+
+  <rect class="f-purple" x="316" y="120" width="118" height="56" rx="5"/>
+  <text class="on-fill-sm" x="375" y="142" text-anchor="middle">3 Architectures</text>
+  <text class="on-fill-sm" x="375" y="162" text-anchor="middle">5.8 h</text>
+
+  <path class="ar" d="M438,134 L466,86" marker-end="url(#cur-a)"/>
+  <path class="ar" d="M438,162 L466,162" marker-end="url(#cur-a)"/>
+
+  <rect class="f-green" x="470" y="58" width="112" height="52" rx="5"/>
+  <text class="on-fill-sm" x="526" y="80" text-anchor="middle">4 Embeddings</text>
+  <text class="on-fill-sm" x="526" y="98" text-anchor="middle">2.5 h</text>
+
+  <rect class="f-green" x="470" y="136" width="112" height="52" rx="5"/>
+  <text class="on-fill-sm" x="526" y="158" text-anchor="middle">5 Training</text>
+  <text class="on-fill-sm" x="526" y="176" text-anchor="middle">4.3 h</text>
+
+  <path class="ar" d="M586,84 L640,84" marker-end="url(#cur-a)"/>
+  <path class="ar" d="M586,158 L640,140" marker-end="url(#cur-a)"/>
+  <path class="ar" d="M586,168 L640,196" marker-end="url(#cur-a)"/>
+  <path class="ar" d="M586,178 L640,250" marker-end="url(#cur-a)"/>
+
+  <rect class="f-amber" x="644" y="60" width="94" height="46" rx="5"/>
+  <text class="on-fill-sm" x="691" y="80" text-anchor="middle">6 World</text>
+  <text class="on-fill-sm" x="691" y="96" text-anchor="middle">Models · 2.9 h</text>
+
+  <rect class="f-amber" x="644" y="120" width="94" height="46" rx="5"/>
+  <text class="on-fill-sm" x="691" y="140" text-anchor="middle">7 Domains</text>
+  <text class="on-fill-sm" x="691" y="156" text-anchor="middle">1.7 h</text>
+
+  <rect class="f-amber" x="644" y="180" width="94" height="46" rx="5"/>
+  <text class="on-fill-sm" x="691" y="200" text-anchor="middle">8 Systems</text>
+  <text class="on-fill-sm" x="691" y="216" text-anchor="middle">2.4 h</text>
+
+  <rect class="f-pink" x="644" y="240" width="94" height="46" rx="5"/>
+  <text class="on-fill-sm" x="691" y="260" text-anchor="middle">9 Hardware</text>
+  <text class="on-fill-sm" x="691" y="276" text-anchor="middle">2.1 h</text>
+
+  <text class="xs" x="644" y="304">6, 7, 8 and 9 are</text>
+  <text class="xs" x="644" y="318">mutually independent</text>
+
+  <text class="xs" x="24" y="206">Everything</text>
+  <text class="xs" x="24" y="220">downstream</text>
+  <text class="xs" x="24" y="234">assumes</text>
+  <text class="xs" x="24" y="248">backprop and</text>
+  <text class="xs" x="24" y="262">probability.</text>
+
+  <text class="xs" x="316" y="206">Transformers is the</text>
+  <text class="xs" x="316" y="220">single most-referenced</text>
+  <text class="xs" x="316" y="234">page on the site.</text>
+</svg>
+</Figure>
+
+## Three tracks
+
+Pick the one that matches why you are here. Each is a complete, self-contained
+route — the pages are still in prerequisite order within the track.
+
+<Tabs>
+<TabItem label="New to the field">
+
+**About 8 hours.** Enough to read a modern paper's introduction and follow a
+technical conversation without bluffing.
+
+<Steps>
+
+1. [How to read a page](/how-to-read/) — 5 min. What the four tiers mean.
+2. [Backpropagation](/foundations/backpropagation/) — 30 min. How learning happens at all.
+3. [Probability for ML](/foundations/probability-for-ml/) — 30 min. The notation everything else uses.
+4. [Tokenization](/foundations/tokenization/) — 35 min. What a model actually sees. Explains several famous "failures" that are not reasoning failures.
+5. [Representations](/foundations/representations/) — 35 min. The central idea of the field.
+6. [Encoders](/encoders/) — 25 min. The word means three different things; sort them out early.
+7. [Neural Encoders](/encoders/neural-encoders/) — 45 min. Autoencoders through VAEs, VQ-VAE and contrastive.
+8. [Transformers](/architectures/transformers/) — 45 min. The architecture behind nearly everything current.
+9. [Optimization](/training/optimization/) — 35 min. Why Adam, why warmup, why any of it works.
+10. [Self-Supervised Learning](/training/self-supervision/) — 40 min. Where the training signal comes from without labels.
+11. [Post-Training and Alignment](/training/post-training/) — 40 min. How a raw pretrained model becomes an assistant.
+12. [Generalization](/foundations/generalization/) — 30 min. Why overparameterised models work, which classical theory said they should not.
+13. [Evaluation](/foundations/evaluation/) — 30 min. How to tell whether a reported number means anything.
+14. [Hardware — Start Here](/hardware/) — 12 min. What things cost, in one page.
+
+</Steps>
+
+Stop at any tier of any page. Tier 1 of all fourteen is roughly three hours and
+still leaves you with a correct picture.
+
+</TabItem>
+<TabItem label="Heading for research">
+
+**About 20 hours.** The full path to reading current papers and having opinions
+about them.
+
+Everything in the first track, then:
+
+<Steps>
+
+1. [Latent Spaces](/foundations/latent-spaces/) — 55 min. The geometry, in depth. The longest and probably the most useful page here.
+2. [State Representations](/foundations/state-representations/) — 45 min. What a state must contain, and the sufficiency argument.
+3. [Encoder–Decoder Architectures](/encoders/encoder-decoder/) — 35 min.
+4. [State Space Models](/architectures/state-space-models/) — 35 min. The credible attention alternative.
+5. [Mixture of Experts](/architectures/mixture-of-experts/) — 35 min. Decoupling parameters from compute.
+6. [The Generative Model Zoo](/architectures/generative-models/) — 55 min. Every family, and what each trades away.
+7. [Diffusion Models](/architectures/diffusion/) — 45 min.
+8. [Energy-Based Models](/architectures/energy-based-models/) — 55 min. The framing that unifies most of the above.
+9. [JEPA](/architectures/jepa/) — 40 min. The non-generative alternative, and the argument for it.
+10. [Multimodal Models](/architectures/multimodal/) — 35 min.
+11. [Fine-Tuning and PEFT](/training/fine-tuning/) — 30 min.
+12. [Reinforcement Learning](/training/reinforcement-learning/) — 40 min.
+13. [In-Context Learning](/training/in-context-learning/) — 35 min. Four competing explanations that turn out not to compete.
+14. [AI Safety and Alignment](/training/ai-safety/) — 35 min.
+15. [Interpretability](/foundations/interpretability/) — 40 min. Superposition, circuits, sparse autoencoders.
+16. [Causal Inference](/foundations/causal-inference/) — 35 min.
+17. [World Models](/world-models/) → [Planning and MPC](/world-models/planning-and-mpc/) → [Hierarchical Planning](/world-models/hierarchy/) → [The World Model Zoo](/world-models/catalogue/) — 2.9 h.
+
+</Steps>
+
+Then pick a domain page ([graphs](/domains/graph-neural-networks/), [time
+series](/domains/time-series/), [speech](/domains/speech-audio/)) if it touches
+your area, and read [Compute Budgeting](/hardware/compute-budgeting/) so your
+proposals have numbers in them.
+
+</TabItem>
+<TabItem label="Building a system">
+
+**About 9 hours.** The path for someone shipping something rather than writing a
+paper. Skips most of the theory and none of the things that break in production.
+
+<Steps>
+
+1. [Transformers](/architectures/transformers/) — 45 min. Read at least tiers 1–2.
+2. [Tokenization](/foundations/tokenization/) — 35 min. Directly explains cost, context limits and several classes of bug.
+3. [Embeddings — Start Here](/embeddings/) — 28 min. The four questions that determine whether an embedding is right for you.
+4. [Text Embeddings](/embeddings/text-embeddings/) — 44 min. How to choose a model, and why MTEB rank will mislead you.
+5. [Vector Search](/embeddings/vector-search/) — 40 min. Quantization, index internals, reindexing, and the fact that embeddings are invertible.
+6. [Retrieval and RAG](/systems/retrieval/) — 35 min. The pipeline and where each stage fails.
+7. [Fine-Tuning and PEFT](/training/fine-tuning/) — 30 min. LoRA, QLoRA, and when not to bother.
+8. [Inference and Serving](/systems/inference/) — 35 min. Why decoding is memory-bound and what to do about it.
+9. [Hardware — Start Here](/hardware/) — 12 min, then [Compute Budgeting](/hardware/compute-budgeting/) — 42 min and [Choosing Hardware](/hardware/choosing-hardware/) — 36 min.
+10. [Evaluation](/foundations/evaluation/) — 30 min. So you can tell whether any of it worked.
+11. [Agents and Tool Use](/systems/agents/) — 35 min, if that is what you are building.
+12. [Distributed Training](/systems/distributed-training/) — 40 min, only if you are training rather than serving.
+
+</Steps>
+
+</TabItem>
+</Tabs>
+
+## Everything, in order
+
+The complete list. Times are for reading all four tiers.
+
+<Aside type="tip">
+Section totals assume you read every page. Almost nobody should. The
+[glossary](/reference/glossary/) is 173 entries and is the fastest way to fill a
+specific gap without reading a whole page.
+</Aside>
+
+### 1 · Foundations — 6 h
+
+The prerequisites. Every other section assumes the first two pages here.
+
+| # | Page | Time |
+|---|---|---|
+| 1 | [Backpropagation](/foundations/backpropagation/) | 30m |
+| 2 | [Probability for ML](/foundations/probability-for-ml/) | 30m |
+| 3 | [Tokenization](/foundations/tokenization/) | 35m |
+| 4 | [Representations](/foundations/representations/) | 35m |
+| 5 | [Latent Spaces](/foundations/latent-spaces/) | 55m |
+| 6 | [State Representations](/foundations/state-representations/) | 45m |
+| 7 | [Generalization](/foundations/generalization/) | 30m |
+| 8 | [Evaluation](/foundations/evaluation/) | 30m |
+| 9 | [Interpretability](/foundations/interpretability/) | 40m |
+| 10 | [Causal Inference](/foundations/causal-inference/) | 35m |
+
+### 2 · Encoders — 2.3 h
+
+The encoder–decoder vocabulary that the architecture pages assume.
+
+| # | Page | Time |
+|---|---|---|
+| 0 | [Encoders — overview](/encoders/) | 25m |
+| 1 | [Neural Encoders](/encoders/neural-encoders/) | 45m |
+| 2 | [Encoder–Decoder Architectures](/encoders/encoder-decoder/) | 35m |
+| 3 | [Feature Encoding](/encoders/feature-encoding/) | 30m |
+
+### 3 · Architectures — 5.8 h
+
+Sequence models first, then the generative family, then the alternatives to it.
+
+| # | Page | Time |
+|---|---|---|
+| 1 | [Transformers](/architectures/transformers/) | 45m |
+| 2 | [State Space Models](/architectures/state-space-models/) | 35m |
+| 3 | [Mixture of Experts](/architectures/mixture-of-experts/) | 35m |
+| 4 | [The Generative Model Zoo](/architectures/generative-models/) | 55m |
+| 5 | [Diffusion Models](/architectures/diffusion/) | 45m |
+| 6 | [Energy-Based Models](/architectures/energy-based-models/) | 55m |
+| 7 | [JEPA](/architectures/jepa/) | 40m |
+| 8 | [Multimodal Models](/architectures/multimodal/) | 35m |
+
+### 4 · Embeddings — 2.5 h
+
+After Architectures, because modern text embedders are fine-tuned transformers.
+
+| # | Page | Time |
+|---|---|---|
+| 0 | [Embeddings — overview](/embeddings/) | 28m |
+| 1 | [Word Embeddings](/embeddings/word-embeddings/) | 40m |
+| 2 | [Text Embeddings](/embeddings/text-embeddings/) | 44m |
+| 3 | [Vector Search and Production Embeddings](/embeddings/vector-search/) | 40m |
+
+### 5 · Training & Objectives — 4.3 h
+
+Mechanics, then pretraining, then adaptation, then the consequences.
+
+| # | Page | Time |
+|---|---|---|
+| 1 | [Optimization](/training/optimization/) | 35m |
+| 2 | [Self-Supervised Learning](/training/self-supervision/) | 40m |
+| 3 | [Fine-Tuning and PEFT](/training/fine-tuning/) | 30m |
+| 4 | [Post-Training and Alignment](/training/post-training/) | 40m |
+| 5 | [Reinforcement Learning](/training/reinforcement-learning/) | 40m |
+| 6 | [In-Context Learning](/training/in-context-learning/) | 35m |
+| 7 | [AI Safety and Alignment](/training/ai-safety/) | 35m |
+
+### 6 · World Models & Planning — 2.9 h
+
+| # | Page | Time |
+|---|---|---|
+| 0 | [World Models — overview](/world-models/) | 35m |
+| 1 | [Planning and MPC](/world-models/planning-and-mpc/) | 35m |
+| 2 | [Hierarchical Planning](/world-models/hierarchy/) | 35m |
+| 3 | [The World Model Zoo](/world-models/catalogue/) | 70m |
+
+### 7 · Domains — 1.7 h
+
+Independent of each other. Read only what touches your work.
+
+| # | Page | Time |
+|---|---|---|
+| 1 | [Graph Neural Networks](/domains/graph-neural-networks/) | 35m |
+| 2 | [Time Series Forecasting](/domains/time-series/) | 30m |
+| 3 | [Speech and Audio](/domains/speech-audio/) | 35m |
+
+### 8 · Systems — 2.4 h
+
+Train it, serve it, then build on top of it.
+
+| # | Page | Time |
+|---|---|---|
+| 1 | [Distributed Training](/systems/distributed-training/) | 40m |
+| 2 | [Inference and Serving](/systems/inference/) | 35m |
+| 3 | [Retrieval and RAG](/systems/retrieval/) | 35m |
+| 4 | [Agents and Tool Use](/systems/agents/) | 35m |
+
+### 9 · Hardware & Compute — 2.1 h
+
+Last, because it is about the cost of everything above.
+
+| # | Page | Time |
+|---|---|---|
+| 0 | [Hardware — cheat sheet](/hardware/) | 12m |
+| 1 | [Accelerators and the Memory Hierarchy](/hardware/accelerators/) | 38m |
+| 2 | [Compute Budgeting](/hardware/compute-budgeting/) | 42m |
+| 3 | [Choosing Hardware](/hardware/choosing-hardware/) | 36m |
+
+### Reference
+
+| Page | Time |
+|---|---|
+| [Glossary](/reference/glossary/) — 173 entries, each linking to the page that treats it properly | 26m |
+
+## How the order is maintained
+
+Ordering that is not enforced decays. Three mechanisms keep this one honest:
+
+<Steps>
+
+1. **`sidebar.order` in every page's frontmatter.** Index pages are always 0, and no two pages in a directory may share a number — Starlight breaks ties by filename, which is not a curriculum.
+
+2. **`prereqs` in frontmatter**, rendered at the top of each page. These are the actual dependency edges.
+
+3. **`npm run check:order`**, which fails the build if any page has no order, if two pages in a directory collide, if an index page is not 0, or — the important one — if any page lists a prerequisite from a *later* section. A forward prerequisite means the section order is wrong, and the check makes that impossible to ignore.
+
+</Steps>
+
+If you add a page, place it by asking what the reader must already know, not by
+what it is about. The check will tell you if you got it wrong.

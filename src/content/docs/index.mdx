@@ -11,8 +11,8 @@ hero:
   # by hand too; they are the only links in the project that don't follow
   # automatically.
   actions:
-    - text: Start with Encoders
-      link: /notes/encoders/
+    - text: Reading order
+      link: /notes/curriculum/
       icon: right-arrow
       variant: primary
     - text: How to read a page
@@ -23,35 +23,56 @@ hero:
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
 
-<CardGrid stagger>
-  <Card title="Encoders" icon="seti:plan">
-    What an encoder is in all three senses of the word — neural, architectural,
-    and preprocessing — with a page for each. The most complete section.
+<CardGrid>
+  <Card title="1 · Foundations" icon="seti:notebook">
+    Backpropagation, probability, tokenization, representations and latent
+    spaces, generalization, evaluation, interpretability, causality. Everything
+    else assumes the first two. **6 h**
   </Card>
-  <Card title="World Models & Planning" icon="rocket">
-    Learned simulators, latent dynamics, model-predictive control, hierarchy.
+  <Card title="2 · Encoders" icon="seti:plan">
+    What an encoder is in all three senses — neural, architectural, and
+    preprocessing — with a page for each. **2.3 h**
   </Card>
-  <Card title="Foundations" icon="seti:notebook">
-    The prerequisites everything else assumes. Probability for ML, gradients and
-    optimisation, what "representation" actually means.
+  <Card title="3 · Architectures" icon="puzzle">
+    Transformers, state-space models, mixture of experts, the generative model
+    zoo, diffusion, energy-based models, JEPA, multimodal. **5.8 h**
   </Card>
-  <Card title="Architectures" icon="puzzle">
-    Transformers, JEPAs, diffusion and flow matching, state-space models,
-    mixture of experts, multimodal models.
+  <Card title="4 · Embeddings" icon="magnifier">
+    word2vec through instruction-tuned LLM embedders, plus quantization, ANN
+    index internals, and the operational failure modes. **2.5 h**
   </Card>
-  <Card title="Training & Objectives" icon="setting">
-    Self-supervision, optimization, post-training and alignment, fine-tuning
-    and PEFT.
+  <Card title="5 · Training & Objectives" icon="setting">
+    Optimization, self-supervision, fine-tuning and PEFT, post-training and
+    alignment, RL, in-context learning, AI safety. **4.3 h**
   </Card>
-  <Card title="Systems" icon="rocket">
-    Inference and serving, retrieval and RAG, agents and tool use, distributed
-    training.
+  <Card title="6 · World Models & Planning" icon="rocket">
+    Learned simulators, latent dynamics, model-predictive control, hierarchy,
+    and a catalogue of every variant. **2.9 h**
   </Card>
-  <Card title="Domains" icon="star">
+  <Card title="7 · Domains" icon="star">
     Where the general machinery meets a specific structure: graphs, time series,
-    speech and audio.
+    speech and audio. **1.7 h**
+  </Card>
+  <Card title="8 · Systems" icon="random">
+    Distributed training, inference and serving, retrieval and RAG, agents and
+    tool use. **2.4 h**
+  </Card>
+  <Card title="9 · Hardware & Compute" icon="laptop">
+    What hardware you need and how much compute a job costs, answered with
+    arithmetic rather than folklore. **2.1 h**
   </Card>
 </CardGrid>
+
+## The sidebar is a curriculum
+
+Sections are numbered in prerequisite order — **nothing in a section depends on a
+section below it** — and pages within a section follow the same rule. Read top to
+bottom and no term arrives before it has been introduced.
+
+This is enforced rather than intended: `npm run check:order` fails the build if
+any page lists a prerequisite from a later section. If you would rather not read
+all thirty hours, the [reading order](/curriculum/) page has three shorter tracks
+— new to the field, heading for research, and building a system.
 
 ## What this is
 

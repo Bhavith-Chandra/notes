@@ -7,10 +7,11 @@
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
-    "check": "astro check",
+    "check": "npm run check:order && npm run check:mdx && npm run check:contrast",
     "deploy": "bash scripts/deploy.sh",
     "check:contrast": "node scripts/check-contrast.mjs",
-    "check:mdx": "python3 scripts/mdx-lint.py"
+    "check:mdx": "python3 scripts/mdx-lint.py",
+    "check:order": "node scripts/check-order.mjs"
   },
   "dependencies": {
     "@astrojs/starlight": "^0.41.7",

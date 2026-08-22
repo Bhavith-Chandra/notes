@@ -28,6 +28,10 @@ echo "==> git  $(git --version | awk '{print $3}')"
 echo "==> node $(node -v)"
 
 echo "==> Building"
+# Structural invariants first — a build that ships with a broken curriculum
+# order is worse than one that fails here.
+npm run check:order
+
 npm run build
 
 echo "==> Publishing dist/ to $BRANCH"

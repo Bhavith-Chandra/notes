@@ -25,6 +25,16 @@ export default defineConfig({
   trailingSlash: 'always',
   build: { format: 'directory' },
 
+  // Pages that have moved. AI Safety was originally under Foundations; it reads
+  // correctly only after Post-Training, so it now lives in Training. Keep the
+  // old URL alive — it has been linked externally.
+  //
+  // NOTE: Astro applies `base` to the redirect KEY but writes the VALUE into the
+  // meta-refresh verbatim, so the destination must include BASE explicitly.
+  redirects: {
+    '/foundations/ai-safety/': `${BASE}/training/ai-safety/`,
+  },
+
   // KaTeX math support. Astro 7 replaced `markdown.remarkPlugins` /
   // `markdown.rehypePlugins` with this `unified()` processor hook.
   markdown: {
@@ -68,60 +78,73 @@ export default defineConfig({
       tableOfContents: { minHeadingLevel: 2, maxHeadingLevel: 3 },
 
       sidebar: [
+        // SIDEBAR ORDER IS THE CURRICULUM.
+        //
+        // Groups are listed in prerequisite order: nothing in a group should
+        // depend on a group below it. Within a group, `sidebar.order` in each
+        // page's frontmatter does the same job — index pages are always 0, and
+        // no two pages in a directory may share an order (Starlight resolves
+        // ties by filename, which is not a curriculum).
+        //
+        // If you add a page, place it by asking "what must the reader already
+        // know?", not by topic affinity. /curriculum mirrors this order and
+        // must be updated alongside it.
+        //
+        // NOTE: since Starlight v0.39, `autogenerate` must live inside a
+        // group's `items` array — a labelled autogenerate object at the top
+        // level is no longer valid config.
         {
           label: 'Start here',
           items: [
             { label: 'What this is', slug: 'index' },
             { label: 'How to read a page', slug: 'how-to-read' },
+            { label: 'Reading order', slug: 'curriculum' },
           ],
         },
-        // NOTE: since Starlight v0.39, `autogenerate` must live inside a
-        // group's `items` array — a labelled autogenerate object at the top
-        // level is no longer valid config.
         {
-          label: 'Encoders',
-          collapsed: false,
-          items: [{ autogenerate: { directory: 'encoders' } }],
-        },
-        {
-          label: 'Embeddings',
-          collapsed: true,
-          items: [{ autogenerate: { directory: 'embeddings' } }],
-        },
-        {
-          label: 'Foundations',
+          label: '1 · Foundations',
           collapsed: false,
           items: [{ autogenerate: { directory: 'foundations' } }],
         },
         {
-          label: 'World Models & Planning',
+          label: '2 · Encoders',
           collapsed: false,
-          items: [{ autogenerate: { directory: 'world-models' } }],
+          items: [{ autogenerate: { directory: 'encoders' } }],
         },
         {
-          label: 'Architectures',
+          label: '3 · Architectures',
           collapsed: true,
           items: [{ autogenerate: { directory: 'architectures' } }],
         },
         {
-          label: 'Training & Objectives',
+          label: '4 · Embeddings',
+          collapsed: true,
+          items: [{ autogenerate: { directory: 'embeddings' } }],
+        },
+        {
+          label: '5 · Training & Objectives',
           collapsed: true,
           items: [{ autogenerate: { directory: 'training' } }],
         },
         {
-          label: 'Systems',
+          label: '6 · World Models & Planning',
+          collapsed: true,
+          items: [{ autogenerate: { directory: 'world-models' } }],
+        },
+        {
+          label: '7 · Domains',
+          collapsed: true,
+          items: [{ autogenerate: { directory: 'domains' } }],
+        },
+        {
+          label: '8 · Systems',
           collapsed: true,
           items: [{ autogenerate: { directory: 'systems' } }],
         },
         {
-          label: 'Hardware & Compute',
+          label: '9 · Hardware & Compute',
           collapsed: true,
           items: [{ autogenerate: { directory: 'hardware' } }],
-        },
-        {
-          label: 'Domains',
-          collapsed: true,
-          items: [{ autogenerate: { directory: 'domains' } }],
         },
         {
           label: 'Reference',
