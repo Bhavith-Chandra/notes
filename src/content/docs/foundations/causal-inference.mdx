@@ -1,0 +1,547 @@
+---
+title: Causal Inference
+description: "Why no amount of data answers a causal question without assumptions — the ladder of causation, identification, and the ML methods that estimate effects once identification is settled."
+sidebar:
+  order: 7
+depth: frontier
+readingTime: 35
+prereqs:
+  - label: "Probability for ML"
+    slug: "foundations/probability-for-ml"
+papers:
+  - title: "Estimating causal effects of treatments in randomized and nonrandomized studies"
+    authors: "Donald B. Rubin"
+    year: 1974
+    url: "https://doi.org/10.1037/h0037350"
+  - title: "Identification of Causal Effects Using Instrumental Variables"
+    authors: "Angrist, Imbens, Rubin"
+    year: 1996
+    url: "https://doi.org/10.1080/01621459.1996.10476902"
+  - title: "Causality: Models, Reasoning, and Inference (2nd edition)"
+    authors: "Judea Pearl"
+    year: 2009
+    url: "https://doi.org/10.1017/CBO9780511803161"
+  - title: "Estimation and Inference of Heterogeneous Treatment Effects using Random Forests"
+    authors: "Stefan Wager, Susan Athey"
+    year: 2015
+    url: "https://arxiv.org/abs/1510.04342"
+  - title: "Meta-learners for Estimating Heterogeneous Treatment Effects using Machine Learning"
+    authors: "Künzel, Sekhon, Bickel, Yu"
+    year: 2017
+    url: "https://arxiv.org/abs/1706.03461"
+  - title: "Double/debiased machine learning for treatment and structural parameters"
+    authors: "Chernozhukov, Chetverikov, Demirer, Duflo, Hansen, Newey, Robins"
+    year: 2018
+    url: "https://doi.org/10.1111/ectj.12097"
+  - title: "The Book of Why: The New Science of Cause and Effect"
+    authors: "Judea Pearl, Dana Mackenzie"
+    year: 2018
+    url: "http://bayes.cs.ucla.edu/WHY/"
+  - title: "DoWhy: An End-to-End Library for Causal Inference"
+    authors: "Amit Sharma, Emre Kiciman"
+    year: 2020
+    url: "https://arxiv.org/abs/2011.04216"
+  - title: "Towards Causal Representation Learning"
+    authors: "Schölkopf, Locatello, Bauer, Ke, Kalchbrenner, Goyal, Bengio"
+    year: 2021
+    url: "https://arxiv.org/abs/2102.11107"
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+<Abstract>
+Machine learning answers "what is associated with what". Almost every question
+people actually ask a model — did the treatment work, will this change help, what
+would have happened otherwise — is causal, and **no amount of observational data
+answers a causal question by itself.** You need assumptions the data cannot check.
+The discipline of causal inference is about making those assumptions explicit,
+knowing when they suffice, and only then estimating.
+</Abstract>
+
+<KeyPoints>
+
+- **Identification comes before estimation, and it is not a statistical question.** Whether the effect is recoverable from your data depends on the causal structure you assume. Once identification holds, ML is excellent at the estimation. If it fails, no model and no sample size rescues you.
+- **The fundamental problem: you never see both outcomes.** A person either received the treatment or did not. The other outcome is a counterfactual that was never observed, so every causal estimate is an imputation problem in disguise.
+- **Controlling for more variables is not safer.** Conditioning on a *collider* — a common effect of treatment and outcome — creates a spurious association where none existed. "Adjust for everything you measured" is actively wrong advice.
+- **Double machine learning is the bridge.** Use flexible ML for the nuisance functions, then a bias-corrected score with cross-fitting, and you recover $\sqrt{n}$-consistent effect estimates with valid confidence intervals despite slowly-converging ML components.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## The question ML cannot answer
+
+A model trained on hospital data finds that patients given a certain drug die more
+often. Should you stop prescribing it?
+
+Obviously not — not on that evidence. The drug is given to the sickest patients.
+The correlation is real, the prediction is accurate, and the causal conclusion is
+backwards.
+
+**No amount of additional data fixes this**, because the data is *consistent* with
+both stories: the drug kills people, or the drug is given to people who were
+already dying. Distinguishing them requires knowing something about *how the data
+came to be* — and that knowledge is not in the data.
+
+## The ladder
+
+Pearl's framing, and it is the most useful organising idea here.
+
+<Steps>
+
+1. **Association** — $P(y \mid x)$. What do I see together? Answered by any
+   predictive model. *"Patients on this drug die more."*
+
+2. **Intervention** — $P(y \mid do(x))$. What happens if I *act*? Requires a causal
+   model or an experiment. *"If I give the drug, does survival change?"*
+
+3. **Counterfactual** — $P(y_x \mid x', y')$. What *would have* happened? Requires
+   a fully specified structural model. *"Would this specific patient, who took the
+   drug and died, have survived without it?"*
+
+</Steps>
+
+**The rungs are strictly ordered.** You cannot answer a rung-2 question with only
+rung-1 information, no matter how much of it you have or how good your model is.
+This is a theorem, not a difficulty.
+
+<Aside type="tip" title="What this means for machine learning specifically">
+A large model trained on observational text has, in this framing, seen rung-1
+information about the world plus rung-2 and rung-3 *claims* other people wrote
+down. It can repeat causal knowledge; it did not derive it. That distinction
+matters when you ask a model whether an intervention will work.
+</Aside>
+
+## Why more controls can hurt
+
+The instinct "adjust for everything you measured" is common and wrong, and the
+reason is worth seeing.
+
+Suppose talent and beauty are independent in the population, and either one gets
+you into acting. Now look only at *actors*. Among them, someone who is not
+beautiful is probably talented — otherwise how did they get in? So within the
+selected group, talent and beauty are **negatively** correlated.
+
+You created an association by conditioning. The variable you conditioned on
+(being an actor) is a **collider**: both talent and beauty point into it.
+
+**So which variables to adjust for is a causal question, not a statistical one.**
+You need the structure to know, and the structure is an assumption.
+
+<Tier level="mechanics" />
+
+## Three structures, three different rules
+
+<Figure
+  lead="The same statistical test, three different meanings."
+  caption="A confounder must be adjusted for — it is the common cause creating spurious association. A mediator must NOT be adjusted for if you want the total effect, since it is part of the causal path you are measuring. A collider must never be adjusted for, because conditioning on a common effect creates association between its causes. All three produce an X-Y correlation in the data. Nothing in the data distinguishes them; only the assumed structure does."
+>
+<svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Confounder, mediator and collider structures and their adjustment rules">
+  <defs>
+    <marker id="ci1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <text class="lb" x="126" y="20" text-anchor="middle">Confounder</text>
+  <circle class="f-amber" cx="126" cy="56" r="20"/>
+  <text class="on-fill-sm" x="126" y="61" text-anchor="middle">Z</text>
+  <circle class="f-blue" cx="66" cy="136" r="20"/>
+  <text class="on-fill-sm" x="66" y="141" text-anchor="middle">X</text>
+  <circle class="f-green" cx="186" cy="136" r="20"/>
+  <text class="on-fill-sm" x="186" y="141" text-anchor="middle">Y</text>
+  <path class="thick" d="M112,72 L80,120" marker-end="url(#ci1)"/>
+  <path class="thick" d="M140,72 L172,120" marker-end="url(#ci1)"/>
+  <path class="ar" d="M88,136 L164,136" marker-end="url(#ci1)"/>
+  <rect class="f-green" x="46" y="176" width="160" height="28" rx="4" opacity="0.6"/>
+  <text class="on-fill-sm" x="126" y="195" text-anchor="middle">MUST adjust for Z</text>
+  <text class="xs" x="126" y="222" text-anchor="middle">severity → both drug and death</text>
+
+  <line class="bx" x1="256" y1="14" x2="256" y2="270" opacity="0.3"/>
+
+  <text class="lb" x="380" y="20" text-anchor="middle">Mediator</text>
+  <circle class="f-blue" cx="308" cy="96" r="20"/>
+  <text class="on-fill-sm" x="308" y="101" text-anchor="middle">X</text>
+  <circle class="f-amber" cx="380" cy="96" r="20"/>
+  <text class="on-fill-sm" x="380" y="101" text-anchor="middle">M</text>
+  <circle class="f-green" cx="452" cy="96" r="20"/>
+  <text class="on-fill-sm" x="452" y="101" text-anchor="middle">Y</text>
+  <path class="thick" d="M330,96 L356,96" marker-end="url(#ci1)"/>
+  <path class="thick" d="M402,96 L428,96" marker-end="url(#ci1)"/>
+  <rect class="f-pink" x="296" y="176" width="168" height="28" rx="4" opacity="0.55"/>
+  <text class="on-fill-sm" x="380" y="195" text-anchor="middle">do NOT adjust for M</text>
+  <text class="xs" x="380" y="222" text-anchor="middle">adjusting blocks the effect</text>
+  <text class="xs" x="380" y="238" text-anchor="middle">you are trying to measure</text>
+
+  <line class="bx" x1="512" y1="14" x2="512" y2="270" opacity="0.3"/>
+
+  <text class="lb" x="634" y="20" text-anchor="middle">Collider</text>
+  <circle class="f-blue" cx="574" cy="56" r="20"/>
+  <text class="on-fill-sm" x="574" y="61" text-anchor="middle">X</text>
+  <circle class="f-green" cx="694" cy="56" r="20"/>
+  <text class="on-fill-sm" x="694" y="61" text-anchor="middle">Y</text>
+  <circle class="f-pink" cx="634" cy="136" r="20"/>
+  <text class="on-fill-sm" x="634" y="141" text-anchor="middle">C</text>
+  <path class="thick" d="M588,72 L620,120" marker-end="url(#ci1)"/>
+  <path class="thick" d="M680,72 L648,120" marker-end="url(#ci1)"/>
+  <rect class="f-pink" x="546" y="176" width="176" height="28" rx="4" opacity="0.55"/>
+  <text class="on-fill-sm" x="634" y="195" text-anchor="middle">NEVER adjust for C</text>
+  <text class="xs" x="634" y="222" text-anchor="middle">conditioning CREATES a</text>
+  <text class="xs" x="634" y="238" text-anchor="middle">spurious X–Y association</text>
+
+  <line class="bx" x1="20" y1="262" x2="740" y2="262" opacity="0.3"/>
+  <text class="xs" x="20" y="284">All three show an X–Y correlation. No statistical test tells them apart — the structure is an assumption you bring.</text>
+</svg>
+</Figure>
+
+## The potential outcomes framework
+
+The other main formalism, equivalent in expressive power and often easier to
+compute with.
+
+Each unit $i$ has two potential outcomes: $Y_i(1)$ if treated, $Y_i(0)$ if not. The
+individual effect is $\tau_i = Y_i(1) - Y_i(0)$.
+
+**You observe exactly one of them.** $Y_i^{\text{obs}} = T_i Y_i(1) + (1-T_i)
+Y_i(0)$. The other is a counterfactual, and it is missing not at random — it is
+missing *because* of the treatment assignment.
+
+This is why Holland called it the **fundamental problem of causal inference**:
+individual effects are not identified, ever. Only averages are, and only under
+assumptions.
+
+## The assumptions you cannot test
+
+<Steps>
+
+1. **Consistency.** $Y_i^{\text{obs}} = Y_i(T_i)$ — the observed outcome is the
+   potential outcome for the treatment received. This requires the treatment to be
+   well-defined; "obesity" fails, because losing weight by exercise and by illness
+   are different treatments.
+
+2. **Ignorability / no unmeasured confounding.** $\big(Y(0), Y(1)\big) \perp T \mid
+   X$. Given the covariates, assignment is as good as random. **This is the big
+   one, and it is untestable** — by definition you cannot check for a confounder
+   you did not measure.
+
+3. **Positivity / overlap.** $0 < P(T=1\mid X=x) < 1$ for all $x$ with support. If
+   nobody with a certain covariate profile ever gets treated, you have no evidence
+   about them and estimation there is extrapolation.
+
+4. **SUTVA.** One unit's treatment does not affect another's outcome. Violated by
+   vaccines (herd immunity), by network effects, by market prices.
+
+</Steps>
+
+<Aside type="danger" title="Positivity fails silently and is checkable">
+Unlike ignorability, positivity leaves a trace: plot the estimated propensity
+scores by treatment group. If they barely overlap, your estimator is extrapolating
+into regions with no data, and a flexible ML model will do so confidently and
+wrongly. **Always plot this.** It is the cheapest diagnostic in the field and it is
+routinely skipped.
+</Aside>
+
+## When randomisation is unavailable
+
+<Tabs>
+<TabItem label="Adjustment">
+
+Condition on enough covariates to close all backdoor paths, then compare treated
+and untreated within strata:
+
+$$
+\mathbb{E}\big[Y \mid do(T{=}1)\big] = \sum_{x} \mathbb{E}\big[Y \mid T{=}1, X{=}x\big]P(X{=}x).
+$$
+
+**Requires**: measuring all confounders. The strongest assumption and the most
+common one.
+
+</TabItem>
+<TabItem label="Instrumental variables">
+
+Find a variable $Z$ that affects $T$, affects $Y$ *only* through $T$, and is
+unconfounded with $Y$. Then variation in $Z$ acts like randomisation.
+
+The canonical example is randomised *encouragement*: you cannot force people to
+take a drug, but you can randomly assign who gets a reminder.
+
+**Requires**: the exclusion restriction — $Z$ has no direct path to $Y$ — which is
+untestable and frequently implausible. Also, IV estimates a **local** effect: the
+LATE, on the subpopulation whose behaviour the instrument actually changed. That
+subgroup is not identified, so you do not know whose effect you measured.
+
+</TabItem>
+<TabItem label="Difference-in-differences">
+
+Compare the change over time in a treated group with the change in an untreated
+group. Any time-invariant confounding differences out.
+
+**Requires**: parallel trends — absent treatment, both groups would have moved
+together. Untestable for the treatment period, though pre-treatment trends are
+suggestive evidence.
+
+</TabItem>
+<TabItem label="Regression discontinuity">
+
+When treatment is assigned by a threshold on a running variable — a test score, an
+income cutoff — compare units just above and just below.
+
+**Requires**: no precise manipulation of the running variable near the cutoff.
+Checkable by looking for bunching in the density.
+
+**The most credible design here**, because near the threshold assignment really is
+close to arbitrary, and it estimates only a local effect at the cutoff.
+
+</TabItem>
+</Tabs>
+
+<Tier level="formal" />
+
+## The do-operator and identification
+
+$P(y \mid do(x))$ is defined by *graph surgery*: delete every edge into $X$, set
+$X = x$, and compute in the mutilated graph. This is not the same as conditioning:
+
+$$
+P(y \mid do(x)) \neq P(y \mid x) \quad\text{in general}.
+$$
+
+Conditioning selects a subpopulation; intervening changes the data-generating
+process. They coincide only when nothing causes $X$ — which randomisation
+arranges by construction.
+
+**The backdoor criterion.** A set $Z$ is admissible for $(X, Y)$ if
+
+1. no node in $Z$ is a descendant of $X$, and
+2. $Z$ blocks every path from $X$ to $Y$ that begins with an arrow *into* $X$.
+
+Then
+
+$$
+P(y\mid do(x)) = \sum_{z} P(y \mid x, z)\,P(z).
+$$
+
+Condition 1 excludes mediators and colliders on causal paths; condition 2 closes
+the confounding routes. Note it says *which* variables — this is the formal content
+of "adjusting for everything is wrong".
+
+**The front-door criterion** handles a case adjustment cannot: identification
+through a fully-mediating variable even with an *unmeasured* confounder between $X$
+and $Y$:
+
+$$
+P(y\mid do(x)) = \sum_{m}P(m\mid x)\sum_{x'}P(y\mid m, x')P(x').
+$$
+
+That an effect can be identified despite unmeasured confounding was genuinely
+surprising, and it is the clearest demonstration that identification is a
+structural question rather than a data-quantity question.
+
+<Figure
+  lead="Three rungs, and you cannot climb them with data alone."
+  caption="Each rung requires strictly more than the one below. A predictive model, however large, operates entirely on rung one — it learns joint distributions from observations. Rung two needs a causal structure or a real experiment; rung three needs a fully specified structural model. This ordering is a theorem, not an engineering limitation, which is why 'train a bigger model' never becomes an answer to a causal question."
+>
+<svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Pearl's ladder of causation with three rungs">
+  <defs>
+    <marker id="ci2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <rect class="f-blue" x="40" y="216" width="400" height="56" rx="5"/>
+  <text class="on-fill" x="60" y="240">1 · ASSOCIATION</text>
+  <text class="on-fill-sm" x="60" y="260">P(y | x) — what do I see together?</text>
+  <text class="xs" x="460" y="238">any predictive model</text>
+  <text class="xs" x="460" y="256">"patients on this drug die more"</text>
+
+  <path class="ar" d="M240,212 L240,186" marker-end="url(#ci2)"/>
+  <text class="xs" x="252" y="202">needs: a causal structure, or an experiment</text>
+
+  <rect class="f-amber" x="40" y="128" width="400" height="56" rx="5"/>
+  <text class="on-fill" x="60" y="152">2 · INTERVENTION</text>
+  <text class="on-fill-sm" x="60" y="172">P(y | do(x)) — what if I act?</text>
+  <text class="xs" x="460" y="150">RCTs, backdoor adjustment, IV, DiD, RDD</text>
+  <text class="xs" x="460" y="168">"if I prescribe it, does survival change?"</text>
+
+  <path class="ar" d="M240,124 L240,98" marker-end="url(#ci2)"/>
+  <text class="xs" x="252" y="114">needs: a fully specified structural model</text>
+
+  <rect class="f-purple" x="40" y="40" width="400" height="56" rx="5"/>
+  <text class="on-fill" x="60" y="64">3 · COUNTERFACTUAL</text>
+  <text class="on-fill-sm" x="60" y="84">P(y_x | x', y') — what would have happened?</text>
+  <text class="xs" x="460" y="62">structural causal models</text>
+  <text class="xs" x="460" y="80">"would THIS patient have survived without it?"</text>
+
+  <line class="bx" x1="40" y1="286" x2="720" y2="286" opacity="0.3"/>
+  <text class="xs" x="40" y="300">Observational data lives entirely on rung 1. The rungs above require assumptions the data cannot supply or check.</text>
+</svg>
+</Figure>
+
+## The ATE and its estimators
+
+$$
+\tau_{\text{ATE}} = \mathbb{E}\big[Y(1) - Y(0)\big].
+$$
+
+Under ignorability and positivity, with $\mu_t(x) = \mathbb{E}[Y\mid T{=}t,
+X{=}x]$ and propensity $e(x) = P(T{=}1\mid X{=}x)$:
+
+**Outcome regression (G-computation).**
+
+$$
+\hat\tau = \frac{1}{n}\sum_{i}\Big[\hat\mu_1(X_i) - \hat\mu_0(X_i)\Big].
+$$
+
+Consistent if $\hat\mu$ is correct. Biased if it is misspecified.
+
+**Inverse propensity weighting.**
+
+$$
+\hat\tau = \frac{1}{n}\sum_i\left[\frac{T_i Y_i}{\hat e(X_i)} - \frac{(1-T_i)Y_i}{1 - \hat e(X_i)}\right].
+$$
+
+Consistent if $\hat e$ is correct. **High variance when propensities approach 0 or
+1** — a single unit with $\hat e = 0.01$ receives weight 100 and dominates the
+estimate. This is the positivity problem showing up numerically.
+
+**Augmented IPW (doubly robust).**
+
+$$
+\hat\tau_{\text{AIPW}} = \frac{1}{n}\sum_i\left[\hat\mu_1(X_i) - \hat\mu_0(X_i) + \frac{T_i\big(Y_i - \hat\mu_1(X_i)\big)}{\hat e(X_i)} - \frac{(1-T_i)\big(Y_i - \hat\mu_0(X_i)\big)}{1 - \hat e(X_i)}\right].
+$$
+
+**Doubly robust**: consistent if *either* $\hat\mu$ or $\hat e$ is correct, not
+necessarily both. The regression provides the estimate; the weighted residual term
+corrects it. If $\hat\mu$ is right the residuals are mean-zero and the correction
+vanishes; if $\hat e$ is right the weighting fixes whatever bias $\hat\mu$ left.
+
+## Double machine learning
+
+The result that makes flexible ML usable for causal estimation.
+
+**The problem it solves.** Plugging an ML estimate of $\mu$ into the outcome
+regression introduces **regularisation bias** — ML estimators are biased by design,
+trading bias for variance — and that bias does not vanish at $\sqrt{n}$, so
+confidence intervals are invalid.
+
+**The two ingredients.**
+
+**Neyman orthogonality.** Construct a score $\psi$ whose expectation is
+insensitive to first-order errors in the nuisance functions $\eta = (\mu, e)$:
+
+$$
+\left.\frac{\partial}{\partial r}\ \mathbb{E}\Big[\psi\big(W;\ \tau,\ \eta_0 + r(\eta - \eta_0)\big)\Big]\right|_{r=0} = 0 .
+$$
+
+The AIPW score has this property. Nuisance error then enters the estimate only at
+*second* order, so a nuisance rate of $n^{-1/4}$ — achievable by many ML methods —
+gives a product term of $n^{-1/2}$, which is exactly the rate that vanishes
+relative to the estimator's own $\sqrt{n}$ convergence.
+
+**Cross-fitting.** Split the sample into $K$ folds; estimate nuisances on $K-1$
+folds and evaluate the score on the held-out fold. This removes **overfitting
+bias** — using the same data to fit $\hat\mu$ and to evaluate residuals against it
+creates a correlation that biases the estimate, and it is the reason naive
+plug-in with a flexible model fails even when the model is good.
+
+Together:
+
+$$
+\sqrt{n}\big(\hat\tau_{\text{DML}} - \tau_0\big) \ \xrightarrow{d}\ \mathcal{N}\big(0,\ \sigma^2\big),
+$$
+
+so you get valid confidence intervals while using gradient boosting, random forests
+or neural networks for the nuisances. **This is the technical bridge between ML and
+causal inference**, and it is why "use ML for causal effects" became respectable.
+
+## Heterogeneous effects
+
+Often the average is not the question. The **conditional average treatment effect**
+is
+
+$$
+\tau(x) = \mathbb{E}\big[Y(1) - Y(0)\ \big|\ X = x\big].
+$$
+
+**Meta-learners** reduce CATE estimation to standard supervised problems:
+
+- **S-learner.** One model with treatment as a feature: $\hat\tau(x) = \hat\mu(x,1)
+  - \hat\mu(x,0)$. Simple, and regularisation can shrink the treatment
+  coefficient toward zero — biasing the effect toward *no effect*, which is the
+  worst direction to be biased.
+- **T-learner.** Separate models per arm. Avoids that shrinkage, and cannot share
+  structure, so it is inefficient when the arms are similar and one is small.
+- **X-learner.** Impute each unit's counterfactual using the *other* arm's model,
+  then regress the imputed effects, then combine weighted by the propensity.
+  Substantially better when treatment groups are very unbalanced.
+
+**Causal forests** adapt random forests by splitting to maximise *heterogeneity in
+the treatment effect* rather than in the outcome, and use honest estimation — one
+subsample chooses the splits, a disjoint one estimates the effects in each leaf.
+Honesty is what buys asymptotic normality and therefore valid pointwise confidence
+intervals, which ordinary random forests do not have.
+
+<Tier level="frontier" />
+
+## Where this stands, as of 2026
+
+**DML and causal forests are standard practice** in tech-company experimentation
+and increasingly in economics. The methodology is settled; the bottleneck has moved
+to identification, which is where it belongs.
+
+**Causal representation learning is ambitious and immature.** The goal — recovering
+causal variables from raw observations rather than assuming them given — connects
+directly to [representations](/foundations/representations/) and to
+[world models](/world-models/). Identifiability results exist under strong
+assumptions (interventions available, sparse mechanisms) and general recovery from
+purely observational data is provably impossible.
+
+**LLMs and causality is a live and confused question.** Models reproduce causal
+claims from their training data well. Whether they *reason* causally, or retrieve
+memorised causal statements, is contested — and existing benchmarks largely cannot
+distinguish those, since the answers are in the training corpus.
+
+**The assumption-checking culture is improving.** Sensitivity analysis — how strong
+would an unmeasured confounder need to be to overturn this conclusion? — is
+increasingly expected rather than optional, which is the right response to
+untestable assumptions.
+
+## Open problems
+
+- **Unmeasured confounding is undetectable in principle.** Sensitivity analysis
+  bounds the damage; nothing rules it out. This is a hard limit, not a gap.
+
+- **Causal discovery from observational data alone.** Structure is identifiable only
+  up to a Markov equivalence class without interventions or strong parametric
+  assumptions. Many published discovery results quietly rely on those assumptions.
+
+- **Interference and networks.** SUTVA fails whenever units interact — social
+  networks, marketplaces, epidemics — which is most interesting settings. Methods
+  exist and are far less mature.
+
+- **Continuous and high-dimensional treatments.** Most theory assumes binary
+  treatment. Dose-response and multi-dimensional interventions are much harder.
+
+- **Transportability.** An effect estimated in one population need not hold in
+  another. Formal transport conditions exist and require knowing how the
+  populations differ structurally.
+
+## What to read next, in order
+
+1. **Pearl & Mackenzie (2018), The Book of Why** — the ladder and the graphical
+   intuition, without the formalism. Read it first if the framework is new.
+2. **Pearl (2009), Causality** — Chapters 1 and 3 for the do-calculus and the
+   backdoor/front-door criteria.
+3. **Chernozhukov et al. (2018), DML** — Sections 1–2 for orthogonality and
+   cross-fitting. This is the paper that connects ML to this field.
+4. **Wager & Athey (2015), Causal Forests** — for honest estimation and why it is
+   required for valid inference.
+5. **Schölkopf et al. (2021)** — for the causal representation learning agenda and
+   its connection to generalisation.
+
+<Papers papers={frontmatter.papers} />

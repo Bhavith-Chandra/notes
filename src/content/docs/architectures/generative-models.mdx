@@ -1,0 +1,862 @@
+---
+title: "The Generative Model Zoo"
+description: "Every family — GAN, VAE, normalizing flow, autoregressive, diffusion, energy-based — organised by the trilemma none of them escapes."
+sidebar:
+  order: 7
+  label: "Catalogue: generative models"
+depth: frontier
+readingTime: 55
+prereqs:
+  - label: "Probability for ML"
+    slug: "foundations/probability-for-ml"
+papers:
+  - title: "Neural networks and physical systems with emergent collective computational abilities (Hopfield networks)"
+    authors: "J. J. Hopfield"
+    year: 1982
+    url: "https://doi.org/10.1073/pnas.79.8.2554"
+  - title: "A Fast Learning Algorithm for Deep Belief Nets"
+    authors: "Hinton, Osindero, Teh"
+    year: 2006
+    url: "https://doi.org/10.1162/neco.2006.18.7.1527"
+  - title: "Auto-Encoding Variational Bayes (VAE)"
+    authors: "Diederik P. Kingma, Max Welling"
+    year: 2013
+    url: "https://arxiv.org/abs/1312.6114"
+  - title: "Generative Adversarial Networks"
+    authors: "Goodfellow, Pouget-Abadie, Mirza, et al."
+    year: 2014
+    url: "https://arxiv.org/abs/1406.2661"
+  - title: "NICE: Non-linear Independent Components Estimation"
+    authors: "Dinh, Krueger, Bengio"
+    year: 2014
+    url: "https://arxiv.org/abs/1410.8516"
+  - title: "Unsupervised Representation Learning with Deep Convolutional Generative Adversarial Networks (DCGAN)"
+    authors: "Radford, Metz, Chintala"
+    year: 2015
+    url: "https://arxiv.org/abs/1511.06434"
+  - title: "Pixel Recurrent Neural Networks"
+    authors: "van den Oord, Kalchbrenner, Kavukcuoglu"
+    year: 2016
+    url: "https://arxiv.org/abs/1601.06759"
+  - title: "Density estimation using Real NVP"
+    authors: "Dinh, Sohl-Dickstein, S. Bengio"
+    year: 2016
+    url: "https://arxiv.org/abs/1605.08803"
+  - title: "Improved Techniques for Training GANs (Inception Score)"
+    authors: "Salimans, Goodfellow, Zaremba, et al."
+    year: 2016
+    url: "https://arxiv.org/abs/1606.03498"
+  - title: "Image-to-Image Translation with Conditional Adversarial Networks (pix2pix)"
+    authors: "Isola, Zhu, Zhou, Efros"
+    year: 2016
+    url: "https://arxiv.org/abs/1611.07004"
+  - title: "Wasserstein GAN"
+    authors: "Arjovsky, Chintala, Bottou"
+    year: 2017
+    url: "https://arxiv.org/abs/1701.07875"
+  - title: "PixelCNN++: Improving the PixelCNN with Discretized Logistic Mixture Likelihood and Other Modifications"
+    authors: "Salimans, Karpathy, Chen, Kingma"
+    year: 2017
+    url: "https://arxiv.org/abs/1701.05517"
+  - title: "Unpaired Image-to-Image Translation using Cycle-Consistent Adversarial Networks (CycleGAN)"
+    authors: "Zhu, Park, Isola, Efros"
+    year: 2017
+    url: "https://arxiv.org/abs/1703.10593"
+  - title: "Improved Training of Wasserstein GANs (WGAN-GP)"
+    authors: "Gulrajani, Ahmed, Arjovsky, Dumoulin, Courville"
+    year: 2017
+    url: "https://arxiv.org/abs/1704.00028"
+  - title: "GANs Trained by a Two Time-Scale Update Rule Converge to a Local Nash Equilibrium (FID)"
+    authors: "Heusel, Ramsauer, Unterthiner, Nessler, Hochreiter"
+    year: 2017
+    url: "https://arxiv.org/abs/1706.08500"
+  - title: "Progressive Growing of GANs for Improved Quality, Stability, and Variation"
+    authors: "Karras, Aila, Laine, Lehtinen"
+    year: 2017
+    url: "https://arxiv.org/abs/1710.10196"
+  - title: "Spectral Normalization for Generative Adversarial Networks"
+    authors: "Miyato, Kataoka, Koyama, Yoshida"
+    year: 2018
+    url: "https://arxiv.org/abs/1802.05957"
+  - title: "Neural Ordinary Differential Equations"
+    authors: "Chen, Rubanova, Bettencourt, Duvenaud"
+    year: 2018
+    url: "https://arxiv.org/abs/1806.07366"
+  - title: "Glow: Generative Flow with Invertible 1x1 Convolutions"
+    authors: "Kingma, Dhariwal"
+    year: 2018
+    url: "https://arxiv.org/abs/1807.03039"
+  - title: "Large Scale GAN Training for High Fidelity Natural Image Synthesis (BigGAN)"
+    authors: "Brock, Donahue, Simonyan"
+    year: 2018
+    url: "https://arxiv.org/abs/1809.11096"
+  - title: "A Style-Based Generator Architecture for Generative Adversarial Networks (StyleGAN)"
+    authors: "Karras, Laine, Aila"
+    year: 2018
+    url: "https://arxiv.org/abs/1812.04948"
+  - title: "Implicit Generation and Generalization in Energy-Based Models"
+    authors: "Yilun Du, Igor Mordatch"
+    year: 2019
+    url: "https://arxiv.org/abs/1903.08689"
+  - title: "Improved Precision and Recall Metric for Assessing Generative Models"
+    authors: "Kynkäänniemi, Karras, Laine, Lehtinen, Aila"
+    year: 2019
+    url: "https://arxiv.org/abs/1904.06991"
+  - title: "Analyzing and Improving the Image Quality of StyleGAN (StyleGAN2)"
+    authors: "Karras, Laine, Aittala, Hellsten, Lehtinen, Aila"
+    year: 2019
+    url: "https://arxiv.org/abs/1912.04958"
+  - title: "Normalizing Flows for Probabilistic Modeling and Inference"
+    authors: "Papamakarios, Nalisnick, Rezende, Mohamed, Lakshminarayanan"
+    year: 2019
+    url: "https://arxiv.org/abs/1912.02762"
+  - title: "Denoising Diffusion Probabilistic Models"
+    authors: "Ho, Jain, Abbeel"
+    year: 2020
+    url: "https://arxiv.org/abs/2006.11239"
+  - title: "Generative Pretraining From Pixels (Image GPT)"
+    authors: "Chen, Radford, Child, et al."
+    year: 2020
+    url: "https://proceedings.mlr.press/v119/chen20s.html"
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps, Tabs, TabItem, Card } from '@astrojs/starlight/components';
+
+<Abstract>
+Every generative model answers the same question — *what does the data
+distribution look like, and can I draw from it?* — and every one of them makes a
+trade among three things you would like at once: exact likelihoods, high sample
+quality, and fast sampling. **No family gets all three.** That constraint, not
+architectural fashion, explains why the field cycled through GANs, flows and
+diffusion, and why autoregressive models never went away.
+</Abstract>
+
+<KeyPoints>
+
+- **The generative trilemma organises everything.** Fast sampling, high quality, tractable likelihood — pick two. GANs sacrifice likelihood, flows sacrifice quality, diffusion sacrificed speed until distillation, autoregressive models sacrifice speed permanently.
+- **The likelihood/quality gap is not a bug in either metric.** A model can have excellent likelihood and produce terrible samples, and vice versa. Likelihood is dominated by how well you cover the *tails*; perceptual quality is dominated by the *mode* you land in.
+- **GANs are not dead, they are specialised.** One-step sampling remains unmatched, and for real-time or on-device generation that still decides it. What killed them for general use was training instability and mode collapse, not sample quality.
+- **Diffusion won by decomposing the hard problem.** A GAN learns one violent jump from noise to image against an adversary. Diffusion learns a thousand tiny denoising steps, each an ordinary regression — stable, scalable, and slow. Every recent advance attacks the slowness.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## What all of them are doing
+
+You have a pile of photographs. Somewhere out there is a probability distribution
+$p_{\text{data}}$ that made them. You want two things from a model of it:
+
+- **Sample.** Produce new photographs that could plausibly have come from the same
+  pile.
+- **Score.** Say how likely a given photograph is under the distribution.
+
+Some families do both. Some do only the first, and cannot tell you how likely
+anything is. Which one you need decides most of your choice.
+
+## The trilemma
+
+<Figure
+  lead="Pick two. No family has ever had all three."
+  caption="Each vertex is a property you want. Each family sits along an edge, having secured the two properties at its ends and given up the third. GANs sample in one forward pass and look excellent, and have no likelihood at all. Flows give exact likelihoods and fast sampling, and their invertibility constraint caps expressiveness. Diffusion gives quality and a likelihood bound at the cost of hundreds of network evaluations. The 2023-onward work on distillation and flow matching is an attempt to reach the middle, and it gets close by adding a second training stage rather than by removing the constraint."
+>
+<svg viewBox="0 0 760 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The generative modelling trilemma between fast sampling, high quality and tractable likelihood">
+  <path class="bx" d="M380,50 L640,330 L120,330 Z" stroke-width="1.6" opacity="0.55"/>
+
+  <circle class="f-blue" cx="380" cy="50" r="13"/>
+  <text class="lb" x="380" y="32" text-anchor="middle">Tractable likelihood</text>
+  <text class="xs" x="380" y="16" text-anchor="middle">score any sample, detect outliers, compress</text>
+
+  <circle class="f-green" cx="640" cy="330" r="13"/>
+  <text class="lb" x="640" y="356" text-anchor="middle">Fast sampling</text>
+  <text class="xs" x="640" y="372" text-anchor="middle">one forward pass</text>
+
+  <circle class="f-pink" cx="120" cy="330" r="13"/>
+  <text class="lb" x="120" y="356" text-anchor="middle">High quality</text>
+  <text class="xs" x="120" y="372" text-anchor="middle">samples look right</text>
+
+  <rect class="f-pink" x="86" y="180" width="126" height="42" rx="5"/>
+  <text class="on-fill-sm" x="149" y="198" text-anchor="middle">GAN</text>
+  <text class="xs" x="149" y="214" text-anchor="middle">no likelihood at all</text>
+
+  <rect class="f-blue" x="470" y="176" width="150" height="46" rx="5"/>
+  <text class="on-fill-sm" x="545" y="194" text-anchor="middle">Normalizing flow</text>
+  <text class="xs" x="545" y="210" text-anchor="middle">invertibility caps quality</text>
+
+  <rect class="f-purple" x="298" y="292" width="164" height="46" rx="5"/>
+  <text class="on-fill-sm" x="380" y="310" text-anchor="middle">Autoregressive</text>
+  <text class="xs" x="380" y="326" text-anchor="middle">n sequential passes</text>
+
+  <rect class="f-amber" x="252" y="120" width="164" height="52" rx="5"/>
+  <text class="on-fill-sm" x="334" y="140" text-anchor="middle">Diffusion</text>
+  <text class="xs" x="334" y="156" text-anchor="middle">bound, not exact ·</text>
+  <text class="xs" x="334" y="168" text-anchor="middle">hundreds of steps</text>
+
+  <circle class="f-green" cx="380" cy="236" r="26" opacity="0.5"/>
+  <text class="xs" x="380" y="234" text-anchor="middle">distilled</text>
+  <text class="xs" x="380" y="248" text-anchor="middle">diffusion</text>
+  <text class="xs" x="380" y="272" text-anchor="middle">closest anyone has got —</text>
+  <text class="xs" x="380" y="284" text-anchor="middle">and it needs two training stages</text>
+
+  <rect class="f-grey" x="590" y="60" width="156" height="70" rx="5" opacity="0.5"/>
+  <text class="on-fill-sm" x="606" y="80">VAE sits inside:</text>
+  <text class="xs" x="606" y="98">fast, bounded likelihood,</text>
+  <text class="xs" x="606" y="114">mediocre quality — it gave</text>
+  <text class="xs" x="606" y="126">up some of all three</text>
+</svg>
+</Figure>
+
+## Why likelihood and beauty come apart
+
+This confuses people, and the explanation is worth having.
+
+Likelihood is an average of $\log p(x)$ over held-out data. It is dominated by the
+*worst* cases — a model that assigns near-zero probability to a few real images
+takes an enormous penalty, because $\log 0 = -\infty$. So a good likelihood forces
+you to **cover everything**, including the strange tails.
+
+Perceptual quality is judged on what you *produce*. A model that generates only
+the most typical, safest images looks excellent and has ignored most of the
+distribution.
+
+**So the two metrics reward opposite behaviours.** A model that covers everything
+badly beats a model that covers a little superbly on likelihood, and loses on
+FID. Neither metric is wrong; they measure different things, and reporting only
+one is how a great deal of generative-modelling progress got overstated.
+
+<Aside type="tip" title="The one-line diagnosis">
+Blurry outputs mean the model is *mode-covering* — spreading probability over
+everything, which is what maximum likelihood asks for. Sharp but repetitive
+outputs mean it is *mode-seeking* — committing to a few modes, which is what an
+adversarial loss encourages. This is the same forward/reverse KL asymmetry from
+[probability](/foundations/probability-for-ml/), showing up as a visible artefact.
+</Aside>
+
+<Tier level="mechanics" />
+
+## The lineage
+
+<Figure
+  lead="Six families, four decades, and two reversals."
+  caption="Vertical position is roughly how directly the model represents the density: energy-based and flow models near the top define p(x) explicitly, GANs at the bottom never represent it at all. The field spent 2014–2019 moving downward toward implicit models because they produced better images, then reversed after 2020 when diffusion showed you could have quality without abandoning a likelihood bound. Flow matching in 2022 partially merged the diffusion and flow branches, which is why they are drawn converging."
+>
+<svg viewBox="0 0 760 380" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Timeline of generative model families from 1982 to 2026">
+  <defs>
+    <marker id="gm1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor" opacity="0.6"/>
+    </marker>
+  </defs>
+
+  <line class="bx" x1="60" y1="352" x2="740" y2="352"/>
+  <text class="xs" x="66" y="370">1982</text>
+  <text class="xs" x="160" y="370">2006</text>
+  <text class="xs" x="255" y="370">2014</text>
+  <text class="xs" x="380" y="370">2016</text>
+  <text class="xs" x="500" y="370">2018</text>
+  <text class="xs" x="600" y="370">2020</text>
+  <text class="xs" x="690" y="370">2026</text>
+
+  <text class="xs" x="14" y="46">explicit</text>
+  <text class="xs" x="14" y="62">density</text>
+  <text class="xs" x="14" y="306">implicit</text>
+  <text class="xs" x="14" y="322">(sample only)</text>
+  <line class="bx" x1="52" y1="34" x2="52" y2="340" opacity="0.3"/>
+
+  <rect class="f-grey" x="60" y="40" width="86" height="34" rx="4"/>
+  <text class="on-fill-sm" x="103" y="54" text-anchor="middle">Hopfield</text>
+  <text class="xs" x="103" y="68" text-anchor="middle">1982 · energy</text>
+
+  <rect class="f-grey" x="152" y="40" width="86" height="34" rx="4"/>
+  <text class="on-fill-sm" x="195" y="54" text-anchor="middle">DBN / RBM</text>
+  <text class="xs" x="195" y="68" text-anchor="middle">2006</text>
+
+  <rect class="f-blue" x="244" y="96" width="86" height="34" rx="4"/>
+  <text class="on-fill-sm" x="287" y="110" text-anchor="middle">NICE</text>
+  <text class="xs" x="287" y="124" text-anchor="middle">2014 · flow</text>
+
+  <rect class="f-amber" x="244" y="164" width="86" height="34" rx="4"/>
+  <text class="on-fill-sm" x="287" y="178" text-anchor="middle">VAE</text>
+  <text class="xs" x="287" y="192" text-anchor="middle">2013</text>
+
+  <rect class="f-pink" x="244" y="280" width="86" height="34" rx="4"/>
+  <text class="on-fill-sm" x="287" y="294" text-anchor="middle">GAN</text>
+  <text class="xs" x="287" y="308" text-anchor="middle">2014</text>
+
+  <rect class="f-purple" x="348" y="132" width="96" height="34" rx="4"/>
+  <text class="on-fill-sm" x="396" y="146" text-anchor="middle">PixelRNN/CNN</text>
+  <text class="xs" x="396" y="160" text-anchor="middle">2016 · autoreg.</text>
+
+  <rect class="f-blue" x="348" y="96" width="86" height="30" rx="4"/>
+  <text class="on-fill-sm" x="391" y="116" text-anchor="middle">RealNVP</text>
+
+  <rect class="f-pink" x="348" y="280" width="96" height="34" rx="4"/>
+  <text class="on-fill-sm" x="396" y="294" text-anchor="middle">DCGAN·WGAN</text>
+  <text class="xs" x="396" y="308" text-anchor="middle">2015–17</text>
+
+  <rect class="f-blue" x="462" y="88" width="86" height="34" rx="4"/>
+  <text class="on-fill-sm" x="505" y="102" text-anchor="middle">Glow</text>
+  <text class="xs" x="505" y="116" text-anchor="middle">2018</text>
+
+  <rect class="f-pink" x="462" y="280" width="96" height="34" rx="4"/>
+  <text class="on-fill-sm" x="510" y="294" text-anchor="middle">StyleGAN</text>
+  <text class="xs" x="510" y="308" text-anchor="middle">BigGAN 2018</text>
+
+  <rect class="f-green" x="574" y="196" width="96" height="38" rx="4"/>
+  <text class="on-fill-sm" x="622" y="212" text-anchor="middle">DDPM 2020</text>
+  <text class="xs" x="622" y="226" text-anchor="middle">diffusion</text>
+
+  <rect class="f-green" x="640" y="128" width="104" height="42" rx="4"/>
+  <text class="on-fill-sm" x="692" y="146" text-anchor="middle">Flow matching</text>
+  <text class="xs" x="692" y="162" text-anchor="middle">2022 — branches merge</text>
+
+  <rect class="f-purple" x="574" y="132" width="60" height="30" rx="4" opacity="0.8"/>
+  <text class="on-fill-sm" x="604" y="152" text-anchor="middle">iGPT</text>
+
+  <path class="ar" d="M146,57 L148,57" marker-end="url(#gm1)"/>
+  <path class="ar" d="M238,57 C250,70 254,86 264,92" marker-end="url(#gm1)"/>
+  <path class="ar" d="M330,111 L344,111" marker-end="url(#gm1)"/>
+  <path class="ar" d="M434,105 L458,103" marker-end="url(#gm1)"/>
+  <path class="ar" d="M330,297 L344,297" marker-end="url(#gm1)"/>
+  <path class="ar" d="M444,297 L458,297" marker-end="url(#gm1)"/>
+  <path class="ar" d="M330,178 C420,196 500,206 570,212" marker-end="url(#gm1)"/>
+  <path class="ar" d="M444,152 C500,150 540,144 570,146" marker-end="url(#gm1)"/>
+  <path class="ar" d="M670,206 C690,196 694,180 694,172" marker-end="url(#gm1)"/>
+  <path class="ar" d="M548,100 C600,110 640,120 648,126" marker-end="url(#gm1)"/>
+
+  <path class="dash" d="M558,290 C600,286 620,262 622,238" opacity="0.5"/>
+  <text class="xs" x="600" y="268">GANs persist for</text>
+  <text class="xs" x="600" y="282">one-step sampling</text>
+</svg>
+</Figure>
+
+## The six families
+
+<Tabs>
+<TabItem label="GAN">
+
+**Two networks in a game.** A generator maps noise to images; a discriminator tries
+to tell real from fake. The generator's loss is the discriminator's failure.
+
+**What it gives you.** One-step sampling — a single forward pass — and, at its
+peak, the best-looking images anyone had produced. StyleGAN2 faces were the state
+of the art for years.
+
+**What it costs.** No likelihood. Ever. The model never represents $p(x)$; it only
+produces samples, which makes it an *implicit* model. You cannot score, cannot
+detect out-of-distribution inputs, cannot compress.
+
+**The failure modes, both structural:**
+
+- **Mode collapse.** The generator finds one output that fools the discriminator
+  and produces only that. It is winning the game as defined, and the game was
+  defined wrong.
+- **Non-convergence.** This is a minimax problem, not a minimisation. There is no
+  loss that decreases monotonically, so you cannot tell from the curves whether
+  training is going well — you have to look at samples.
+
+**The fixes that mattered.** WGAN replaced the Jensen–Shannon objective with an
+Earth-Mover distance that gives useful gradients even when the distributions do not
+overlap. WGAN-GP replaced weight clipping with a gradient penalty. Spectral
+normalisation constrains the discriminator's Lipschitz constant cheaply and became
+standard.
+
+**Use it today for**: real-time and on-device generation, super-resolution,
+image-to-image translation (pix2pix, CycleGAN), and as the perceptual loss inside
+[neural audio codecs](/domains/speech-audio/) and VQ-GAN-style tokenisers — which
+is where most GAN training now actually happens.
+
+</TabItem>
+<TabItem label="VAE">
+
+**Encode to a distribution, decode from a sample, regularise toward a prior.**
+Covered fully on [Neural Encoders](/encoders/neural-encoders/).
+
+**What it gives you.** A smooth, samplable latent space; fast one-pass sampling; a
+*bound* on likelihood; and a genuinely useful encoder — the only family here where
+inference is built in.
+
+**What it costs.** Blur. The reconstruction term is typically Gaussian, so the
+decoder outputs a conditional mean, and the mean of several plausible images is not
+an image. Plus posterior collapse when the decoder is strong enough to ignore the
+latent.
+
+**Its real legacy is as a component.** VQ-VAE tokenisers feed
+[diffusion](/architectures/diffusion/) and [audio models](/domains/speech-audio/);
+latent diffusion runs inside a VAE's latent space. The VAE mostly stopped being an
+endpoint and became infrastructure.
+
+</TabItem>
+<TabItem label="Normalizing flow">
+
+**Build the distribution from an invertible chain.** Start with a simple
+distribution, apply a sequence of invertible transformations, and use the
+change-of-variables formula to get an *exact* density.
+
+**What it gives you.** Exact likelihood — not a bound, the actual number — plus
+fast sampling and exact inference. Uniquely among these families, all three of
+those at once.
+
+**What it costs.** The transformations must be invertible with a tractable Jacobian
+determinant, and that constraint is severe. Every layer must preserve
+dimensionality — no bottleneck, ever — and the architectures you are allowed
+(coupling layers, autoregressive flows) are far less expressive per parameter than
+an unconstrained network.
+
+**The result**: flows have never matched GAN or diffusion sample quality on images
+at comparable compute.
+
+**Use it for**: density estimation proper, out-of-distribution detection,
+variational inference (as flexible posteriors), simulation-based inference in the
+sciences, and lossless compression. Anywhere the *number* matters more than the
+picture.
+
+**Continuous flows** (Neural ODE, FFJORD) replace the discrete chain with an ODE,
+trading the architectural constraint for numerical integration cost — and they are
+the direct ancestor of [flow matching](/architectures/diffusion/).
+
+</TabItem>
+<TabItem label="Autoregressive">
+
+**Factorise the joint into a product of conditionals** and model each one. For
+images, predict pixel $i$ given pixels $1..i-1$; for text, the same over tokens.
+
+**What it gives you.** Exact likelihood, stable maximum-likelihood training with no
+adversary, and — as language models demonstrated — the cleanest scaling behaviour
+of any family here.
+
+**What it costs.** Sampling is inherently sequential: $n$ forward passes for $n$
+elements. For a 1024×1024 image that is a million sequential steps, which is why
+autoregressive image models lost to diffusion despite better likelihoods.
+
+**Where the ordering bites.** Text has a natural order. Images do not — raster
+order forces the model to predict a pixel from the ones above and to the left,
+which is an arbitrary and unnatural conditioning structure. PixelCNN's masked
+convolutions have a blind spot for exactly this reason.
+
+**Use it for**: anything with a natural sequential order. Which is to say: all of
+language modelling, and — via [neural codecs](/domains/speech-audio/) — audio.
+It never went away; it moved domains.
+
+</TabItem>
+<TabItem label="Diffusion">
+
+**Destroy data with noise, learn to reverse it.** Covered in full on
+[Diffusion Models](/architectures/diffusion/).
+
+**Why it won.** It decomposed an impossible problem into a thousand easy ones. Each
+denoising step is an ordinary supervised regression with a squared loss — no
+adversary, no equilibrium, no invertibility constraint. Training is about as stable
+as training a classifier, and it scales.
+
+**What it costs.** Sampling. Hundreds of network evaluations per image at first;
+DDIM, distillation, consistency models and rectified flow have pushed that toward
+one, each by adding machinery.
+
+**Use it for**: essentially all high-quality image, video and audio generation
+today, plus as a policy class in robotics and as a
+[world model](/world-models/catalogue/).
+
+</TabItem>
+<TabItem label="Energy-based">
+
+**Define an energy $E_\theta(x)$ and let $p(x) \propto e^{-E(x)}$.** Maximum
+flexibility — any scalar function of $x$ defines a valid distribution.
+
+**What it costs, and it is fatal for most uses.** The normalising constant $Z =
+\int e^{-E(x)}dx$ is intractable. You cannot compute the likelihood, and training
+by maximum likelihood requires sampling from the model itself at every step,
+usually via MCMC, which is slow and unreliable in high dimensions.
+
+**Why it still matters.** The score function $\nabla_x \log p(x) = -\nabla_x E(x)$
+does not involve $Z$ at all — the gradient of the log-density is computable even
+when the density is not. **That single observation is the bridge to score matching
+and therefore to diffusion.** Modern diffusion models are, in a precise sense, the
+energy-based programme made trainable.
+
+</TabItem>
+</Tabs>
+
+## The comparison
+
+| | Likelihood | Sampling | Quality | Training stability | Inference (encoder) | Alive in 2026 for |
+|---|---|---|---|---|---|---|
+| **GAN** | none | **1 step** | high | **poor** (minimax) | no | real-time, on-device, codecs |
+| **VAE** | bound | 1 step | low (blurry) | good | **yes** | tokenisers, latent spaces |
+| **Flow** | **exact** | 1 step | moderate | good | **yes** (exact) | density estimation, OOD, science |
+| **Autoregressive** | **exact** | $n$ steps | high | **best** | no | language, audio, anything ordered |
+| **Diffusion** | bound | 10–1000 steps | **highest** | good | no | images, video, audio, policies |
+| **Energy-based** | unnormalised | MCMC | moderate | poor | no | conceptual bridge to diffusion |
+
+<Aside type="danger" title="FID is the field's most over-trusted number">
+FID compares Inception-v3 feature statistics between real and generated sets. It is
+biased by sample count (fewer samples inflates it), sensitive to image
+preprocessing and JPEG artefacts, and inherits whatever ImageNet classification
+happened to make salient. It also collapses two distinct failures — poor fidelity
+and poor diversity — into one scalar, so a mode-collapsed model and a blurry one
+can score alike. Report **precision and recall separately** if you want to know
+which is happening.
+</Aside>
+
+<Tier level="formal" />
+
+## GAN: the minimax game and what it optimises
+
+$$
+\min_G \max_D\ V(D,G) = \mathbb{E}_{x\sim p_{\text{data}}}\big[\log D(x)\big] + \mathbb{E}_{z\sim p_z}\big[\log\big(1 - D(G(z))\big)\big].
+$$
+
+**The optimal discriminator, for fixed $G$.** Differentiating the integrand
+pointwise:
+
+$$
+D^{*}(x) = \frac{p_{\text{data}}(x)}{p_{\text{data}}(x) + p_g(x)} .
+$$
+
+Substituting back gives
+
+$$
+V(D^{*}, G) = 2\,\mathrm{JSD}\big(p_{\text{data}} \,\|\, p_g\big) - \log 4 ,
+$$
+
+so the generator is minimising the **Jensen–Shannon divergence**. Global optimum at
+$p_g = p_{\text{data}}$, value $-\log 4$.
+
+**Why this fails in practice.** If $p_{\text{data}}$ and $p_g$ have disjoint
+support — which is generic when both are supported on low-dimensional manifolds in
+pixel space — then $\mathrm{JSD} = \log 2$ **constantly**, and its gradient with
+respect to $G$ is zero. A perfect discriminator provides no learning signal at all.
+This is not an optimisation difficulty; the objective is genuinely flat.
+
+**WGAN's fix.** Replace JSD with the Wasserstein-1 distance, which under the
+Kantorovich–Rubinstein duality is
+
+$$
+W_1(p_{\text{data}}, p_g) = \sup_{\|f\|_{L}\leq 1}\ \mathbb{E}_{p_{\text{data}}}[f(x)] - \mathbb{E}_{p_g}[f(x)] .
+$$
+
+$W_1$ is finite and has non-vanishing gradient even for disjoint supports —
+it measures *how far apart* the distributions are, not merely that they differ.
+The critic $f$ must be 1-Lipschitz, enforced by weight clipping (WGAN), a gradient
+penalty (WGAN-GP),
+
+$$
+\mathcal{L}_{\text{GP}} = \lambda\,\mathbb{E}_{\hat x}\Big[\big(\|\nabla_{\hat x} f(\hat x)\|_2 - 1\big)^2\Big],
+$$
+
+or by constraining each layer's spectral norm (spectral normalisation), which is
+the cheapest and became standard.
+
+**A useful side effect**: $W_1$ correlates with sample quality, so the critic loss
+is an actual progress signal — something the original GAN objective never provided.
+
+## Normalizing flows: change of variables
+
+For an invertible $f_\theta$ with $z = f_\theta(x)$:
+
+$$
+\log p_X(x) = \log p_Z\big(f_\theta(x)\big) + \log\left|\det \frac{\partial f_\theta}{\partial x}\right| .
+$$
+
+The whole difficulty is the log-determinant: computing it naively is $O(d^3)$,
+which is impossible at image dimensionality.
+
+**Coupling layers solve it by construction.** Split $x$ into two halves and
+transform only one, conditioned on the other:
+
+$$
+y_{1:k} = x_{1:k}, \qquad y_{k+1:d} = x_{k+1:d}\odot \exp\big(s(x_{1:k})\big) + t(x_{1:k}).
+$$
+
+The Jacobian is triangular:
+
+$$
+\frac{\partial y}{\partial x} = \begin{bmatrix} I & 0 \\ \frac{\partial y_{k+1:d}}{\partial x_{1:k}} & \operatorname{diag}\big(\exp(s)\big)\end{bmatrix},
+\qquad
+\log\left|\det\frac{\partial y}{\partial x}\right| = \sum_{j} s_j(x_{1:k}).
+$$
+
+**The determinant is a sum** — $O(d)$, not $O(d^3)$ — and $s, t$ can be arbitrarily
+complex networks because they are never inverted. Inversion is trivial:
+
+$$
+x_{k+1:d} = \big(y_{k+1:d} - t(y_{1:k})\big)\odot \exp\big(-s(y_{1:k})\big).
+$$
+
+**Where the expressiveness goes.** Each layer only transforms half the dimensions,
+so you need many layers and alternating masks. And the dimension can never change:
+no bottleneck, no compression, every layer is $d\times d$. That is the structural
+reason flows underperform on images — they are spending capacity maintaining
+invertibility that the task never asked for.
+
+**Glow's contribution** was replacing the fixed permutation between coupling layers
+with a learned invertible $1\times1$ convolution, whose determinant is $h\cdot w
+\cdot \log|\det W|$ for a $c\times c$ matrix $W$ — cheap, and it lets the model
+learn which channels to mix.
+
+## Autoregressive: exact factorisation
+
+$$
+p(x) = \prod_{i=1}^{n} p\big(x_i \mid x_{<i}\big), \qquad \mathcal{L} = -\sum_{i} \log p_\theta\big(x_i\mid x_{<i}\big).
+$$
+
+Exact by the chain rule of probability — no approximation anywhere, which is why
+the likelihood is exact and training is stable.
+
+**The cost is structural.** Sampling requires $n$ sequential evaluations, and no
+amount of hardware parallelism removes a sequential dependency. Training
+*is* parallel (teacher forcing evaluates all conditionals at once), which produces
+the characteristic asymmetry: fast to train, slow to sample — the exact reverse of
+diffusion.
+
+**Discretised logistic mixture.** PixelCNN++'s practically important detail:
+modelling a 256-way softmax per channel wastes capacity, because pixel values 127
+and 128 are nearly the same and a softmax treats them as unrelated categories.
+Instead model a continuous mixture and integrate over each discrete bin:
+
+$$
+p(x = v) = \sum_{k} \pi_k\Big[\sigma\big(\tfrac{v + 0.5 - \mu_k}{s_k}\big) - \sigma\big(\tfrac{v - 0.5 - \mu_k}{s_k}\big)\Big],
+$$
+
+which encodes ordinality, uses far fewer parameters, and improves likelihood
+measurably.
+
+## Energy-based models and the bridge to diffusion
+
+$$
+p_\theta(x) = \frac{e^{-E_\theta(x)}}{Z_\theta}, \qquad Z_\theta = \int e^{-E_\theta(x)}\,dx .
+$$
+
+The maximum-likelihood gradient is
+
+$$
+\nabla_\theta \big(-\log p_\theta(x)\big) = \nabla_\theta E_\theta(x) - \mathbb{E}_{x'\sim p_\theta}\big[\nabla_\theta E_\theta(x')\big].
+$$
+
+Read the two terms: push energy **down** on real data, push it **up** on samples
+from the current model. Intuitive, and it requires sampling from $p_\theta$ at
+every gradient step — typically Langevin MCMC:
+
+$$
+x_{t+1} = x_t - \tfrac{\eta}{2}\nabla_x E_\theta(x_t) + \sqrt{\eta}\,\epsilon_t, \qquad \epsilon_t\sim\mathcal{N}(0,I),
+$$
+
+which mixes slowly in high dimensions and makes training fragile.
+
+**The escape.** Note that
+
+$$
+\nabla_x \log p_\theta(x) = -\nabla_x E_\theta(x)
+$$
+
+— the $Z_\theta$ vanishes, because it does not depend on $x$. So the **score** is
+computable even though the density is not. Score matching learns $s_\theta(x)
+\approx \nabla_x\log p_{\text{data}}(x)$ directly, and denoising score matching
+makes that tractable by adding noise:
+
+$$
+\mathcal{L}_{\text{DSM}} = \mathbb{E}_{x,\tilde x}\Big[\big\|s_\theta(\tilde x) - \nabla_{\tilde x}\log q_\sigma(\tilde x\mid x)\big\|^2\Big] = \mathbb{E}\left[\Big\|s_\theta(\tilde x) + \frac{\tilde x - x}{\sigma^2}\Big\|^2\right].
+$$
+
+**That is the diffusion objective.** The energy-based programme — flexible,
+principled, untrainable — became trainable the moment the field stopped trying to
+model $p$ and started modelling $\nabla_x \log p$.
+
+<Figure
+  lead="Six ways to get from noise to data."
+  caption="The generator's structure is the family. A GAN jumps in one violent step and is trained by an adversary rather than a likelihood. A flow walks through invertible layers of constant dimension — no bottleneck is permitted anywhere, which is precisely what costs it expressiveness. An autoregressive model builds the sample one coordinate at a time. Diffusion takes many small denoising steps, each an ordinary regression. An energy model has no generator at all: sampling means running a Markov chain downhill on the energy surface, which is why it was never practical."
+>
+<svg viewBox="0 0 760 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Sampling procedure for each generative model family">
+  <defs>
+    <marker id="gm2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <text class="lb" x="14" y="20">GAN — one jump, judged by an adversary</text>
+  <circle class="f-grey" cx="120" cy="42" r="13"/>
+  <text class="xs" x="120" y="46" text-anchor="middle">z</text>
+  <path class="thick" d="M136,42 L246,42" marker-end="url(#gm2)"/>
+  <text class="xs" x="191" y="34" text-anchor="middle">G</text>
+  <rect class="f-pink" x="250" y="28" width="40" height="28" rx="3"/>
+  <path class="dash" d="M292,42 L360,42" marker-end="url(#gm2)"/>
+  <rect class="f-purple" x="364" y="28" width="80" height="28" rx="3"/>
+  <text class="on-fill-sm" x="404" y="47" text-anchor="middle">D: real?</text>
+  <text class="xs" x="470" y="46">no likelihood — the loss is another network's opinion</text>
+
+  <line class="bx" x1="14" y1="64" x2="746" y2="64" opacity="0.25"/>
+
+  <text class="lb" x="14" y="86">VAE — encode to a distribution, decode a sample</text>
+  <rect class="f-green" x="120" y="96" width="34" height="26" rx="3"/>
+  <path class="ar" d="M158,109 L188,109" marker-end="url(#gm2)"/>
+  <ellipse class="f-blue" cx="212" cy="109" rx="22" ry="14"/>
+  <text class="xs" x="212" y="113" text-anchor="middle">q(z|x)</text>
+  <path class="ar" d="M236,109 L266,109" marker-end="url(#gm2)"/>
+  <rect class="f-pink" x="270" y="96" width="34" height="26" rx="3"/>
+  <text class="xs" x="340" y="106">bounded likelihood, blurry decoder,</text>
+  <text class="xs" x="340" y="120">and the only family with an encoder built in</text>
+
+  <line class="bx" x1="14" y1="134" x2="746" y2="134" opacity="0.25"/>
+
+  <text class="lb" x="14" y="156">Flow — invertible layers, dimension never changes</text>
+  <circle class="f-grey" cx="120" cy="180" r="13"/>
+  <text class="xs" x="120" y="184" text-anchor="middle">z</text>
+  <rect class="f-blue" x="146" y="166" width="30" height="28" rx="3"/>
+  <rect class="f-blue" x="182" y="166" width="30" height="28" rx="3"/>
+  <rect class="f-blue" x="218" y="166" width="30" height="28" rx="3"/>
+  <rect class="f-blue" x="254" y="166" width="30" height="28" rx="3"/>
+  <path class="ar" d="M288,180 L316,180" marker-end="url(#gm2)"/>
+  <rect class="f-pink" x="320" y="166" width="34" height="28" rx="3"/>
+  <path class="dash" d="M320,200 C260,214 180,214 128,196" marker-end="url(#gm2)"/>
+  <text class="xs" x="224" y="222" text-anchor="middle">exactly invertible — run it backwards for the density</text>
+  <text class="xs" x="400" y="176">every layer is d × d · no bottleneck allowed</text>
+  <text class="xs" x="400" y="192">→ exact likelihood, capped expressiveness</text>
+
+  <line class="bx" x1="14" y1="234" x2="746" y2="234" opacity="0.25"/>
+
+  <text class="lb" x="14" y="256">Autoregressive — one coordinate at a time</text>
+  <rect class="f-purple" x="120" y="266" width="26" height="26" rx="3"/>
+  <rect class="f-purple" x="150" y="266" width="26" height="26" rx="3" opacity="0.85"/>
+  <rect class="f-purple" x="180" y="266" width="26" height="26" rx="3" opacity="0.7"/>
+  <rect class="bx" x="210" y="266" width="26" height="26" rx="3" opacity="0.4"/>
+  <rect class="bx" x="240" y="266" width="26" height="26" rx="3" opacity="0.4"/>
+  <path class="ar" d="M206,258 C216,248 226,252 224,262" marker-end="url(#gm2)"/>
+  <text class="xs" x="300" y="272">n sequential passes — no parallelism possible</text>
+  <text class="xs" x="300" y="288">exact likelihood, best scaling, slowest sampling</text>
+
+  <line class="bx" x1="14" y1="304" x2="746" y2="304" opacity="0.25"/>
+
+  <text class="lb" x="14" y="326">Diffusion — many small denoising steps</text>
+  <circle class="f-grey" cx="120" cy="350" r="12"/>
+  <path class="ar" d="M134,350 L156,350" marker-end="url(#gm2)"/>
+  <circle class="f-amber" cx="172" cy="350" r="12" opacity="0.5"/>
+  <path class="ar" d="M186,350 L208,350" marker-end="url(#gm2)"/>
+  <circle class="f-amber" cx="224" cy="350" r="12" opacity="0.7"/>
+  <path class="ar" d="M238,350 L260,350" marker-end="url(#gm2)"/>
+  <circle class="f-amber" cx="276" cy="350" r="12" opacity="0.85"/>
+  <path class="ar" d="M290,350 L312,350" marker-end="url(#gm2)"/>
+  <rect class="f-pink" x="316" y="336" width="34" height="28" rx="3"/>
+  <text class="xs" x="380" y="342">each step is a plain regression — stable and scalable</text>
+  <text class="xs" x="380" y="358">the cost is that there are hundreds of them</text>
+
+  <text class="lb" x="14" y="386">Energy-based — no generator; sample by descending the energy</text>
+  <path class="thick" d="M400,388 C420,372 440,392 460,378 C480,364 500,386 520,376" opacity="0.7"/>
+  <circle class="f-pink" cx="520" cy="376" r="6"/>
+  <text class="xs" x="560" y="382">Langevin MCMC — slow, fragile in high dimensions</text>
+</svg>
+</Figure>
+
+## Why maximum likelihood produces blur
+
+The MLE objective is equivalent to minimising forward KL:
+
+$$
+\arg\max_\theta \mathbb{E}_{p_{\text{data}}}\big[\log p_\theta(x)\big] = \arg\min_\theta\ \mathrm{KL}\big(p_{\text{data}}\,\|\,p_\theta\big).
+$$
+
+Forward KL is $\mathbb{E}_{p_{\text{data}}}[\log p_{\text{data}}/p_\theta]$, which
+is **infinite** wherever $p_{\text{data}} > 0$ and $p_\theta = 0$. The penalty for
+missing a mode is unbounded; the penalty for putting mass where there is no data is
+merely finite.
+
+So MLE is **mode-covering**: it spreads probability to cover everything, including
+the space between modes. For a unimodal decoder that means outputting an average,
+and an average of images is a blur.
+
+An adversarial loss approximates something closer to reverse KL, which is
+**mode-seeking** — it is punished for generating implausible samples and not for
+missing modes. Hence sharp, and hence mode collapse.
+
+**These are two failure modes of one asymmetry**, and no choice of architecture
+escapes it — only a choice of divergence does.
+
+<Tier level="frontier" />
+
+## Where this stands, as of 2026
+
+**Diffusion and flow matching own high-quality generation**, and the two have
+largely merged notationally — diffusion with a particular schedule *is* flow
+matching along a curved path. New work is written in flow-matching terms because
+the formulation is simpler and the straight-path property gives a principled route
+to few-step sampling.
+
+**Autoregressive owns everything with a natural order.** Language, and via
+tokenisation, audio and increasingly video. The scaling behaviour is cleaner than
+any other family's, and that has proven decisive at frontier scale.
+
+**GANs survive in a well-defined niche.** One-step sampling is still unmatched
+where latency is hard-constrained. And GAN losses live on *inside* other systems —
+the discriminator in a neural audio codec or a VQ-GAN tokeniser is doing perceptual
+work that no reconstruction loss does.
+
+**Flows are healthy in the sciences and marginal in vision.** Simulation-based
+inference, lattice field theory sampling, and molecular conformer generation all use
+flows precisely because the exact likelihood is the deliverable. Nobody is trying
+to beat diffusion on faces with them any more, and that is a sensible division.
+
+**The likelihood/quality gap is now understood rather than argued about.** Papers
+report FID *and* precision/recall *and* likelihood where applicable, because the
+field accepted that one number cannot capture both fidelity and coverage.
+
+## Open problems
+
+- **Evaluation.** FID's flaws are documented and it remains the default because the
+  alternatives are worse or more expensive. Human evaluation is the ground truth and
+  does not scale.
+
+- **One-step generation without a second stage.** Distillation and consistency
+  models work and require training a teacher first. Nobody has a single-stage
+  method that samples in one step at diffusion quality.
+
+- **Discrete diffusion is unresolved.** The Gaussian machinery does not transfer to
+  tokens, several corruption processes have been proposed, and none clearly wins —
+  which matters because it is the main route to non-autoregressive text generation.
+
+- **Memorisation.** Diffusion models provably reproduce training examples under
+  some conditions, particularly for duplicated data. The relationship between
+  duplication, capacity and extraction risk is only partly mapped, and it has direct
+  legal consequences.
+
+- **Controllability.** Classifier-free guidance is essential, unprincipled, and
+  samples from a distribution nobody characterised. See
+  [Diffusion](/architectures/diffusion/).
+
+## Choosing one
+
+<Card title="A decision procedure" icon="right-arrow">
+**Need an exact likelihood?** Flow (continuous data) or autoregressive (discrete).
+Nothing else gives you the number.
+
+**Need one-step sampling under a hard latency budget?** GAN, or a distilled
+diffusion model if you can afford the extra training stage.
+
+**Need the best possible images, video or audio?** Diffusion or flow matching. Not
+close.
+
+**Generating something with a natural order?** Autoregressive. This is why language
+models are what they are.
+
+**Need an encoder as well as a generator?** VAE or flow — the only families with
+built-in inference.
+
+**Doing science where the density is the deliverable?** Flow. The invertibility you
+pay for is exactly what you are buying.
+</Card>
+
+## Reading path
+
+1. **Goodfellow et al. (2014)** — Sections 3–4 for the optimal-discriminator
+   derivation and the JSD result. Short, and the argument is elegant.
+2. **Arjovsky et al. (2017), WGAN** — Sections 2–3 for *why* JSD fails on disjoint
+   supports. The clearest diagnosis of a failure mode in this literature.
+3. **Dinh et al. (2016), Real NVP** — the coupling-layer construction. Worth doing
+   the Jacobian by hand once.
+4. **Ho et al. (2020), DDPM** — the derivation from ELBO to the simple loss.
+5. **Papamakarios et al. (2019)** — the flow survey, for the full taxonomy of
+   invertible architectures.
+
+<Papers papers={frontmatter.papers} />
