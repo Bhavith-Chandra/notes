@@ -1,0 +1,1026 @@
+---
+title: "Energy-Based Models"
+description: "Assign every configuration a score and call low scores likely. The most general way to define a distribution, the hardest to train, and the idea diffusion models are secretly a solution to."
+sidebar:
+  order: 8
+depth: frontier
+readingTime: 55
+prereqs:
+  - label: "Probability for ML"
+    slug: "foundations/probability-for-ml"
+papers:
+  - title: "Beitrag zur Theorie des Ferromagnetismus (the Ising model)"
+    authors: "Ernst Ising"
+    year: 1925
+    url: "https://doi.org/10.1007/BF02980577"
+  - title: "Neural networks and physical systems with emergent collective computational abilities (Hopfield networks)"
+    authors: "J. J. Hopfield"
+    year: 1982
+    url: "https://doi.org/10.1073/pnas.79.8.2554"
+  - title: "A Learning Algorithm for Boltzmann Machines"
+    authors: "Ackley, Hinton, Sejnowski"
+    year: 1985
+    url: "https://doi.org/10.1207/s15516709cog0901_7"
+  - title: "Training Products of Experts by Minimizing Contrastive Divergence"
+    authors: "Geoffrey E. Hinton"
+    year: 2002
+    url: "https://doi.org/10.1162/089976602760128018"
+  - title: "Estimation of Non-Normalized Statistical Models by Score Matching"
+    authors: "Aapo Hyvärinen"
+    year: 2005
+    url: "https://jmlr.org/papers/v6/hyvarinen05a.html"
+  - title: "A Fast Learning Algorithm for Deep Belief Nets"
+    authors: "Hinton, Osindero, Teh"
+    year: 2006
+    url: "https://doi.org/10.1162/neco.2006.18.7.1527"
+  - title: "A Tutorial on Energy-Based Learning"
+    authors: "LeCun, Chopra, Hadsell, Ranzato, Huang"
+    year: 2006
+    url: "https://cs.nyu.edu/~sumit/publications/assets/ebmtutorial.pdf"
+  - title: "Some extensions of score matching"
+    authors: "Aapo Hyvärinen"
+    year: 2007
+    url: "https://doi.org/10.1016/j.csda.2006.09.003"
+  - title: "Training Restricted Boltzmann Machines using Approximations to the Likelihood Gradient (PCD)"
+    authors: "Tijmen Tieleman"
+    year: 2008
+    url: "https://doi.org/10.1145/1390156.1390290"
+  - title: "Noise-contrastive estimation: A new estimation principle for unnormalized statistical models"
+    authors: "Michael Gutmann, Aapo Hyvärinen"
+    year: 2010
+    url: "https://proceedings.mlr.press/v9/gutmann10a.html"
+  - title: "A Connection Between Score Matching and Denoising Autoencoders"
+    authors: "Pascal Vincent"
+    year: 2011
+    url: "https://doi.org/10.1162/NECO_a_00142"
+  - title: "Bayesian Learning via Stochastic Gradient Langevin Dynamics (SGLD)"
+    authors: "Max Welling, Yee Whye Teh"
+    year: 2011
+    url: "https://icml.cc/Conferences/2011/papers/398_icmlpaper.pdf"
+  - title: "MCMC using Hamiltonian dynamics"
+    authors: "Radford M. Neal"
+    year: 2011
+    url: "https://arxiv.org/abs/1206.1901"
+  - title: "Dense Associative Memory for Pattern Recognition"
+    authors: "Dmitry Krotov, John J. Hopfield"
+    year: 2016
+    url: "https://arxiv.org/abs/1606.01164"
+  - title: "Implicit Generation and Generalization in Energy-Based Models"
+    authors: "Yilun Du, Igor Mordatch"
+    year: 2019
+    url: "https://arxiv.org/abs/1903.08689"
+  - title: "On the Anatomy of MCMC-Based Maximum Likelihood Learning of Energy-Based Models"
+    authors: "Nijkamp, Hill, Han, Zhu, Wu"
+    year: 2019
+    url: "https://arxiv.org/abs/1903.12370"
+  - title: "Sliced Score Matching: A Scalable Approach to Density and Score Estimation"
+    authors: "Song, Garg, Shi, Ermon"
+    year: 2019
+    url: "https://arxiv.org/abs/1905.07088"
+  - title: "Generative Modeling by Estimating Gradients of the Data Distribution (NCSN)"
+    authors: "Yang Song, Stefano Ermon"
+    year: 2019
+    url: "https://arxiv.org/abs/1907.05600"
+  - title: "Your Classifier is Secretly an Energy Based Model and You Should Treat it Like One (JEM)"
+    authors: "Grathwohl, Wang, Jacobsen, Duvenaud, Norouzi, Swersky"
+    year: 2019
+    url: "https://arxiv.org/abs/1912.03263"
+  - title: "Hopfield Networks is All You Need"
+    authors: "Ramsauer, Schäfl, Lehner, et al., Hochreiter"
+    year: 2020
+    url: "https://arxiv.org/abs/2008.02217"
+  - title: "Large Associative Memory Problem in Neurobiology and Machine Learning"
+    authors: "Dmitry Krotov, John J. Hopfield"
+    year: 2020
+    url: "https://arxiv.org/abs/2008.06996"
+  - title: "Score-Based Generative Modeling through Stochastic Differential Equations"
+    authors: "Song, Sohl-Dickstein, Kingma, Kumar, Ermon, Poole"
+    year: 2020
+    url: "https://arxiv.org/abs/2011.13456"
+  - title: "Improved Contrastive Divergence Training of Energy-Based Models"
+    authors: "Du, Li, Tenenbaum, Mordatch"
+    year: 2020
+    url: "https://arxiv.org/abs/2012.01316"
+  - title: "How to Train Your Energy-Based Models"
+    authors: "Yang Song, Diederik P. Kingma"
+    year: 2021
+    url: "https://arxiv.org/abs/2101.03288"
+  - title: "A Path Towards Autonomous Machine Intelligence"
+    authors: "Yann LeCun"
+    year: 2022
+    url: "https://openreview.net/forum?id=BZ5a1r-kVsf"
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps, Tabs, TabItem, Card } from '@astrojs/starlight/components';
+
+<Abstract>
+An energy-based model assigns a single number to every possible configuration
+and declares low numbers likely. That is the most permissive way to define a
+probability distribution — *any* function of the input gives you a valid one —
+and the permissiveness is paid for by a single intractable integral. Forty
+years of work on energy-based models is forty years of trying to avoid
+computing that integral, and the eventual escape route turned out to be so
+effective that it stopped being called energy-based modelling and started being
+called diffusion.
+</Abstract>
+
+<KeyPoints>
+
+- **One idea: a scalar score per configuration.** Low energy means plausible, high energy means implausible. No architectural constraint at all — no invertibility, no bottleneck, no ordering. That freedom is the family's defining advantage.
+- **One problem: the partition function.** Turning energies into probabilities requires dividing by a sum over *every possible configuration*. In high dimensions that integral is intractable, and essentially every technique here is a way of not computing it.
+- **The escape is to model the gradient instead.** $\nabla_x \log p(x) = -\nabla_x E(x)$ — the normaliser has no $x$ in it, so it vanishes under differentiation. This single observation converts an intractable problem into a tractable regression, and it is the whole basis of score matching and diffusion.
+- **Every classifier you have trained is already an EBM.** The logits are negative energies; softmax is the Boltzmann distribution with the normaliser computed over the (small, tractable) label set. EBMs only look exotic because the configuration space is usually large.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## A landscape, not a formula
+
+Imagine a hilly landscape stretched over the space of all possible images. Real
+photographs sit in the valleys. Static, noise and nonsense sit on the peaks.
+
+That surface is the **energy function** $E(x)$. It takes any configuration — any
+image, any sentence, any protein fold — and returns one number. Low is good.
+
+**To generate, you roll downhill.** Start somewhere random, follow the slope
+toward lower energy, and you arrive in a valley — that is, at something that looks
+like real data.
+
+**To evaluate, you read off the height.** Given an image, its energy tells you how
+plausible the model thinks it is.
+
+## Why this is the most flexible thing you can do
+
+Every other generative family constrains its architecture to make something
+tractable:
+
+- A [normalizing flow](/architectures/generative-models/) must be **invertible**
+  with a computable Jacobian determinant.
+- An [autoregressive model](/architectures/generative-models/) must impose an
+  **ordering** and factorise along it.
+- A [VAE](/encoders/neural-encoders/) needs a **tractable posterior** to bound
+  the likelihood.
+
+An EBM needs **none of that**. Any neural network that outputs one number defines a
+valid energy function and therefore a valid probability distribution. You can use
+any architecture, any depth, any structure.
+
+That is a genuinely remarkable amount of freedom, and it has one bill attached.
+
+## The bill: comparing to everything
+
+Energy tells you a configuration is *good*. It does not tell you *how likely* it
+is, because likelihood is relative — you need to know how good everything else is.
+
+To turn energies into probabilities you divide by the total:
+
+$$
+p(x) = \frac{e^{-E(x)}}{\sum_{\text{all possible } x'} e^{-E(x')}}
+$$
+
+That denominator is called the **partition function**, written $Z$, and it sums over
+every configuration in the space.
+
+For a $32\times32$ colour image there are $256^{3072}$ configurations — a number
+with roughly seven thousand digits. **You cannot compute $Z$. You cannot
+approximate $Z$ well. $Z$ is the entire difficulty of this field.**
+
+<Aside type="tip" title="The trade, in one line">
+Other families constrain the architecture so the normaliser is computable. EBMs
+keep total architectural freedom and give up the normaliser. Neither is free — and
+knowing which constraint you are paying is the useful thing to carry away.
+</Aside>
+
+## The escape
+
+Here is the observation that rescues everything, and it is worth pausing on because
+it is genuinely elegant.
+
+You cannot compute $p(x)$. But suppose you only need to know **which direction
+increases probability** — which way is downhill on the landscape. Then:
+
+$$
+\log p(x) = -E(x) - \log Z
+$$
+
+and $Z$ is a **constant** — it does not depend on $x$. So when you differentiate
+with respect to $x$:
+
+$$
+\nabla_x \log p(x) = -\nabla_x E(x)
+$$
+
+**The intractable term vanishes.** The slope of the landscape is computable even
+though its absolute height is not.
+
+That quantity — the gradient of the log-density — is called the **score**, and
+learning it directly is what [diffusion models](/architectures/diffusion/) do.
+Diffusion is not a rival to energy-based modelling; it is energy-based modelling
+that stopped trying to compute $Z$.
+
+<Tier level="mechanics" />
+
+## The landscape, and what training does to it
+
+<Figure
+  lead="Training pushes energy down on data and up everywhere the model likes."
+  caption="The maximum-likelihood gradient has exactly two terms and they pull in opposite directions. The positive phase lowers energy at real data points — cheap, since you have those. The negative phase raises energy wherever the model currently places mass, which requires SAMPLING FROM THE MODEL, and that is the expensive part. Without the negative phase the model would simply drive energy to negative infinity everywhere, since nothing else penalises it. Every training method in this family is a different answer to 'how do I get negative samples cheaply?'"
+>
+<svg viewBox="0 0 760 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Energy landscape with positive and negative phase forces during training">
+  <defs>
+    <marker id="eb1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <line class="bx" x1="60" y1="230" x2="710" y2="230" opacity="0.5"/>
+  <text class="xs" x="385" y="252" text-anchor="middle">configuration space x  →</text>
+  <text class="xs" x="36" y="120" text-anchor="middle">E(x)</text>
+  <line class="bx" x1="60" y1="40" x2="60" y2="230" opacity="0.4"/>
+
+  <path class="thick" d="M64,90 C110,88 140,150 190,176 C240,200 268,150 300,120 C340,84 380,96 420,140 C452,176 488,196 530,182 C574,166 600,120 640,104 C670,92 692,96 706,100"/>
+
+  <circle class="f-green" cx="190" cy="176" r="7"/>
+  <circle class="f-green" cx="530" cy="182" r="7"/>
+  <text class="xs" x="190" y="200" text-anchor="middle">real data</text>
+  <text class="xs" x="530" y="206" text-anchor="middle">real data</text>
+
+  <path class="ar" d="M190,146 L190,168" marker-end="url(#eb1)"/>
+  <path class="ar" d="M530,152 L530,174" marker-end="url(#eb1)"/>
+  <text class="xs" x="222" y="146">positive phase: push DOWN</text>
+
+  <circle class="f-pink" cx="360" cy="106" r="7"/>
+  <text class="xs" x="360" y="94" text-anchor="middle">spurious valley</text>
+  <path class="ar" d="M360,132 L360,116" marker-end="url(#eb1)"/>
+  <text class="xs" x="392" y="136">negative phase: push UP</text>
+
+  <path class="dash" d="M300,120 C320,112 340,108 354,106" opacity="0.75" marker-end="url(#eb1)"/>
+  <text class="xs" x="300" y="76">MCMC walks downhill to find it —</text>
+  <text class="xs" x="300" y="62">this is the expensive step</text>
+
+  <line class="bx" x1="60" y1="268" x2="710" y2="268" opacity="0.3"/>
+  <rect class="f-green" x="60" y="276" width="300" height="34" rx="4" opacity="0.55"/>
+  <text class="on-fill-sm" x="76" y="297">positive: ∇E(x_data) — you have the data</text>
+  <rect class="f-pink" x="376" y="276" width="334" height="34" rx="4" opacity="0.5"/>
+  <text class="on-fill-sm" x="392" y="297">negative: E[∇E(x_model)] — needs sampling</text>
+</svg>
+</Figure>
+
+## The three ways to avoid $Z$
+
+Every training method here is one of three strategies. Getting this taxonomy
+straight is most of understanding the field.
+
+<Steps>
+
+1. **Approximate the negative phase with MCMC.** Run a Markov chain to get samples
+   from the model, use them for the second term. Contrastive divergence, PCD,
+   Langevin-based methods. *Correct in principle, expensive and fragile.*
+
+2. **Change the objective so $Z$ cancels.** Score matching compares gradients
+   rather than densities, and gradients do not see $Z$. *No sampling required at
+   all.*
+
+3. **Turn it into classification.** Noise-contrastive estimation asks the model to
+   distinguish data from noise; the normaliser becomes a learnable parameter.
+   *Turns an estimation problem into a supervised one.*
+
+</Steps>
+
+<Figure
+  lead="Composition is the one thing EBMs do that nothing else does cleanly."
+  caption="Because probabilities multiply when you add energies, two independently trained energy functions compose by summation — and the result is exactly the product of their distributions, restricted to the region both consider plausible. No retraining, no joint fitting, no architecture change. Try this with a GAN or a flow and there is no corresponding operation: their outputs are samples and densities, not scores you can add. This is the durable argument for the family, and it is why EBMs persist in structured prediction and constraint satisfaction."
+>
+<svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Adding two energy functions composes their distributions">
+  <defs>
+    <marker id="eb3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <text class="lb" x="120" y="20" text-anchor="middle">E₁ — "is a bird"</text>
+  <line class="bx" x1="30" y1="120" x2="210" y2="120" opacity="0.4"/>
+  <path class="thick" d="M34,54 C70,58 90,104 120,106 C150,108 176,66 206,58"/>
+  <circle class="f-blue" cx="120" cy="106" r="6"/>
+  <text class="xs" x="120" y="142" text-anchor="middle">low energy here</text>
+
+  <text class="lb" x="380" y="20" text-anchor="middle">E₂ — "is red"</text>
+  <line class="bx" x1="290" y1="120" x2="470" y2="120" opacity="0.4"/>
+  <path class="thick" d="M294,58 C330,66 350,110 386,108 C420,106 440,60 466,54"/>
+  <circle class="f-green" cx="386" cy="108" r="6"/>
+  <text class="xs" x="380" y="142" text-anchor="middle">low energy here</text>
+
+  <text class="lb" x="640" y="20" text-anchor="middle">E₁ + E₂</text>
+  <line class="bx" x1="550" y1="120" x2="730" y2="120" opacity="0.4"/>
+  <path class="thick" d="M554,44 C588,52 606,96 626,92 C648,88 668,52 726,44"/>
+  <circle class="f-pink" cx="626" cy="92" r="6"/>
+  <text class="xs" x="640" y="142" text-anchor="middle">"red bird" — the overlap</text>
+
+  <text class="sm" x="248" y="90" text-anchor="middle">+</text>
+  <text class="sm" x="508" y="90" text-anchor="middle">=</text>
+
+  <line class="bx" x1="30" y1="170" x2="730" y2="170" opacity="0.3"/>
+
+  <rect class="f-purple" x="30" y="182" width="330" height="46" rx="5" opacity="0.55"/>
+  <text class="on-fill-sm" x="46" y="204">E₁ + E₂  ⟺  p₁ · p₂</text>
+  <text class="xs" x="46" y="220">adding energies multiplies probabilities</text>
+
+  <rect class="f-green" x="380" y="182" width="350" height="46" rx="5" opacity="0.6"/>
+  <text class="on-fill-sm" x="396" y="204">no retraining · no joint fitting</text>
+  <text class="xs" x="396" y="220">both models were trained independently</text>
+
+  <text class="xs" x="30" y="256">This is a "product of experts". Each expert vetoes what it dislikes, and only configurations acceptable to all survive.</text>
+  <text class="xs" x="30" y="278">Caveat: in practice the composition is often dominated by whichever energy has the larger scale — calibrating that is unsolved.</text>
+</svg>
+</Figure>
+
+## Strategy 1 — MCMC
+
+<Tabs>
+<TabItem label="Langevin dynamics">
+
+The standard sampler for continuous EBMs. Walk downhill on the energy, with noise:
+
+$$
+x_{t+1} = x_t - \frac{\eta}{2}\nabla_x E_\theta(x_t) + \sqrt{\eta}\,\epsilon_t, \qquad \epsilon_t\sim\mathcal{N}(0,I).
+$$
+
+**Read the two terms.** The gradient term is gradient descent on energy — it walks
+toward valleys. The noise term prevents you from getting stuck in the first valley
+you find, and it is what makes this *sampling* rather than optimisation.
+
+As $\eta \to 0$ and $t \to \infty$ this converges to the true distribution. Both
+limits are the problem: small steps mean slow mixing, and "infinite time" in
+practice means "you stopped early and your samples are wrong".
+
+</TabItem>
+<TabItem label="Contrastive divergence">
+
+Hinton's 2002 shortcut, and the reason RBMs were trainable at all.
+
+Instead of running the chain to convergence, **start it at a data point and run $k$
+steps** — often $k=1$. The intuition: the data distribution is already close to the
+model distribution if training is going well, so a short chain from data lands
+somewhere useful.
+
+$$
+\nabla_\theta \mathcal{L}_{\text{CD-}k} \approx \nabla_\theta E_\theta(x_{\text{data}}) - \nabla_\theta E_\theta(x_k),
+$$
+
+with $x_k$ the state after $k$ steps from $x_{\text{data}}$.
+
+**It is a biased estimator and it is not the gradient of anything.** CD does not
+minimise any objective function — it is a gradient-like update that happens to work
+in practice, and there are known cases where it converges to the wrong answer.
+Hinton was explicit about this. It worked well enough to power the 2006 deep
+learning revival, which is a reasonable defence.
+
+</TabItem>
+<TabItem label="Persistent CD">
+
+Tieleman's fix for CD's main weakness. CD restarts the chain from data every
+iteration, so it never explores regions far from the data — which is exactly where
+spurious low-energy valleys form.
+
+**PCD keeps the chain going across parameter updates.** Maintain a set of persistent
+"fantasy particles"; each iteration, run a few MCMC steps from where they were last
+time rather than from data.
+
+The justification is that parameters change slowly, so the chain from the previous
+model is a good starting point for the current one. Better exploration, better
+models, and it introduces a new failure — if the particles get stuck, the negative
+phase becomes stale and the model is free to place mass where the particles are not.
+
+</TabItem>
+<TabItem label="Modern deep EBMs">
+
+Du & Mordatch (2019) made MCMC-based training work on real images, and the paper is
+mostly a catalogue of what it takes:
+
+- **A replay buffer** of past samples, reinitialised from noise a small fraction of
+  the time. Effectively PCD with a large particle population.
+- **Spectral normalisation** on the energy network, bounding its Lipschitz constant
+  so the Langevin steps behave.
+- **Gradient clipping** on the Langevin updates themselves.
+- **An L2 penalty on the energy magnitudes**, preventing the two phases from
+  diverging to $\pm\infty$ while keeping their difference constant.
+
+Nijkamp et al. (2019) then dissected what these models are actually doing, and the
+finding is uncomfortable: with short-run MCMC, the model does **not** learn the
+data distribution. It learns an energy landscape for which the *specific short
+chain you run* produces good samples. Change the chain length at test time and
+sample quality collapses.
+
+</TabItem>
+</Tabs>
+
+<Aside type="danger" title="The Nijkamp result, stated plainly">
+Short-run MCMC training does not give you an EBM whose Gibbs distribution matches
+the data. It gives you a **learned sampler** — an energy function tuned so that $K$
+steps of Langevin from noise lands on something good. That object is useful, and it
+is not the thing the maths says you are estimating.
+
+The diagnostic is simple and rarely reported: **run the chain much longer at test
+time.** If samples degrade, you have a short-run sampler, not a density model.
+</Aside>
+
+## Strategy 2 — Score matching
+
+The elegant escape. Instead of matching densities, match their **gradients**.
+
+Since $\nabla_x \log p_\theta(x) = -\nabla_x E_\theta(x)$ and $Z$ has no $x$ in it,
+the score is computable with no sampling and no normaliser.
+
+**The problem it creates.** The obvious objective compares your score to the data's
+score, and you do not know the data's score. Hyvärinen's result is that integration
+by parts eliminates it, leaving an objective in terms of quantities you *can*
+compute — at the price of needing the trace of a Hessian, which is expensive in high
+dimensions.
+
+**Two practical resolutions:**
+
+- **Denoising score matching** (Vincent, 2011). Add noise to the data and match the
+  score of the *noised* distribution, which is known in closed form. This turns
+  score matching into denoising regression — and it is **exactly the diffusion
+  objective**.
+- **Sliced score matching** (Song et al., 2019). Project onto random directions and
+  match one-dimensional scores, replacing the Hessian trace with cheap
+  Hessian-vector products.
+
+## Strategy 3 — Noise-contrastive estimation
+
+Turn density estimation into binary classification.
+
+Mix your real data with samples from a known noise distribution, and train a
+classifier to tell them apart. **Treat $\log Z$ as just another learnable
+parameter.** If the classifier is optimal, its decision function recovers the
+density ratio between data and noise — and since you know the noise density, you
+recover the data density.
+
+**Why this is more than a trick.** It is the same structure as
+[InfoNCE](/training/self-supervision/) in contrastive learning, and the same
+structure as a GAN discriminator. All three learn a density ratio by classification.
+Recognising that connection makes a lot of otherwise separate literatures look like
+one idea.
+
+**The catch.** The noise distribution must be close enough to the data that
+discrimination is hard. If real and noise samples are trivially separable, the
+classifier learns a shortcut and the estimate is poor — the same requirement as
+hard negatives in contrastive learning.
+
+## Comparison
+
+| Method | Needs sampling | Unbiased | Cost | Where it is used |
+|---|---|---|---|---|
+| **Exact MLE** | yes (exact) | yes | impossible | never |
+| **CD-$k$** | yes (short) | **no** | cheap | RBMs, historical |
+| **PCD** | yes (persistent) | asymptotically | moderate | RBMs, deep EBMs |
+| **Langevin + buffer** | yes | approximately | expensive | modern image EBMs |
+| **Score matching** | **no** | yes | Hessian trace | low dimensions |
+| **Denoising SM** | **no** | yes (for noised $p$) | cheap | **diffusion — everywhere** |
+| **Sliced SM** | **no** | yes | cheap | practical alternative |
+| **NCE** | noise only | yes | cheap | language models, embeddings |
+
+<Tier level="formal" />
+
+## The Boltzmann distribution
+
+$$
+p_\theta(x) = \frac{\exp\big(-E_\theta(x)\big)}{Z_\theta}, \qquad Z_\theta = \int \exp\big(-E_\theta(x)\big)\,dx .
+$$
+
+The form is not arbitrary. It is the **maximum-entropy distribution** subject to a
+constraint on expected energy — i.e. the least-committed distribution consistent
+with what you have specified. Maximising $H(p) = -\int p\log p$ subject to
+$\int p\,E = \bar E$ and $\int p = 1$, with Lagrange multipliers $\beta$ and
+$\lambda$:
+
+$$
+\frac{\delta}{\delta p}\left[-\!\int p\log p - \beta\!\int pE - \lambda\!\int p\right] = -\log p - 1 - \beta E - \lambda = 0
+\ \implies\ p \propto e^{-\beta E}.
+$$
+
+**So the exponential form is derived, not chosen**, and $\beta$ (inverse
+temperature, usually absorbed into $E$) is the multiplier on the energy constraint.
+This is why the same functional form appears in statistical physics, in softmax
+classifiers, and in [RLHF's KL-constrained
+optimum](/training/post-training/) — all three are maximum-entropy problems.
+
+## The maximum-likelihood gradient
+
+$$
+\mathcal{L}(\theta) = -\mathbb{E}_{x\sim p_{\text{data}}}\big[\log p_\theta(x)\big] = \mathbb{E}_{p_{\text{data}}}\big[E_\theta(x)\big] + \log Z_\theta .
+$$
+
+Differentiating the log-partition term:
+
+$$
+\nabla_\theta \log Z_\theta = \frac{1}{Z_\theta}\nabla_\theta\!\int e^{-E_\theta(x)}dx
+= \frac{1}{Z_\theta}\int e^{-E_\theta(x)}\big(-\nabla_\theta E_\theta(x)\big)dx
+= -\,\mathbb{E}_{x\sim p_\theta}\big[\nabla_\theta E_\theta(x)\big].
+$$
+
+Hence the two-phase gradient:
+
+$$
+\boxed{\ \nabla_\theta \mathcal{L} = \underbrace{\mathbb{E}_{x\sim p_{\text{data}}}\big[\nabla_\theta E_\theta(x)\big]}_{\text{positive phase}} - \underbrace{\mathbb{E}_{x\sim p_\theta}\big[\nabla_\theta E_\theta(x)\big]}_{\text{negative phase}}\ }
+$$
+
+**Three things to read off this.**
+
+First, $Z$ never appears — only an *expectation under the model*. The intractable
+integral became an intractable expectation, which is progress: expectations can be
+approximated by sampling.
+
+Second, at the optimum the two phases are equal, so the gradient vanishes when
+$p_\theta = p_{\text{data}}$ — as it must.
+
+Third, **the negative phase is not optional.** Drop it and the gradient is
+$\mathbb{E}_{p_{\text{data}}}[\nabla_\theta E]$, which is minimised by driving
+$E \to -\infty$ everywhere. Nothing anchors the scale but the negative phase.
+
+## Contrastive divergence, and what it actually minimises
+
+CD-$k$ replaces the model expectation with samples from a $k$-step chain
+initialised at data. Hinton's original motivation is that CD approximately minimises
+
+$$
+\mathrm{CD}_k = \mathrm{KL}\big(p_0\,\|\,p_\theta\big) - \mathrm{KL}\big(p_k\,\|\,p_\theta\big),
+$$
+
+with $p_0$ the data and $p_k$ the distribution after $k$ MCMC steps. As $k\to\infty$
+the second term vanishes and CD becomes maximum likelihood.
+
+**The honest statement, which the original paper makes.** The CD update is *not*
+the exact gradient of $\mathrm{CD}_k$ — a term is dropped, and that dropped term is
+not always negligible. So CD is a heuristic update rule rather than a descent
+direction on a well-defined objective, and there exist constructed cases where it
+converges to a non-optimal point.
+
+**Improved CD** (Du et al., 2020) identified the dropped term explicitly and showed
+that including a KL-divergence correction — which pushes samples toward regions the
+model over-weights — substantially improves both stability and sample quality. The
+missing term was doing real work.
+
+## Score matching
+
+Define the **Fisher divergence** between model and data:
+
+$$
+J(\theta) = \frac{1}{2}\,\mathbb{E}_{p_{\text{data}}}\Big[\big\|\nabla_x \log p_\theta(x) - \nabla_x \log p_{\text{data}}(x)\big\|^2\Big].
+$$
+
+Since $\nabla_x\log p_\theta = -\nabla_x E_\theta$, the model side is computable.
+The data side is not — but Hyvärinen showed it can be eliminated.
+
+**The derivation.** Expand the square:
+
+$$
+J(\theta) = \mathbb{E}\left[\tfrac12\|\nabla_x\log p_\theta\|^2\right] - \mathbb{E}\big[\nabla_x\log p_\theta^{\top}\nabla_x\log p_{\text{data}}\big] + \text{const}.
+$$
+
+The middle term is the problem. Write it as an integral and use
+$p_{\text{data}}\nabla_x\log p_{\text{data}} = \nabla_x p_{\text{data}}$:
+
+$$
+-\!\int\! p_{\text{data}}(x)\,\nabla_x\log p_\theta(x)^{\top}\nabla_x \log p_{\text{data}}(x)\,dx = -\!\int\! \nabla_x\log p_\theta(x)^{\top}\nabla_x p_{\text{data}}(x)\,dx .
+$$
+
+Integrate by parts, assuming $p_{\text{data}}(x)\nabla_x\log p_\theta(x)\to 0$ at
+the boundary:
+
+$$
+= \int p_{\text{data}}(x)\,\operatorname{tr}\!\big(\nabla_x^2 \log p_\theta(x)\big)\,dx .
+$$
+
+Giving the **implicit score matching** objective:
+
+$$
+\boxed{\ J(\theta) = \mathbb{E}_{p_{\text{data}}}\left[\operatorname{tr}\!\big(\nabla_x^2\log p_\theta(x)\big) + \tfrac12\big\|\nabla_x\log p_\theta(x)\big\|^2\right] + \text{const}\ }
+$$
+
+**Everything here is computable from the model alone.** No $Z$, no sampling, no data
+score.
+
+**The two costs, both real.** The Hessian trace requires $O(d)$ backward passes for
+a $d$-dimensional input — prohibitive for images. And the boundary condition can
+fail for distributions with bounded support, which is why score matching on
+$[0,1]$-valued pixel data needs care.
+
+<Figure
+  lead="Three obstacles, removed in sequence — and the result is diffusion."
+  caption="Read left to right as a single research programme rather than four separate ideas. Maximum likelihood needs Z, which is intractable. Score matching differentiates it away but needs a Hessian trace, costing O(d) backward passes. Denoising score matching removes the Hessian by matching the score of a NOISED distribution instead, whose score is known in closed form — at the price of only recovering a blurred density. Running that across many noise levels and chaining them recovers the clean one. Each step removes exactly one obstacle, and the endpoint is the DDPM objective."
+>
+<svg viewBox="0 0 760 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Progression from maximum likelihood through score matching to diffusion">
+  <defs>
+    <marker id="eb2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <rect class="f-pink" x="16" y="34" width="164" height="62" rx="5"/>
+  <text class="on-fill-sm" x="32" y="56">Maximum likelihood</text>
+  <text class="xs" x="32" y="74">needs E over the model —</text>
+  <text class="xs" x="32" y="88">i.e. needs Z</text>
+  <text class="xs" x="98" y="112" text-anchor="middle">✗ intractable</text>
+
+  <path class="ar" d="M184,65 L212,65" marker-end="url(#eb2)"/>
+  <text class="xs" x="198" y="40" text-anchor="middle">∇ₓ</text>
+
+  <rect class="f-amber" x="216" y="34" width="164" height="62" rx="5"/>
+  <text class="on-fill-sm" x="232" y="56">Score matching</text>
+  <text class="xs" x="232" y="74">Z vanishes under ∇ₓ,</text>
+  <text class="xs" x="232" y="88">but needs tr(∇²ₓ log p)</text>
+  <text class="xs" x="298" y="112" text-anchor="middle">✗ O(d) backward passes</text>
+
+  <path class="ar" d="M384,65 L412,65" marker-end="url(#eb2)"/>
+  <text class="xs" x="398" y="40" text-anchor="middle">+noise</text>
+
+  <rect class="f-blue" x="416" y="34" width="164" height="62" rx="5"/>
+  <text class="on-fill-sm" x="432" y="56">Denoising SM</text>
+  <text class="xs" x="432" y="74">target is known exactly:</text>
+  <text class="xs" x="432" y="88">−(x̃ − x)/σ²</text>
+  <text class="xs" x="498" y="112" text-anchor="middle">✓ cheap, but blurred p</text>
+
+  <path class="ar" d="M584,65 L612,65" marker-end="url(#eb2)"/>
+  <text class="xs" x="598" y="40" text-anchor="middle">many σ</text>
+
+  <rect class="f-green" x="616" y="34" width="128" height="62" rx="5"/>
+  <text class="on-fill-sm" x="632" y="56">Diffusion</text>
+  <text class="xs" x="632" y="74">chain noise levels,</text>
+  <text class="xs" x="632" y="88">recover clean p</text>
+  <text class="xs" x="680" y="112" text-anchor="middle">✓ works</text>
+
+  <line class="bx" x1="16" y1="136" x2="744" y2="136" opacity="0.3"/>
+
+  <text class="lb" x="16" y="162">The same objective, written two ways</text>
+
+  <rect class="f-blue" x="16" y="176" width="350" height="60" rx="5" opacity="0.5"/>
+  <text class="on-fill-sm" x="32" y="198">Denoising score matching</text>
+  <text class="xs" x="32" y="220">E‖ s_θ(x + σε) + ε/σ ‖²</text>
+
+  <rect class="f-green" x="394" y="176" width="350" height="60" rx="5" opacity="0.6"/>
+  <text class="on-fill-sm" x="410" y="198">DDPM</text>
+  <text class="xs" x="410" y="220">E‖ ε − ε_θ(x_t, t) ‖²</text>
+
+  <path class="ar" d="M370,206 L390,206"/>
+  <path class="ar" d="M390,214 L370,214"/>
+  <text class="xs" x="380" y="250" text-anchor="middle">identical, with s_θ = −ε_θ/σ</text>
+
+  <line class="bx" x1="16" y1="272" x2="744" y2="272" opacity="0.3"/>
+  <text class="xs" x="16" y="296">Diffusion did not defeat energy-based modelling. It is what energy-based modelling became once the</text>
+  <text class="xs" x="16" y="314">estimation problem was solved — which is why the word "energy" has largely vanished from those papers.</text>
+</svg>
+</Figure>
+
+## Denoising score matching — and the bridge to diffusion
+
+Vincent's result removes the Hessian entirely. Perturb the data with a known kernel
+$q_\sigma(\tilde x\mid x) = \mathcal{N}(\tilde x; x, \sigma^2 I)$ and match the
+score of the *perturbed* distribution:
+
+$$
+J_{\text{DSM}}(\theta) = \tfrac12\,\mathbb{E}_{q_\sigma(\tilde x, x)}\Big[\big\|\nabla_{\tilde x}\log p_\theta(\tilde x) - \nabla_{\tilde x}\log q_\sigma(\tilde x\mid x)\big\|^2\Big].
+$$
+
+For the Gaussian kernel the target has a closed form:
+
+$$
+\nabla_{\tilde x}\log q_\sigma(\tilde x \mid x) = -\frac{\tilde x - x}{\sigma^2},
+$$
+
+so with $\tilde x = x + \sigma\epsilon$:
+
+$$
+J_{\text{DSM}} = \tfrac12\,\mathbb{E}_{x,\epsilon}\left[\left\|s_\theta(x + \sigma\epsilon) + \frac{\epsilon}{\sigma}\right\|^2\right].
+$$
+
+**Compare with the DDPM objective**
+$\mathbb{E}\big[\|\epsilon - \epsilon_\theta(x_t,t)\|^2\big]$ from
+[diffusion](/architectures/diffusion/). They are the same objective up to
+reparameterisation: $s_\theta = -\epsilon_\theta/\sigma$.
+
+Vincent's theorem is that minimising $J_{\text{DSM}}$ is equivalent to minimising
+$J$ for the *smoothed* density $p_{\sigma}$. So you get an exact score-matching
+objective for a slightly blurred version of the data, with no Hessian and no
+sampling.
+
+<Aside type="note" title="This is the whole history in one line">
+Energy-based models were flexible, principled and untrainable because of $Z$. Score
+matching removed $Z$ but needed a Hessian. Denoising score matching removed the
+Hessian but only gave you the noised distribution. **Running it at many noise
+levels and chaining them together recovers the clean distribution — and that is
+diffusion.**
+
+So the modern generative-modelling mainstream is the energy-based programme, with
+three obstacles removed in sequence. Diffusion did not defeat EBMs; it is what
+EBMs became once the estimation problem was solved.
+</Aside>
+
+## Sliced score matching
+
+Song et al.'s alternative to denoising, when you want the clean distribution.
+Project the score onto random directions $v\sim p_v$:
+
+$$
+J_{\text{SSM}}(\theta) = \mathbb{E}_{p_v}\mathbb{E}_{p_{\text{data}}}\left[v^{\top}\nabla_x^2\log p_\theta(x)\,v + \tfrac12\big(v^{\top}\nabla_x\log p_\theta(x)\big)^2\right].
+$$
+
+The key term $v^\top \nabla^2_x \log p_\theta\, v$ is a **Hessian-vector product**,
+computable in one extra backward pass via
+
+$$
+v^{\top}\nabla_x^2 f(x)\,v = v^{\top}\nabla_x\big(v^{\top}\nabla_x f(x)\big),
+$$
+
+rather than the $O(d)$ passes the full trace requires. With $v$ drawn from a
+distribution satisfying $\mathbb{E}[vv^\top] = I$ (Gaussian or Rademacher), the
+estimator is unbiased for the full objective — it is a Hutchinson trace estimator
+applied to score matching.
+
+## Noise-contrastive estimation
+
+Treat $\log Z$ as a parameter $c$, so the model is
+$\log p_\theta(x) = -E_\theta(x) - c$ with $c$ learned. Draw noise from a known
+$q(x)$ and train a logistic classifier to distinguish data from noise:
+
+$$
+\mathcal{L}_{\text{NCE}} = -\,\mathbb{E}_{p_{\text{data}}}\big[\log h_\theta(x)\big] - \nu\,\mathbb{E}_{q}\big[\log\big(1 - h_\theta(x)\big)\big],
+$$
+
+$$
+h_\theta(x) = \frac{p_\theta(x)}{p_\theta(x) + \nu\,q(x)} = \sigma\Big(\log p_\theta(x) - \log q(x) - \log\nu\Big),
+$$
+
+with $\nu$ the noise-to-data ratio.
+
+**Why $c$ becomes identifiable.** In an unnormalised model, $E$ and $E + \text{const}$
+define the same distribution — the constant is unidentifiable. But the classifier's
+output depends on the *ratio* $p_\theta/q$, and $q$ is a known normalised density,
+so a shift in $c$ changes the classification loss. **The comparison to a normalised
+reference is what pins down the scale**, and this is the whole trick.
+
+**Consistency** requires $q > 0$ wherever $p_{\text{data}} > 0$, and the estimator's
+variance grows as $q$ diverges from $p_{\text{data}}$ — the formal version of "the
+noise must be hard to distinguish".
+
+## Langevin dynamics, and why it converges
+
+The overdamped Langevin SDE
+
+$$
+dx_t = -\nabla_x E(x_t)\,dt + \sqrt{2}\,dW_t
+$$
+
+has stationary distribution $p(x)\propto e^{-E(x)}$. To see it, write the
+Fokker–Planck equation for the density $\rho(x,t)$:
+
+$$
+\frac{\partial \rho}{\partial t} = \nabla\!\cdot\!\big(\rho\,\nabla E\big) + \nabla^2\rho .
+$$
+
+Setting $\partial_t\rho = 0$ and substituting $\rho = e^{-E}/Z$:
+
+$$
+\nabla\!\cdot\!\big(e^{-E}\nabla E\big) + \nabla^2 e^{-E} = \nabla\!\cdot\!\big(e^{-E}\nabla E\big) - \nabla\!\cdot\!\big(e^{-E}\nabla E\big) = 0 .
+$$
+
+**So the Boltzmann distribution is stationary**, and the drift and diffusion terms
+exactly balance: drift pushes probability mass downhill, diffusion spreads it back.
+
+The Euler–Maruyama discretisation is the update rule from earlier. Discretisation
+introduces bias of $O(\eta)$, which Metropolis–Hastings correction removes (MALA) at
+the cost of an accept/reject step — usually skipped in deep learning, where the bias
+is accepted.
+
+**The practical failure is mixing time.** For a multimodal $p$ with well-separated
+modes, the expected time to cross between modes scales as $e^{\Delta E}$ where
+$\Delta E$ is the barrier height. **Exponential in the barrier.** This is why
+Langevin sampling from a deep EBM on images does not reliably explore the full
+distribution, and no amount of tuning fixes an exponential.
+
+## Your classifier is already an EBM
+
+The observation behind JEM, and it reframes a lot.
+
+A standard classifier outputs logits $f_\theta(x)[y]$ and forms
+$p_\theta(y\mid x) = \exp(f_\theta(x)[y]) / \sum_{y'}\exp(f_\theta(x)[y'])$.
+
+Reinterpret the logits as **negative energies of joint configurations**:
+
+$$
+E_\theta(x,y) = -f_\theta(x)[y], \qquad p_\theta(x,y) = \frac{e^{-E_\theta(x,y)}}{Z_\theta}.
+$$
+
+Marginalising over $y$ gives a density on $x$ alone:
+
+$$
+p_\theta(x) = \frac{\sum_y e^{f_\theta(x)[y]}}{Z_\theta}
+\ \implies\
+E_\theta(x) = -\log\sum_y e^{f_\theta(x)[y]} = -\operatorname{LogSumExp}_y f_\theta(x)[y].
+$$
+
+**The logsumexp of your classifier's logits is an energy function over inputs**, and
+it was there all along — softmax discards it, because softmax is invariant to adding
+a constant to all logits and that constant is exactly what carries the density
+information.
+
+JEM trains this joint model with the standard cross-entropy for $p(y\mid x)$ plus a
+Langevin-based EBM objective for $p(x)$, and reports improved calibration,
+out-of-distribution detection and robustness alongside competitive accuracy.
+
+**The connection to note.** Softmax classification *is* a Boltzmann distribution
+where $Z$ is tractable, because the configuration space is the label set — ten
+classes, not $256^{3072}$ images. **EBMs are not exotic; they are what happens when
+the configuration space is too large to normalise over.**
+
+<Figure
+  lead="Attention is one retrieval step in an exponential-capacity associative memory."
+  caption="The classical Hopfield network stores patterns as minima of a quadratic energy and holds about 0.14d of them before spurious minima take over. Replacing the quadratic with a log-sum-exp makes capacity exponential in d — and the update rule that minimises that energy is softmax(βXᵀx)X, which is exactly transformer attention with x as query and X as keys and values. The equivalence is exact rather than analogical, and it explains why one attention layer suffices: retrieval converges in a single step when patterns are well separated."
+>
+<svg viewBox="0 0 760 310" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Classical versus modern Hopfield energy and the equivalence with attention">
+  <text class="lb" x="170" y="20" text-anchor="middle">Classical — quadratic energy</text>
+  <line class="bx" x1="40" y1="130" x2="300" y2="130" opacity="0.4"/>
+  <path class="thick" d="M44,60 C70,70 84,104 104,106 C124,108 138,74 160,72 C182,70 196,104 216,106 C236,108 250,74 296,62"/>
+  <circle class="f-blue" cx="104" cy="106" r="5"/>
+  <circle class="f-blue" cx="216" cy="106" r="5"/>
+  <circle class="f-pink" cx="160" cy="72" r="5"/>
+  <text class="xs" x="160" y="60" text-anchor="middle">spurious</text>
+  <text class="xs" x="170" y="152" text-anchor="middle">shallow, wide basins that merge</text>
+  <rect class="f-pink" x="60" y="164" width="220" height="26" rx="4" opacity="0.5"/>
+  <text class="on-fill-sm" x="170" y="182" text-anchor="middle">capacity ≈ 0.14 d</text>
+
+  <line class="bx" x1="340" y1="14" x2="340" y2="230" opacity="0.3"/>
+
+  <text class="lb" x="550" y="20" text-anchor="middle">Modern — log-sum-exp energy</text>
+  <line class="bx" x1="410" y1="130" x2="700" y2="130" opacity="0.4"/>
+  <path class="thick" d="M414,58 C450,58 462,116 476,118 C490,120 500,60 520,58 C548,56 560,118 574,120 C588,122 598,60 620,58 C650,56 666,118 696,120"/>
+  <circle class="f-green" cx="476" cy="118" r="5"/>
+  <circle class="f-green" cx="574" cy="120" r="5"/>
+  <circle class="f-green" cx="696" cy="120" r="5"/>
+  <text class="xs" x="550" y="152" text-anchor="middle">deep, narrow, well-separated basins</text>
+  <rect class="f-green" x="440" y="164" width="220" height="26" rx="4" opacity="0.6"/>
+  <text class="on-fill-sm" x="550" y="182" text-anchor="middle">capacity exponential in d</text>
+
+  <line class="bx" x1="40" y1="212" x2="720" y2="212" opacity="0.3"/>
+
+  <text class="lb" x="40" y="238">The update that minimises the modern energy:</text>
+  <rect class="f-purple" x="40" y="248" width="300" height="34" rx="5"/>
+  <text class="on-fill-sm" x="190" y="270" text-anchor="middle">x ← X softmax(β Xᵀ x)</text>
+
+  <path class="ar" d="M348,265 L392,265"/>
+  <path class="ar" d="M392,272 L348,272"/>
+
+  <rect class="f-amber" x="400" y="248" width="320" height="34" rx="5"/>
+  <text class="on-fill-sm" x="560" y="270" text-anchor="middle">Attention(q, K, V) — query x, keys/values X</text>
+
+  <text class="xs" x="40" y="302">Exact, not analogical. Every transformer contains an associative memory whose energy function is written above.</text>
+</svg>
+</Figure>
+
+## Modern Hopfield networks
+
+The classical Hopfield network stores patterns $\{\xi^\mu\}$ as minima of
+
+$$
+E(x) = -\tfrac12 x^{\top}Wx, \qquad W = \sum_{\mu}\xi^\mu(\xi^\mu)^{\top},
+$$
+
+and retrieves by descending the energy. Its capacity is famously poor: about
+$0.14\,d$ patterns for $d$ neurons before spurious minima dominate.
+
+**Krotov & Hopfield's insight** is that capacity depends on the *sharpness* of the
+energy's dependence on overlap. Replace the quadratic with a rapidly-growing
+function $F$:
+
+$$
+E(x) = -\sum_{\mu}F\big((\xi^\mu)^{\top}x\big),
+$$
+
+and capacity grows with the sharpness of $F$ — polynomial $F$ of degree $n$ gives
+capacity $O(d^{n-1})$, and **exponential $F$ gives capacity exponential in $d$**.
+
+**Ramsauer et al.'s continuous version** takes the exponential case:
+
+$$
+E(x) = -\operatorname{lse}\big(\beta,\, X^{\top}x\big) + \tfrac12 x^{\top}x + \text{const},
+$$
+
+with $\operatorname{lse}$ the log-sum-exp and $X$ the stored patterns. The update
+that minimises this by concave–convex procedure is
+
+$$
+x^{\text{new}} = X\,\operatorname{softmax}\big(\beta X^{\top}x\big),
+$$
+
+which **is the transformer attention update**, with $x$ the query and $X$ the
+keys/values.
+
+**So attention is one step of retrieval in an exponential-capacity associative
+memory.** That equivalence is exact, it is not an analogy, and it means every
+transformer contains an energy-based associative memory whose energy function is
+written down above. It also shows retrieval converges in **one step** for
+well-separated patterns, which is why a single attention layer suffices.
+
+<Tier level="frontier" />
+
+## Where this stands, as of 2026
+
+**The energy-based programme won by changing its name.** Diffusion and score-based
+models are trained with denoising score matching, which is an energy-based
+estimation method, and they dominate high-quality generation. The word "energy" is
+mostly absent from those papers, which obscures a real intellectual continuity.
+
+**Explicit EBMs remain niche and have a defensible niche.** Where you need
+compositionality — combining several constraints by *adding* their energies, which
+requires no retraining — EBMs do something no other family does cleanly:
+
+$$
+E_{\text{combined}}(x) = E_1(x) + E_2(x) \iff p_{\text{combined}} \propto p_1 \cdot p_2 .
+$$
+
+Composing constraints is a product of experts, and it is free.
+
+**Short-run MCMC training is understood to be training a sampler, not a density.**
+Nijkamp et al.'s diagnosis has been broadly accepted. Papers in this area now
+generally report whether the energy landscape is valid independent of the chain, and
+many acknowledge it is not.
+
+**Modern Hopfield networks made the attention–memory equivalence exact**, and the
+practical consequences are still being worked out. It gives a clean account of what
+attention layers store and retrieve, and connects transformer capacity to a
+well-studied associative-memory literature.
+
+**JEM-style hybrid training is a live and underused idea.** Getting calibration and
+OOD detection improvements essentially for free from a training-time change is
+attractive, and adoption has been limited by the instability of the Langevin
+component.
+
+## Open problems
+
+- **Sampling in high dimensions is unsolved.** Mixing time is exponential in energy
+  barriers. Every practical method sidesteps this rather than solving it — diffusion
+  by annealing the noise level, short-run methods by not mixing at all.
+
+- **Evaluation is genuinely hard.** You cannot compute the likelihood, so you cannot
+  report it. Annealed importance sampling estimates $Z$ with high variance and
+  unclear reliability in high dimensions. Sample-based metrics measure the sampler as
+  much as the model.
+
+- **CD's bias is characterised but not eliminated.** The improved-CD correction
+  helps and is not exact.
+
+- **Compositionality is promising and shallow.** Adding energies composes
+  constraints in principle; in practice the composed distribution is often dominated
+  by whichever energy has the largest scale, and calibrating relative scales is
+  unsolved.
+
+- **Discrete EBMs lag.** Langevin needs gradients, so discrete spaces need Gibbs
+  sampling or gradient-free variants, and both scale poorly. This is the same
+  obstacle discrete diffusion faces.
+
+## Where EBMs are the right choice
+
+<Card title="A decision procedure" icon="right-arrow">
+**Combining independently-trained constraints?** EBMs, and nothing else is close —
+sum the energies and you have the product of the distributions, with no retraining.
+
+**Need calibration or OOD detection from a classifier?** JEM-style joint training.
+The logsumexp energy is already in your network.
+
+**Structured prediction with hard constraints?** Energy-based learning was designed
+for this — LeCun's tutorial is about ranking structured outputs, not about
+generative modelling.
+
+**Want the best samples?** Not an EBM. Use diffusion, which is the same idea with
+the estimation problem solved.
+
+**Want an exact likelihood?** Not an EBM. Use a [normalizing
+flow](/architectures/generative-models/) or an autoregressive model.
+
+**Studying associative memory or the theory of attention?** Modern Hopfield
+networks, where the equivalence is exact and the capacity results are sharp.
+</Card>
+
+## Reading path
+
+1. **LeCun et al. (2006), tutorial** — read it for the framing that energy-based
+   learning is about *ranking*, not about probability. It predates and outlasts the
+   generative framing.
+2. **Hyvärinen (2005)** — the score matching derivation. Do the integration by parts
+   yourself once; it is the pivot the whole field turns on.
+3. **Vincent (2011)** — denoising score matching. Short, and it is the exact moment
+   EBMs became diffusion.
+4. **Song & Kingma (2021), How to Train Your EBM** — the best single survey, and it
+   organises the methods by exactly the taxonomy on this page.
+5. **Nijkamp et al. (2019)** — read it before trusting any short-run MCMC result.
+6. **Ramsauer et al. (2020)** — for the attention–Hopfield equivalence, once the rest
+   is in place.
+
+<Papers papers={frontmatter.papers} />
