@@ -1,0 +1,629 @@
+---
+title: Compute Budgeting
+description: "How to answer 'how much compute do I need' with arithmetic rather than folklore — FLOP counting, memory accounting, MFU, wall-clock and dollars, with worked examples from a LoRA run to a 70B pretrain."
+sidebar:
+  order: 2
+depth: frontier
+readingTime: 42
+prereqs:
+  - label: "Accelerators and the Memory Hierarchy"
+    slug: "hardware/accelerators"
+papers:
+  - title: "Scaling Laws for Neural Language Models"
+    authors: "Jared Kaplan, Sam McCandlish, Tom Henighan, Tom B. Brown et al."
+    year: 2020
+    url: "https://arxiv.org/abs/2001.08361"
+  - title: "Training Compute-Optimal Large Language Models (Chinchilla)"
+    authors: "Jordan Hoffmann et al."
+    year: 2022
+    url: "https://arxiv.org/abs/2203.15556"
+  - title: "ZeRO: Memory Optimizations Toward Training Trillion Parameter Models"
+    authors: "Samyam Rajbhandari, Jeff Rasley, Olatunji Ruwase, Yuxiong He"
+    year: 2019
+    url: "https://arxiv.org/abs/1910.02054"
+  - title: "Reducing Activation Recomputation in Large Transformer Models"
+    authors: "Vijay Korthikanti et al."
+    year: 2022
+    url: "https://arxiv.org/abs/2205.05198"
+  - title: "PaLM: Scaling Language Modeling with Pathways (introduces MFU)"
+    authors: "Aakanksha Chowdhery et al."
+    year: 2022
+    url: "https://arxiv.org/abs/2204.02311"
+  - title: "Efficient Large-Scale Language Model Training on GPU Clusters Using Megatron-LM"
+    authors: "Deepak Narayanan et al."
+    year: 2021
+    url: "https://arxiv.org/abs/2104.04473"
+  - title: "Beyond Chinchilla-Optimal: Accounting for Inference in Language Model Scaling Laws"
+    authors: "Nikhil Sardana, Jacob Portes, Sasha Doubov, Jonathan Frankle"
+    year: 2023
+    url: "https://arxiv.org/abs/2401.00448"
+  - title: "Scaling Vision Transformers"
+    authors: "Xiaohua Zhai, Alexander Kolesnikov, Neil Houlsby, Lucas Beyer"
+    year: 2021
+    url: "https://arxiv.org/abs/2106.04560"
+  - title: "QLoRA: Efficient Finetuning of Quantized LLMs"
+    authors: "Tim Dettmers, Artidoro Pagnoni, Ari Holtzman, Luke Zettlemoyer"
+    year: 2023
+    url: "https://arxiv.org/abs/2305.14314"
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+<Abstract>
+"How much compute do I need?" has an arithmetic answer, and the arithmetic is not
+hard. Three numbers — parameters, tokens, and the utilisation you can realistically
+achieve — determine GPU-hours, and GPU-hours times a rental rate determines
+dollars. A fourth number, memory, determines whether the job runs at all. This
+page gives you the formulas, their derivations, the places where they lie, and
+several fully worked examples you can adapt.
+</Abstract>
+
+<KeyPoints>
+
+- **Training FLOPs ≈ 6 × parameters × tokens.** The factor 6 is 2 for the forward pass and 4 for the backward, and it is derivable in two lines rather than remembered.
+- **Memory is a different budget from compute, and it is usually what stops you first.** Full fine-tuning with Adam in mixed precision costs about 16 bytes per parameter before you have stored a single activation. A 7B model needs ~112 GB of optimizer-side state — more than any single GPU has.
+- **Model FLOPs utilisation (MFU) is the honest efficiency number.** Well-tuned large-scale training reaches 35–55%. Plan with 40%, not with peak. Using peak makes every estimate wrong by a factor of two to three.
+- **Chinchilla's ~20 tokens per parameter is a training-cost optimum, not a deployment optimum.** If you will serve the model heavily, the total-cost optimum is a smaller model trained on far more tokens — which is why released models are systematically "over-trained" relative to Chinchilla.
+- **For inference sizing, the KV cache is the number that surprises people.** At long context and moderate batch it can exceed the weights, and it grows linearly in both batch and sequence length.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## The whole calculation, on one page
+
+Before any derivation, here is the shape of the answer.
+
+<Steps>
+
+1. **Count the work.** Training a model with $N$ parameters on $D$ tokens costs about $6ND$ floating-point operations. That single formula does most of the job.
+
+2. **Divide by what your hardware actually delivers.** Not its peak. Take peak dense FLOP/s for your precision and multiply by a realistic utilisation — 40% is a defensible planning figure for a well-engineered run, and 20–30% is common for a first attempt.
+
+3. **That gives you GPU-seconds.** Divide by the number of GPUs for wall-clock, multiply by the hourly rate for dollars.
+
+4. **Separately, check that it fits.** Compute tells you how long; memory tells you whether it runs. Memory is the constraint that stops most projects, and it is the one people check last.
+
+</Steps>
+
+A concrete instance, carried through: a 7B model on 1 trillion tokens is
+$6 \times 7\times10^9 \times 10^{12} = 4.2 \times 10^{22}$ FLOPs. On 64 H100s at
+40% MFU that is $4.2\times10^{22} / (64 \times 990\times10^{12} \times 0.4)$
+≈ 1.66 million seconds ≈ **19 days**, and at roughly $3.50 per GPU-hour, about
+**$102,000**.
+
+Every number in that sentence is one you can compute yourself in a minute. The
+rest of this page explains where each comes from and where it goes wrong.
+
+## Why the factor is 6
+
+This is worth understanding rather than memorising, because the same reasoning
+tells you how to modify it.
+
+Consider one parameter in one matrix multiplication, and one token flowing
+through it.
+
+- **Forward:** the parameter is multiplied by an input and the result accumulated. One multiply, one add → **2 FLOPs**.
+- **Backward, gradient with respect to the input:** the parameter is used again in a multiply-accumulate → **2 FLOPs**.
+- **Backward, gradient with respect to the parameter:** another multiply-accumulate → **2 FLOPs**.
+
+Total **6 FLOPs per parameter per token**. Multiply by $N$ parameters and $D$
+tokens and you have $C \approx 6ND$.
+
+<Aside type="tip" title="The immediate corollaries">
+Because the derivation is structural, the modifications follow directly:
+
+- **Forward only** (inference prefill, or evaluating a frozen model): $2ND$, one third the cost.
+- **Frozen backbone with a small trainable head** (linear probing, LoRA): the frozen parameters cost 2 FLOPs each for the forward and 2 more for passing gradient through them, but not the third 2 for their own gradient. So roughly $4ND_{\text{frozen}} + 6ND_{\text{trainable}}$, and since the trainable fraction is tiny, the saving is about a third — not the 100× that "we only train 0.1% of parameters" suggests. **LoRA saves memory, not compute.** This is the single most common misconception about parameter-efficient fine-tuning.
+- **Gradient checkpointing** recomputes the forward pass during the backward, adding roughly $2ND$: total $8ND$, a 33% compute increase to buy a large memory reduction.
+</Aside>
+
+## Compute and memory are different budgets
+
+People conflate these constantly, so state it plainly.
+
+**Compute** determines how long a job takes. It scales with parameters × tokens
+and is spread across however many GPUs you have. Throw more GPUs at it and it
+finishes sooner.
+
+**Memory** determines whether the job runs at all. It scales with parameters ×
+bytes-per-parameter, plus activations. Throwing more GPUs at it only helps if you
+use a parallelism strategy that actually shards the state — which is exactly what
+[ZeRO and FSDP](/systems/distributed-training/) are for.
+
+<Figure
+  lead="Where the memory goes in a full fine-tune, and why it is much more than the model."
+  caption="Per-parameter memory cost for the standard mixed-precision Adam recipe. The BF16 weights people picture are 2 bytes; everything else is bookkeeping the optimizer requires. Sixteen bytes per parameter is the number to carry in your head — it means a 7B model needs about 112 GB of persistent state before any activations, which is why full fine-tuning a 7B on a single 80 GB card is impossible without changing the recipe. The three bars below show what each mitigation actually removes: 8-bit Adam attacks the moments, LoRA removes gradient and optimizer state for the frozen 99%+ of parameters, and QLoRA additionally quantizes the frozen weights themselves."
+>
+<svg viewBox="0 0 760 430" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Memory breakdown per parameter for training recipes">
+  <text class="lb" x="30" y="26">Bytes per parameter — persistent state, excluding activations</text>
+
+  <text class="sm" x="30" y="66">Full FT, mixed-precision Adam</text>
+  <rect class="f-green" x="250" y="52" width="56" height="22" rx="2"/>
+  <text class="on-fill-sm" x="278" y="68" text-anchor="middle">2</text>
+  <rect class="f-blue" x="308" y="52" width="56" height="22" rx="2"/>
+  <text class="on-fill-sm" x="336" y="68" text-anchor="middle">2</text>
+  <rect class="f-purple" x="366" y="52" width="112" height="22" rx="2"/>
+  <text class="on-fill-sm" x="422" y="68" text-anchor="middle">4</text>
+  <rect class="f-amber" x="480" y="52" width="112" height="22" rx="2"/>
+  <text class="on-fill-sm" x="536" y="68" text-anchor="middle">4</text>
+  <rect class="f-pink" x="594" y="52" width="112" height="22" rx="2"/>
+  <text class="on-fill-sm" x="650" y="68" text-anchor="middle">4</text>
+  <text class="xs" x="712" y="68">= 16</text>
+
+  <text class="xs" x="250" y="92">BF16 w</text>
+  <text class="xs" x="308" y="92">BF16 grad</text>
+  <text class="xs" x="366" y="92">FP32 master</text>
+  <text class="xs" x="480" y="92">Adam m</text>
+  <text class="xs" x="594" y="92">Adam v</text>
+
+  <line class="bx" x1="30" y1="110" x2="730" y2="110" opacity="0.3"/>
+
+  <text class="sm" x="30" y="140">SGD with momentum</text>
+  <rect class="f-green" x="250" y="126" width="56" height="22" rx="2"/>
+  <rect class="f-blue" x="308" y="126" width="56" height="22" rx="2"/>
+  <rect class="f-purple" x="366" y="126" width="112" height="22" rx="2"/>
+  <rect class="f-amber" x="480" y="126" width="112" height="22" rx="2"/>
+  <text class="xs" x="600" y="142">= 12 · loses Adam's per-parameter scaling</text>
+
+  <text class="sm" x="30" y="180">8-bit Adam</text>
+  <rect class="f-green" x="250" y="166" width="56" height="22" rx="2"/>
+  <rect class="f-blue" x="308" y="166" width="56" height="22" rx="2"/>
+  <rect class="f-purple" x="366" y="166" width="112" height="22" rx="2"/>
+  <rect class="f-amber" x="480" y="166" width="28" height="22" rx="2"/>
+  <rect class="f-pink" x="510" y="166" width="28" height="22" rx="2"/>
+  <text class="xs" x="600" y="182">= 10 · moments quantized to 1 byte each</text>
+
+  <text class="sm" x="30" y="220">LoRA (rank r, base frozen)</text>
+  <rect class="f-green" x="250" y="206" width="56" height="22" rx="2"/>
+  <text class="xs" x="316" y="222">≈ 2 + 16·(r-fraction) — typically ~2.1</text>
+
+  <text class="sm" x="30" y="260">QLoRA (4-bit frozen base)</text>
+  <rect class="f-grey" x="250" y="246" width="14" height="22" rx="2"/>
+  <text class="xs" x="274" y="262">≈ 0.5 + 16·(r-fraction) — typically ~0.6</text>
+
+  <line class="bx" x1="30" y1="284" x2="730" y2="284" opacity="0.3"/>
+
+  <text class="lb" x="30" y="310">What that means for a 7B model on one 80 GB H100</text>
+  <rect class="f-pink" x="30" y="324" width="330" height="26" rx="3"/>
+  <text class="on-fill-sm" x="44" y="342">Full FT + Adam: ~112 GB state — does not fit</text>
+  <rect class="f-amber" x="30" y="356" width="220" height="26" rx="3"/>
+  <text class="on-fill-sm" x="44" y="374">8-bit Adam: ~70 GB — fits, barely, tiny batch</text>
+  <rect class="f-green" x="30" y="388" width="100" height="26" rx="3"/>
+  <text class="on-fill-sm" x="44" y="406">LoRA: ~15 GB — comfortable</text>
+
+  <text class="xs" x="400" y="342">Same compute cost within ~⅓ in all three rows.</text>
+  <text class="xs" x="400" y="362">Memory is what changed, not FLOPs — which is</text>
+  <text class="xs" x="400" y="382">why LoRA does not make training much faster,</text>
+  <text class="xs" x="400" y="402">it makes it possible on smaller hardware.</text>
+</svg>
+</Figure>
+
+<Tier level="mechanics" />
+
+## FLOPs, with the attention correction
+
+The $6ND$ estimate counts the parameter-weighted matrix multiplications. It omits
+the attention score computation, which involves no parameters but real work.
+
+Per token, per layer, self-attention over a context of length $s$ costs about
+$4sd$ forward FLOPs — $2sd$ to form the scores $QK^\top$ against $s$ previous
+positions, and $2sd$ to apply them to $V$, where $d$ is the model width. Applying
+the same 3× factor for the backward pass and summing over $L$ layers and $D$
+tokens:
+
+$$
+C \approx 6ND + 12LsdD.
+$$
+
+To see when the second term matters, take the ratio, and use the fact that a
+standard transformer has roughly $N \approx 12Ld^2$ parameters:
+
+$$
+\frac{12LsdD}{6ND} = \frac{2Ls d}{N} \approx \frac{2Lsd}{12Ld^{2}} = \frac{s}{6d}.
+$$
+
+So the attention correction is about $s / 6d$. For a 70B model with $d = 8192$ at
+$s = 4096$ that is 8% — noticeable, ignorable for planning. At $s = 128{,}000$ it
+is 2.6×, so attention costs more than everything else combined and $6ND$ is badly
+wrong. Causal masking halves both terms of the attention count in practice, so
+treat this as an upper bound.
+
+<Aside type="caution" title="When 6ND stops being trustworthy">
+Four regimes where the shortcut breaks:
+
+- **Long context.** As above. Past roughly $s \approx 6d$, attention FLOPs rival parameter FLOPs, then exceed them.
+- **Mixture of experts.** $N$ must be the *active* parameters per token, not the total. A model with 400B total and 30B active costs $6 \times 30\text{B} \times D$ for compute, but needs memory for all 400B. See [Mixture of Experts](/architectures/mixture-of-experts/).
+- **Small models.** Embedding and output-projection FLOPs, and the non-matmul work, are a larger fraction. $6ND$ can underestimate by 20% or more below ~1B parameters.
+- **Gradient checkpointing.** Add roughly a third, as derived above.
+</Aside>
+
+## Memory accounting, item by item
+
+Four categories, and you must budget all four.
+
+**1. Parameters.** $N \times b_w$ where $b_w$ is bytes per weight. BF16: 2.
+
+**2. Gradients.** Same shape as parameters. Usually BF16 (2 bytes), sometimes
+accumulated in FP32 (4).
+
+**3. Optimizer state.** The recipe that dominates practice is Adam with an FP32
+master copy: 4 bytes for the master weights, 4 for the first moment, 4 for the
+second. **12 bytes per parameter.**
+
+Adding it up for standard mixed-precision Adam: $2 + 2 + 12 = 16$ bytes per
+parameter. This is the ZeRO paper's accounting and it is the number to carry
+around.
+
+**4. Activations.** Everything saved during the forward pass for use in the
+backward. Unlike the first three, this scales with batch size and sequence
+length, not just with the model. Korthikanti et al. give, for a standard
+transformer layer without any recomputation:
+
+$$
+M_{\text{act}} = s\,b\,h\,L\left(34 + 5\,\frac{a\,s}{h}\right) \text{ bytes},
+$$
+
+with $s$ sequence length, $b$ microbatch, $h$ hidden size, $L$ layers, $a$
+attention heads. The $34$ term is linear in sequence length; the $5as/h$ term is
+quadratic, and comes from materialising attention scores.
+
+<Aside type="note" title="Why the quadratic term is mostly gone now">
+That $5as/h$ term assumed attention scores are written to memory.
+[FlashAttention](/architectures/transformers/) does not write them, so in any
+modern stack the quadratic term largely disappears and activation memory is
+approximately linear in $s$. Keep the formula for intuition about *why*
+long-context training used to be impossible, but do not use it to size a 2026
+training run — measure instead.
+</Aside>
+
+## MFU: the number that makes estimates honest
+
+Model FLOPs Utilisation, introduced with PaLM, is
+
+$$
+\text{MFU} = \frac{\text{model FLOPs per second actually achieved}}{\text{peak FLOP/s of the hardware}},
+$$
+
+where "model FLOPs" means the $6ND$ work the model logically requires — *not*
+counting recomputation. (The variant that does count recomputation is **hardware**
+FLOPs utilisation, HFU, and it is always the larger number. Papers are not always
+clear about which they report; if a figure looks surprisingly good, check.)
+
+| Setting | Typical MFU |
+|---|---|
+| Large-scale pretraining, well-tuned, dense transformer | 40–55% |
+| Same, first attempt without tuning | 15–30% |
+| Long-context training | lower — attention is less efficient |
+| MoE training | typically lower — routing and expert imbalance |
+| Fine-tuning small models on few GPUs | often 20–35% |
+| Inference, batch-1 decode | ~1% and this is expected, not a failure |
+
+<Aside type="tip" title="Plan with 40%, report what you measure">
+The single most common estimation error is dividing by peak FLOPs. It makes every
+timeline optimistic by a factor of two to three and it is the reason
+"we'll train it over the weekend" becomes a fortnight. Use 40% for planning a
+dense pretraining run on good hardware, 25% if you have not tuned anything, and
+then measure your actual MFU in the first hour and re-plan.
+</Aside>
+
+## The wall-clock and cost formulas
+
+Put it together. With $n$ accelerators of peak throughput $X$ FLOP/s at
+utilisation $u$:
+
+$$
+T = \frac{6ND}{n \, X \, u}, \qquad \text{Cost} = T \cdot n \cdot p,
+$$
+
+with $p$ the price per accelerator-hour (and $T$ converted to hours).
+
+Note that cost is independent of $n$: $T \cdot n = 6ND/(Xu)$. **Doubling the
+cluster halves the time at the same price** — in the ideal case. In practice $u$
+falls as $n$ grows, because communication grows and stragglers appear, so scaling
+out costs more in total. That degradation is the real subject of [Distributed
+Training](/systems/distributed-training/).
+
+<Tier level="formal" />
+
+## Chinchilla, stated properly
+
+Hoffmann et al. fit the loss as a function of parameters and tokens:
+
+$$
+L(N, D) = E + \frac{A}{N^{\alpha}} + \frac{B}{D^{\beta}},
+$$
+
+with fitted values around $A \approx 406.4$, $B \approx 410.7$,
+$E \approx 1.69$, $\alpha \approx 0.34$, $\beta \approx 0.28$.
+
+Minimise $L$ subject to the compute constraint $C = 6ND$. Forming the Lagrangian
+and setting derivatives to zero gives
+
+$$
+N_{\text{opt}} \propto C^{a}, \qquad D_{\text{opt}} \propto C^{b},
+$$
+
+with $a = \beta/(\alpha+\beta) \approx 0.46$ and $b = \alpha/(\alpha+\beta)
+\approx 0.54$. Because $a \approx b \approx 0.5$, the practical rule is that
+**parameters and tokens should scale roughly together**, giving the famous
+$D \approx 20N$.
+
+<Aside type="caution" title="Three things Chinchilla is not">
+1. **Not a deployment optimum.** It minimises the loss achievable for a fixed *training* budget. It says nothing about serving cost, and serving cost scales with $N$ forever.
+
+2. **Not exactly 20.** The ratio depends on the fitted exponents, which depend on the architecture, the data and the tokenizer. It has been re-estimated several times with somewhat different results, and a re-analysis found the original fit's confidence intervals were understated. Treat 20 as an order-of-magnitude anchor.
+
+3. **Not applicable to a fixed target quality.** If you need a specific capability rather than the best loss for a budget, the constrained-optimisation framing does not apply.
+</Aside>
+
+## Inference-aware sizing
+
+Sardana et al. make the correction that matters commercially. If you will serve
+$D_{\text{inf}}$ tokens over the model's lifetime, total cost is
+
+$$
+C_{\text{total}} = \underbrace{6ND_{\text{train}}}_{\text{training}} + \underbrace{2ND_{\text{inf}}}_{\text{inference}},
+$$
+
+and minimising *this* subject to a fixed target loss gives a smaller $N$ trained
+on more tokens than Chinchilla prescribes.
+
+The intuition is simple: training compute is paid once and scales as $6ND$;
+inference compute is paid per served token and scales as $2N$ per token, forever.
+Once $D_{\text{inf}}$ is large, the $2ND_{\text{inf}}$ term dominates everything
+and shrinking $N$ is worth almost any amount of extra training.
+
+This is why every released open-weights model is "over-trained" relative to
+Chinchilla — Llama-3-8B saw roughly 15 trillion tokens against a Chinchilla
+prescription of about 160 billion, nearly 100× more. That was not a mistake. It
+was the correct answer to a different, better-posed question.
+
+## KV cache, the inference memory formula
+
+For autoregressive decoding you cache keys and values for every past position:
+
+$$
+M_{\text{KV}} = 2 \cdot L \cdot n_{\text{kv}} \cdot d_{\text{head}} \cdot s \cdot b \cdot b_{\text{bytes}},
+$$
+
+with the leading 2 for keys and values, $n_{\text{kv}}$ the number of key-value
+heads (equal to the number of query heads under plain MHA, far fewer under
+[GQA](/systems/inference/)), $s$ the sequence length and $b$ the batch.
+
+**Worked:** Llama-3-70B has $L = 80$, 8 KV heads, $d_{\text{head}} = 128$. In
+FP16 at $s = 8192$ and $b = 32$:
+
+$$
+2 \times 80 \times 8 \times 128 \times 8192 \times 32 \times 2 = 85.9 \text{ GB}.
+$$
+
+The weights are 140 GB. The cache is 86 GB and grows linearly in both $b$ and
+$s$ — double the batch or double the context and it exceeds the model. This is
+the constraint that PagedAttention and GQA exist to manage, and it is why context
+length is priced.
+
+Without GQA — 64 KV heads instead of 8 — the same configuration would need 687 GB.
+GQA is not a minor efficiency tweak; it is what makes long-context serving
+economically possible at all.
+
+## Worked examples
+
+<Tabs>
+<TabItem label="LoRA on a 7B">
+
+**Goal:** adapt a 7B model on 50 million tokens of domain data.
+
+**Compute.** Frozen base costs ~4 FLOPs per parameter per token, adapters
+negligible: $\approx 4 \times 7\times10^9 \times 5\times10^7 = 1.4\times10^{18}$
+FLOPs.
+
+**Hardware.** One H100 at ~30% MFU: $990\times10^{12} \times 0.3 = 2.97\times10^{14}$
+FLOP/s.
+
+**Time.** $1.4\times10^{18} / 2.97\times10^{14} \approx 4{,}700$ s ≈ **1.3 hours**.
+
+**Memory.** 4-bit base ≈ 3.5 GB, adapters and their optimizer state ≈ 0.2 GB,
+activations at modest batch and 2k context a few GB. Comfortable on a 24 GB
+consumer card; trivial on an 80 GB H100.
+
+**Cost.** Under $10. This is the regime where you should stop optimising and just
+run it — and where renting is obviously correct.
+
+</TabItem>
+<TabItem label="Full fine-tune of a 7B">
+
+**Goal:** full-parameter fine-tune, 7B, 50M tokens.
+
+**Compute.** $6 \times 7\times10^9 \times 5\times10^7 = 2.1\times10^{18}$ FLOPs —
+only 1.5× the LoRA run.
+
+**Memory.** This is the actual problem. Mixed-precision Adam: $16 \times
+7\times10^9 = 112$ GB of persistent state. Plus activations. **Does not fit on one
+80 GB GPU.**
+
+Options, in increasing order of disruption: 8-bit Adam (~70 GB, fits but leaves
+almost nothing for activations); gradient checkpointing to cut activations at 33%
+more compute; ZeRO-2 or FSDP across 2–4 GPUs to shard optimizer state and
+gradients; CPU offload of optimizer state, which works but is slow.
+
+**Realistic plan.** 4× H100 with FSDP. Compute time on 4 GPUs at 35% MFU:
+$2.1\times10^{18} / (4 \times 990\times10^{12} \times 0.35) \approx 1{,}500$ s.
+Call it an hour with data loading and checkpointing. About **$15**.
+
+**The lesson.** Full fine-tuning is barely more compute than LoRA and vastly more
+memory. If you have the memory, the compute argument for LoRA is weak; if you do
+not, LoRA is not an optimisation but an enabler.
+
+</TabItem>
+<TabItem label="Pretrain a 7B, Chinchilla-style">
+
+**Goal:** pretrain 7B from scratch.
+
+**Tokens.** Chinchilla-optimal: $20 \times 7\times10^9 = 140$ billion. But per the
+inference-aware argument, if you intend to serve it, train longer — 1–2 trillion
+is the modern practice.
+
+**Compute at 1T tokens.** $6 \times 7\times10^9 \times 10^{12} = 4.2\times10^{22}$
+FLOPs.
+
+**Time on 64 H100s at 40% MFU.** $4.2\times10^{22} / (64 \times 990\times10^{12}
+\times 0.4) \approx 1.66\times10^{6}$ s ≈ **19.2 days**.
+
+**Cost.** 64 GPUs × 461 hours × $3.50/GPU-hour ≈ **$103,000** at neocloud rates;
+roughly $200k–300k on a hyperscaler.
+
+**Sanity check the other way.** At 140B tokens (strict Chinchilla) it is 2.7 days
+and ~$14,000 — and you get a noticeably weaker model. That gap is the price of
+the inference-aware correction, and for anything you plan to deploy it is worth
+paying.
+
+</TabItem>
+<TabItem label="Pretrain a 70B">
+
+**Goal:** 70B parameters, 15 trillion tokens — roughly the Llama-3-70B recipe.
+
+**Compute.** $6 \times 7\times10^{10} \times 1.5\times10^{13} = 6.3\times10^{24}$
+FLOPs.
+
+**Time on 1,024 H100s at 45% MFU.** $6.3\times10^{24} / (1024 \times
+990\times10^{12} \times 0.45) \approx 1.38\times10^{7}$ s ≈ **160 days**.
+
+**Cost.** 1,024 GPUs × 3,836 hours × $3.00/GPU-hour ≈ **$11.8 million** in compute
+alone. Add data acquisition and cleaning, failed runs — plan for two to
+three times the ideal figure — staff, and storage.
+
+**Memory.** 70B × 16 bytes = 1.12 TB of optimizer state. Requires sharding across
+at least 16–32 GPUs before considering activations, so tensor + pipeline + data
+parallelism together, not a single strategy.
+
+**The honest framing.** This is the scale where the compute estimate becomes the
+easy part. Node failures at 1,024 GPUs are a weekly event, checkpoint-and-restart
+overhead is material, and the difference between a good run and a bad one is
+measured in months of wall clock.
+
+</TabItem>
+</Tabs>
+
+<Figure
+  lead="Six orders of magnitude of budget, and where each project actually lives."
+  caption="Training compute for representative jobs, on a logarithmic axis, with the hardware and wall-clock that follow. The important structure is that the axis is logarithmic: the gap between fine-tuning and frontier pretraining is not a matter of getting more GPUs, it is a different category of undertaking with different failure modes. Note also where the practical cliffs sit — around a single 80 GB GPU, around a single 8-GPU node, and around the point where a run takes longer than the mean time between node failures."
+>
+<svg viewBox="0 0 760 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Training compute scale from LoRA to frontier pretraining">
+  <line class="bx" x1="120" y1="330" x2="720" y2="330"/>
+  <text class="lb" x="120" y="366">Training FLOPs (log scale)</text>
+  <text class="xs" x="140" y="350" text-anchor="middle">10¹⁸</text>
+  <text class="xs" x="240" y="350" text-anchor="middle">10²⁰</text>
+  <text class="xs" x="340" y="350" text-anchor="middle">10²²</text>
+  <text class="xs" x="440" y="350" text-anchor="middle">10²³</text>
+  <text class="xs" x="540" y="350" text-anchor="middle">10²⁴</text>
+  <text class="xs" x="640" y="350" text-anchor="middle">10²⁵</text>
+
+  <rect class="f-green" x="130" y="52" width="40" height="24" rx="3"/>
+  <text class="xs" x="180" y="69">LoRA, 7B, 50M tok — 1 GPU, ~1 h, &lt;$10</text>
+
+  <rect class="f-green" x="132" y="88" width="46" height="24" rx="3"/>
+  <text class="xs" x="188" y="105">Full FT, 7B, 50M tok — 4 GPUs, ~1 h, ~$15</text>
+
+  <rect class="f-blue" x="230" y="124" width="70" height="24" rx="3"/>
+  <text class="xs" x="310" y="141">Fine-tune 70B on 1B tok — 8–16 GPUs, hours, ~$1k</text>
+
+  <rect class="f-purple" x="320" y="160" width="90" height="24" rx="3"/>
+  <text class="xs" x="420" y="177">Pretrain 7B on 1T tok — 64 GPUs, 19 days, ~$100k</text>
+
+  <rect class="f-amber" x="420" y="196" width="120" height="24" rx="3"/>
+  <text class="xs" x="550" y="213">Pretrain 70B on 15T tok — 1024 GPUs, 160 days, ~$12M</text>
+
+  <rect class="f-pink" x="560" y="232" width="150" height="24" rx="3"/>
+  <text class="xs" x="400" y="249">Frontier-scale run — 10⁴–10⁵ GPUs, months, $10⁸+</text>
+
+  <line class="dash" x1="200" y1="42" x2="200" y2="330"/>
+  <text class="xs" x="204" y="298">one 80 GB GPU</text>
+  <text class="xs" x="204" y="312">memory ceiling</text>
+
+  <line class="dash" x1="330" y1="42" x2="330" y2="330"/>
+  <text class="xs" x="334" y="298">one 8-GPU node</text>
+
+  <line class="dash" x1="500" y1="42" x2="500" y2="330"/>
+  <text class="xs" x="504" y="298">multi-week runs —</text>
+  <text class="xs" x="504" y="312">failure recovery dominates</text>
+
+  <text class="xs" x="120" y="388">Each dashed line is a regime change in engineering, not just in budget. Crossing one means a different set of problems, not more of the same problem.</text>
+</svg>
+</Figure>
+
+<Tier level="frontier" />
+
+## Where this stands, as of 2026
+
+**Scaling-law fits are less settled than the citation count suggests.** The
+Chinchilla coefficients have been re-derived by independent groups with
+meaningfully different exponents, and a reproduction found the original paper's
+uncertainty intervals were too narrow. The qualitative conclusion — parameters and
+data should scale together, and GPT-3 was badly under-trained — is robust. The
+specific number 20 is not.
+
+**Compute-optimal has been largely abandoned in favour of inference-optimal.**
+Every major open-weights release trains far past Chinchilla, for the reason given
+above. The interesting open question is where the returns actually stop: models
+continue improving at 100× the Chinchilla token count, and no one has published a
+convincing account of the asymptote.
+
+**MFU has stopped improving.** Reported figures for large dense transformer
+pretraining have sat in the 40–55% band across several hardware generations.
+Faster chips have not translated into better utilisation, because communication
+and memory have not kept pace with arithmetic. This is the same memory-wall story
+from the [accelerators page](/hardware/accelerators/) viewed from the software
+side.
+
+**MoE complicates every formula here.** With sparse activation, compute scales
+with active parameters and memory with total parameters, which decouples two
+quantities that all the classical scaling work treats as one. Scaling laws for
+MoE exist but are less mature, and the effective-parameter-count question does not
+have a settled answer.
+
+**Reasoning models moved the budget to inference.** When a model spends thousands
+of tokens of chain-of-thought per query, the $2ND_{\text{inf}}$ term grows by
+whatever the average trace length is. The whole training/inference balance shifts,
+and the inference-aware scaling analyses have not caught up.
+
+## Open problems
+
+<Steps>
+
+1. **Predicting downstream capability from loss.** Scaling laws predict validation loss well. They predict whether a model can do a task poorly. Emergence claims are contested — much of the apparent discontinuity comes from discontinuous metrics — but the mapping from loss to usefulness remains largely empirical.
+
+2. **Data-constrained scaling.** High-quality text is finite. What the right substitution rate is between repeated data, synthetic data and more parameters is an active and unresolved question.
+
+3. **Scaling laws for post-training.** RLHF, distillation and reasoning training have no compute-optimal theory comparable to Chinchilla's, despite consuming a large and growing share of budgets.
+
+4. **The utilisation gap.** Roughly half of purchased FLOPs are lost. No one has a principled account of how much of that is irreducible.
+
+5. **Honest total cost of ownership.** Published costs are almost always the successful run only. Failed runs, data pipeline compute, evaluation and the human time to babysit a 160-day job routinely double or triple the figure, and nobody reports them.
+
+</Steps>
+
+## Practical guidance
+
+- **Compute the estimate before you provision.** Five minutes of arithmetic routinely reveals that a plan is off by an order of magnitude, in either direction.
+- **Check memory first, compute second.** Compute makes a job slow. Memory makes it impossible.
+- **Measure MFU in the first hour of any long run.** If it is below 20%, stop and fix it — you will save more than any subsequent optimisation.
+- **Budget 2–3× the ideal figure.** Failed runs, restarts, hyperparameter searches and data pipeline compute are not optional extras; they are most of the difference between the estimate and the invoice.
+- **For anything under a few thousand GPU-hours, rent.** The break-even against owning hardware sits far above where most projects live — see [Choosing Hardware](/hardware/choosing-hardware/).
+- **Do not size a serving deployment on weights alone.** Add the KV cache at your actual target batch and context, and it will often be the larger number.
+
+## Reading path
+
+Next: [Choosing Hardware](/hardware/choosing-hardware/) turns these budgets into a
+purchase or rental decision. For how utilisation degrades as you scale out,
+[Distributed Training](/systems/distributed-training/). For the serving side of
+the cost equation, [Inference and Serving](/systems/inference/). For the
+statistical machinery behind the scaling-law fits,
+[Generalization](/foundations/generalization/).
+
+<Papers />

@@ -1,0 +1,102 @@
+---
+title: Hardware and Compute
+description: "The fast answer to 'what hardware do we need and how much compute does this cost' — a cheat sheet, a lookup table by model size, and pointers to the three pages that derive it all."
+sidebar:
+  order: 0
+  label: Hardware — Start Here
+depth: mechanics
+readingTime: 12
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+<Abstract>
+This section answers two questions that get asked constantly and answered badly:
+*what hardware do we need*, and *how much compute does this cost*. Both have
+arithmetic answers. This page is the cheat sheet — the numbers you need in a
+meeting. The three pages beneath it derive those numbers, explain when they
+break, and work through the cases in full.
+</Abstract>
+
+<KeyPoints>
+
+- **Training FLOPs ≈ 6 × parameters × tokens.** Divide by hardware throughput times ~40% utilisation to get seconds.
+- **Memory, not compute, is what usually stops you.** Full fine-tuning with Adam costs ~16 bytes per parameter; inference in FP16 costs ~2.
+- **Bandwidth, not FLOPs, is what usually limits you.** Most deep-learning kernels finish waiting on memory, not arithmetic.
+- **Rent unless you have measured sustained utilisation.** Break-even against a workstation is around 8,000–10,000 GPU-hours of real use.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## The four formulas
+
+<Steps>
+
+1. **Training compute.** $C \approx 6ND$ FLOPs, for $N$ parameters and $D$ tokens. Forward-only (inference prefill) is $2ND$.
+
+2. **Wall clock.** $T = 6ND / (n \cdot X \cdot u)$, with $n$ accelerators of peak throughput $X$ at utilisation $u$. Use $u = 0.4$ for planning, then measure.
+
+3. **Training memory.** About **16 bytes per parameter** for mixed-precision Adam — 2 for BF16 weights, 2 for gradients, 12 for FP32 master weights and the two Adam moments — plus activations.
+
+4. **Inference memory.** Weights (2 bytes per parameter in FP16, ~0.6 in 4-bit) plus the KV cache, $2 L n_{\text{kv}} d_{\text{head}} s b \cdot \text{bytes}$, which at long context or high batch often exceeds the weights.
+
+</Steps>
+
+## Lookup: what you need, by model size
+
+Approximate, and sufficient for a first decision. "Serve" assumes moderate batch
+and 4k–8k context; longer context needs more for the KV cache.
+
+| Model | Serve, 4-bit | Serve, FP16 | LoRA fine-tune | Full fine-tune |
+|---|---|---|---|---|
+| 1–3B | 2–4 GB · any modern GPU | 6 GB · any modern GPU | 8 GB · one consumer card | 48 GB · one A100/H100 |
+| 7–8B | ~6 GB · one 8 GB card | 16 GB · one 24 GB card | 12–16 GB · one 24 GB card | ~112 GB · 2–4 GPUs, FSDP |
+| 13–14B | ~10 GB · one 12 GB card | 28 GB · one 40 GB card | ~20 GB · one 24 GB card | ~208 GB · 4–8 GPUs |
+| 30–34B | ~22 GB · one 24 GB card | 68 GB · one 80 GB card | ~36 GB · one 48 GB card | ~500 GB · one 8-GPU node |
+| 70B | ~42 GB · one 48 GB card | 140 GB · 2× 80 GB | ~70 GB · one 80 GB card | ~1.1 TB · 16+ GPUs |
+| 400B+ | ~240 GB · one 8-GPU node | 800 GB · 8–16 GPUs | ~420 GB · one 8-GPU node | multi-node cluster |
+
+Read across a row and notice how far apart the columns are. The same 70B model is
+a single-card job to serve in 4-bit and a small-cluster job to fully fine-tune.
+Most disagreements about "what hardware do we need" are actually disagreements
+about which column you are in.
+
+## Lookup: what a job costs
+
+Using $6ND$, 40% MFU on H100s, and $3.50 per GPU-hour.
+
+| Job | FLOPs | Hardware | Time | Cost |
+|---|---|---|---|---|
+| LoRA 7B on 50M tokens | 1.4 × 10¹⁸ | 1× H100 | ~1.3 h | under $10 |
+| Full fine-tune 7B on 50M tokens | 2.1 × 10¹⁸ | 4× H100 | ~30 min | ~$15 |
+| Fine-tune 70B on 1B tokens | 4.2 × 10²⁰ | 16× H100 | ~18 h | ~$1,000 |
+| Pretrain 7B on 1T tokens | 4.2 × 10²² | 64× H100 | ~19 days | ~$103,000 |
+| Pretrain 70B on 15T tokens | 6.3 × 10²⁴ | 1024× H100 | ~160 days | ~$12M |
+
+Budget two to three times these figures in practice. The estimate covers the
+successful run; it does not cover failed runs, restarts, hyperparameter search,
+data-pipeline compute or evaluation, and those are the normal case rather than
+the exception.
+
+## Where to go next
+
+<Steps>
+
+1. **[Accelerators and the Memory Hierarchy](/hardware/accelerators/)** — what a GPU actually is, why memory bandwidth rather than FLOPs decides most workloads, the roofline model, numeric formats, and how to read a vendor spec sheet without being misled. Start here if the phrase "memory-bound" is not yet load-bearing for you.
+
+2. **[Compute Budgeting](/hardware/compute-budgeting/)** — where $6ND$ comes from, full memory accounting, MFU, Chinchilla and the inference-aware correction to it, KV cache sizing, and five fully worked examples. Start here if you need a number for a specific job.
+
+3. **[Choosing Hardware](/hardware/choosing-hardware/)** — the tiers from laptop to cluster, consumer versus datacenter honestly, Apple Silicon and AMD, buy-versus-rent arithmetic, current rental pricing, storage and dataloader provisioning, and what breaks at each scale. Start here if you are about to spend money.
+
+</Steps>
+
+Related pages elsewhere in the atlas: [Distributed
+Training](/systems/distributed-training/) for the parallelism strategies these
+budgets assume, [Inference and Serving](/systems/inference/) for the serving
+side, and [Fine-Tuning](/training/fine-tuning/) for the techniques that move a
+workload down a hardware tier.

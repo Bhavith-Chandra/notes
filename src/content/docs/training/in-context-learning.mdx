@@ -1,0 +1,658 @@
+---
+title: In-Context Learning
+description: "Learning from examples in the prompt without any weight update — the phenomenon, the four competing explanations, and what demonstrations actually contribute."
+sidebar:
+  order: 6
+depth: frontier
+readingTime: 35
+prereqs:
+  - label: "Transformers"
+    slug: "architectures/transformers"
+papers:
+  - title: "Language Models are Few-Shot Learners (GPT-3)"
+    authors: "Brown, Mann, Ryder, et al."
+    year: 2020
+    url: "https://arxiv.org/abs/2005.14165"
+  - title: "An Explanation of In-context Learning as Implicit Bayesian Inference"
+    authors: "Xie, Raghunathan, Liang, Ma"
+    year: 2021
+    url: "https://arxiv.org/abs/2111.02080"
+  - title: "Chain-of-Thought Prompting Elicits Reasoning in Large Language Models"
+    authors: "Wei, Wang, Schuurmans, et al."
+    year: 2022
+    url: "https://arxiv.org/abs/2201.11903"
+  - title: "In-context Learning and Induction Heads"
+    authors: "Olsson, Elhage, Nanda, et al."
+    year: 2022
+    url: "https://transformer-circuits.pub/2022/in-context-learning-and-induction-heads/index.html"
+  - title: "Rethinking the Role of Demonstrations: What Makes In-Context Learning Work?"
+    authors: "Min, Lyu, Holtzman, et al."
+    year: 2022
+    url: "https://arxiv.org/abs/2202.12837"
+  - title: "What Can Transformers Learn In-Context? A Case Study of Simple Function Classes"
+    authors: "Garg, Tsipras, Liang, Valiant"
+    year: 2022
+    url: "https://arxiv.org/abs/2208.01066"
+  - title: "What learning algorithm is in-context learning? Investigations with linear models"
+    authors: "Akyürek, Schuurmans, Andreas, Ma, Zhou"
+    year: 2022
+    url: "https://arxiv.org/abs/2211.15661"
+  - title: "Transformers learn in-context by gradient descent"
+    authors: "von Oswald, Niklasson, Randazzo, et al."
+    year: 2022
+    url: "https://arxiv.org/abs/2212.07677"
+  - title: "Function Vectors in Large Language Models"
+    authors: "Todd, Li, Sen Sharma, Mueller, Wallace, Bau"
+    year: 2023
+    url: "https://arxiv.org/abs/2310.15213"
+  - title: "In-Context Learning Creates Task Vectors"
+    authors: "Roee Hendel, Mor Geva, Amir Globerson"
+    year: 2023
+    url: "https://arxiv.org/abs/2310.15916"
+  - title: "Many-Shot In-Context Learning"
+    authors: "Agarwal, Singh, Zhang, et al."
+    year: 2024
+    url: "https://arxiv.org/abs/2404.11018"
+  - title: "Hopfield Networks is All You Need"
+    authors: "Ramsauer, Schäfl, Lehner, et al."
+    year: 2020
+    url: "https://arxiv.org/abs/2008.02217"
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+<Abstract>
+Show a language model three examples of a task in its prompt and it does the
+task — with no gradient step, no weight change, nothing persisted. That should
+not obviously be possible, and explaining it has produced four competing
+accounts that are all partially right. The most useful finding for practitioners
+is also the most deflating: **the input–label mappings in your examples matter far
+less than the format**, and models often perform nearly as well when the labels
+are wrong.
+</Abstract>
+
+<KeyPoints>
+
+- **No weights change. Ever.** The "learning" happens entirely in the forward pass, in activations that vanish when the context does. Whatever this is, it is not learning in the sense the rest of machine learning uses the word.
+- **Correct labels contribute surprisingly little.** Min et al. replaced demonstration labels with *random* ones and performance dropped only slightly. What the examples supply is the label space, the input distribution, and the format — not the mapping.
+- **There are four explanations and they are not mutually exclusive.** Induction heads (mechanistic), implicit Bayesian inference (statistical), implicit gradient descent (algorithmic), and task vectors (representational). Each is well-supported in its own regime.
+- **A prompt compresses to a single vector.** Task and function vector work shows the demonstrations produce an activation that can be extracted, transplanted into an unrelated context, and made to induce the task on its own.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## The phenomenon
+
+Put this in a prompt:
+
+```text
+sea otter -> loutre de mer
+peppermint -> menthe poivrée
+plush giraffe -> girafe peluche
+cheese ->
+```
+
+The model outputs `fromage`. It was not trained on this task, no gradient was
+computed, and the model's parameters are bit-for-bit identical before and after.
+
+**Nothing was learned in the usual sense.** Ask the same model the same question in
+a fresh conversation and it has no memory of having done it.
+
+## Why this is strange
+
+Every other form of learning in machine learning changes something persistent.
+Training updates weights. Fine-tuning updates weights. Even
+[retrieval](/systems/retrieval/) changes an index.
+
+In-context learning changes **nothing**. The adaptation lives entirely in the
+activations of a single forward pass and is discarded when the pass ends.
+
+So either the model already knew how to do the task and the examples merely
+*selected* it, or the forward pass is running something that deserves to be called
+a learning algorithm. Both turn out to be partly true, and the argument over the
+proportions is the interesting part.
+
+## The result that reframes it
+
+The obvious hypothesis: the model reads the examples, infers the input→output rule,
+and applies it. Min et al. tested this directly and the finding is deflating.
+
+**They replaced every label with a random one** — `sea otter -> menthe poivrée` —
+and measured performance. It dropped only a little.
+
+If the model were inferring a mapping, corrupting the mapping should destroy
+performance. It did not. So the demonstrations are mostly supplying something else.
+
+<Aside type="tip" title="What the examples actually provide">
+Min et al. isolated four things demonstrations carry, and found the mapping is the
+least important:
+
+1. **The label space** — which outputs are even on the table.
+2. **The input distribution** — what kind of thing you are asking about.
+3. **The format** — that the answer follows an arrow, is one word, is lowercase.
+4. **The input–label mapping** — which turns out to contribute least.
+
+The practical reading: **your examples are configuring the output channel, not
+teaching the task.** Getting format and label space right matters more than
+hand-curating perfect examples — which is the opposite of most prompt-engineering
+advice.
+</Aside>
+
+<Figure
+  lead="Demonstrations configure the output channel more than they teach the mapping."
+  caption="Four things a demonstration set carries, ranked by how much removing each one costs. Corrupting the input–label mapping — the thing everyone assumes is the point — costs the least; removing the label space or the format costs the most. This is why prompt engineering advice that focuses on hand-picking perfect example pairs is aimed at the weakest lever. Note the scope limit: Min et al. tested classification with small label sets, and later work found label correctness matters much more for large models on harder tasks, so read this as a strong claim about a narrow setting rather than a universal law."
+>
+<svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="What demonstrations supply, ranked by ablation cost">
+  <text class="lb" x="30" y="26">A demonstration set carries four signals</text>
+
+  <rect class="bx" x="30" y="42" width="300" height="96" rx="5"/>
+  <text class="sm" x="44" y="66">sea otter → loutre de mer</text>
+  <text class="sm" x="44" y="90">peppermint → menthe poivrée</text>
+  <text class="sm" x="44" y="114">plush toy → peluche</text>
+  <text class="xs" x="44" y="132">cheese → ?</text>
+
+  <path class="ar dash" d="M334,90 L392,90"/>
+
+  <rect class="f-blue" x="398" y="42" width="332" height="22" rx="3"/>
+  <text class="on-fill-sm" x="410" y="58">label space — what outputs exist at all</text>
+  <rect class="f-purple" x="398" y="68" width="332" height="22" rx="3"/>
+  <text class="on-fill-sm" x="410" y="84">format — arrow, one token, lowercase, French</text>
+  <rect class="f-green" x="398" y="94" width="332" height="22" rx="3"/>
+  <text class="on-fill-sm" x="410" y="110">input distribution — what kind of thing is asked</text>
+  <rect class="f-grey" x="398" y="120" width="332" height="22" rx="3"/>
+  <text class="on-fill-sm" x="410" y="136">input–label mapping — which word maps to which</text>
+
+  <line class="bx" x1="30" y1="164" x2="730" y2="164" opacity="0.3"/>
+
+  <text class="lb" x="30" y="188">Cost of ablating each signal (schematic, classification tasks)</text>
+
+  <text class="xs" x="30" y="214">remove label space</text>
+  <rect class="f-blue" x="200" y="202" width="300" height="14" rx="2"/>
+  <text class="xs" x="510" y="214">large drop</text>
+
+  <text class="xs" x="30" y="238">break format</text>
+  <rect class="f-purple" x="200" y="226" width="228" height="14" rx="2"/>
+  <text class="xs" x="438" y="238">large drop</text>
+
+  <text class="xs" x="30" y="262">shift input distribution</text>
+  <rect class="f-green" x="200" y="250" width="132" height="14" rx="2"/>
+  <text class="xs" x="342" y="262">moderate</text>
+
+  <text class="xs" x="30" y="286">randomise all labels</text>
+  <rect class="f-grey" x="200" y="274" width="36" height="14" rx="2"/>
+  <text class="xs" x="246" y="286">small — the surprising one</text>
+</svg>
+</Figure>
+
+## Four explanations
+
+<Steps>
+
+1. **Induction heads.** A concrete circuit — find an earlier occurrence of the
+   current token, copy what followed it. Mechanistically verified, and it appears in
+   training at exactly the moment ICL ability appears.
+
+2. **Implicit Bayesian inference.** The model has learned a mixture over latent
+   "topics" or tasks from pretraining. The prompt is evidence, and the model is
+   doing posterior inference over which task it is in.
+
+3. **Implicit gradient descent.** The forward pass through attention layers
+   computes something equivalent to gradient steps on a small regression problem
+   defined by the examples.
+
+4. **Task vectors.** The demonstrations compress into a single activation vector
+   that encodes the task; the query is then processed under that vector's influence.
+
+</Steps>
+
+**These are compatible.** A mechanism (1) can implement an algorithm (3) that
+performs an inference (2) via a representation (4). The disagreement is about which
+level explains the observed behaviour in real models on real tasks.
+
+<Tier level="mechanics" />
+
+## Induction heads
+
+The mechanistic account, and the best-verified one. Covered in full on
+[interpretability](/foundations/interpretability/).
+
+A two-head circuit across two layers implements **match-and-copy**: a previous-token
+head writes, at each position, information about what preceded it; an induction head
+then attends to positions following an earlier occurrence of the current token and
+copies what came next.
+
+**Why this counts as an explanation of ICL.** Generalise "copy the literal token"
+to "copy the *behaviour* that followed a similar context", and you have few-shot
+prompting. The prompt establishes a pattern; the induction mechanism continues it.
+
+**The evidence linking it to ICL** is the strongest in this area:
+
+- Induction heads form during a narrow window of training.
+- That window coincides with a visible bump in the loss curve.
+- ICL ability appears at the same moment.
+- Ablating induction heads degrades ICL disproportionately.
+
+Correlational plus causal, which is more than the other accounts have.
+
+## Implicit Bayesian inference
+
+Xie et al.'s account. Pretraining data contains many latent "concepts" — a document
+is about some topic, in some style, following some implicit task. The model learns
+$p(\text{next token} \mid \text{context})$ marginalised over these concepts.
+
+At inference, the prompt is **evidence about which concept you are in**. The model
+implicitly computes a posterior over concepts and predicts under it.
+
+$$
+p(y \mid x, \text{prompt}) = \int p(y\mid x, \theta)\, p(\theta \mid \text{prompt})\,d\theta
+$$
+
+**Why this predicts the Min et al. result.** If the prompt is evidence for *which
+task*, then the format and label space are highly informative — they identify the
+task — while individual label correctness is weak evidence that can be outweighed.
+The model is not learning the mapping; it is **locating** a mapping it already has.
+
+**Where it is weak.** It explains selection among known tasks, and not learning
+genuinely novel ones. Which brings us to the case where models demonstrably do
+learn something new.
+
+## Implicit gradient descent
+
+The most surprising line, and it starts with a clean experiment.
+
+Garg et al. asked whether transformers can learn function classes in-context that
+have nothing to do with language. Train a transformer on sequences of
+$(x_1, f(x_1), x_2, f(x_2), \dots)$ where $f$ is drawn from some class — linear
+functions, sparse linear, decision trees, small MLPs — and test on unseen $f$.
+
+**They can, and they match the appropriate classical algorithm.** For linear
+functions the transformer's in-context predictions match ordinary least squares. For
+sparse linear it matches Lasso. It is not retrieving a memorised task; it is fitting
+a new function from examples in the forward pass.
+
+**Then two papers explained how.** Akyürek et al. and von Oswald et al. showed —
+independently, with different methods — that a linear self-attention layer can
+**implement one step of gradient descent** on a least-squares objective, and that
+transformers trained on these tasks converge to weights that do approximately this.
+
+So a $k$-layer transformer can implement $k$ steps of gradient descent on a
+regression problem defined by the in-context examples. **The forward pass is running
+an optimisation.**
+
+<Aside type="caution" title="How far this transfers to real models">
+These results are on *linear* self-attention and *synthetic* function classes.
+Whether a production language model doing sentiment classification is running
+implicit gradient descent is a much stronger claim, and the evidence is
+circumstantial.
+
+The honest summary: **transformers are capable of implementing learning algorithms
+in their forward pass, and this is demonstrated constructively.** Whether that is
+what they do on natural tasks is open, and probably varies by task — retrieval-like
+tasks look Bayesian, novel-function tasks look algorithmic.
+</Aside>
+
+<Figure
+  lead="Four accounts, four levels — and they are not rivals."
+  caption="Each explanation answers a different question, which is why the evidence for one never counts against another. Induction heads say what circuit runs. Bayesian inference says what problem is being solved. Implicit gradient descent says what algorithm the circuit implements. Task vectors say what representation carries the task. A mechanism can implement an algorithm that performs an inference via a representation — all four can be true at once, and the disagreement is about which dominates on real tasks rather than which is correct."
+>
+<svg viewBox="0 0 760 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Four levels of explanation for in-context learning">
+  <defs>
+    <marker id="ic1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor" opacity="0.6"/>
+    </marker>
+  </defs>
+
+  <rect class="f-blue" x="30" y="34" width="330" height="60" rx="5"/>
+  <text class="on-fill-sm" x="46" y="56">MECHANISM — induction heads</text>
+  <text class="xs" x="46" y="76">"which circuit runs?" · match-and-copy across two layers</text>
+  <text class="xs" x="46" y="90">causally verified · explains the training phase change</text>
+
+  <rect class="f-purple" x="30" y="102" width="330" height="60" rx="5"/>
+  <text class="on-fill-sm" x="46" y="124">ALGORITHM — implicit gradient descent</text>
+  <text class="xs" x="46" y="144">"what computation?" · attention layer ≈ one GD step</text>
+  <text class="xs" x="46" y="158">proven constructively · shown in toy settings only</text>
+
+  <rect class="f-amber" x="400" y="34" width="330" height="60" rx="5"/>
+  <text class="on-fill-sm" x="416" y="56">STATISTICS — implicit Bayes</text>
+  <text class="xs" x="416" y="76">"what problem?" · posterior over latent tasks</text>
+  <text class="xs" x="416" y="90">explains robustness to wrong labels</text>
+
+  <rect class="f-green" x="400" y="102" width="330" height="60" rx="5"/>
+  <text class="on-fill-sm" x="416" y="124">REPRESENTATION — task vectors</text>
+  <text class="xs" x="416" y="144">"what carries it?" · one activation encodes the task</text>
+  <text class="xs" x="416" y="158">causally verified · transplantable</text>
+
+  <path class="ar" d="M195,98 L195,100" marker-end="url(#ic1)"/>
+  <path class="ar" d="M365,64 L396,64" marker-end="url(#ic1)"/>
+  <path class="ar" d="M365,132 L396,132" marker-end="url(#ic1)"/>
+  <path class="ar" d="M565,98 L565,100" marker-end="url(#ic1)"/>
+
+  <text class="xs" x="380" y="182" text-anchor="middle">a mechanism implements an algorithm that performs an inference via a representation</text>
+
+  <line class="bx" x1="30" y1="200" x2="730" y2="200" opacity="0.3"/>
+
+  <text class="lb" x="30" y="224">What each fails to explain</text>
+  <rect class="f-pink" x="30" y="234" width="164" height="52" rx="4" opacity="0.5"/>
+  <text class="xs" x="42" y="254">induction heads:</text>
+  <text class="xs" x="42" y="272">novel function fitting</text>
+
+  <rect class="f-pink" x="204" y="234" width="164" height="52" rx="4" opacity="0.5"/>
+  <text class="xs" x="216" y="254">Bayesian:</text>
+  <text class="xs" x="216" y="272">genuinely new tasks</text>
+
+  <rect class="f-pink" x="378" y="234" width="164" height="52" rx="4" opacity="0.5"/>
+  <text class="xs" x="390" y="254">implicit GD:</text>
+  <text class="xs" x="390" y="272">real-model evidence</text>
+
+  <rect class="f-pink" x="552" y="234" width="178" height="52" rx="4" opacity="0.5"/>
+  <text class="xs" x="564" y="254">task vectors:</text>
+  <text class="xs" x="564" y="272">where the vector comes from</text>
+
+  <text class="xs" x="30" y="312">Treating these as competing hypotheses is the common error. The open question is which dominates on which task, not which is right.</text>
+</svg>
+</Figure>
+
+## Task vectors
+
+The representational account, and the most practically striking.
+
+Hendel et al. and Todd et al. showed — concurrently — that the demonstrations
+compress into a **single activation vector**. The procedure:
+
+<Steps>
+
+1. Run the model on a prompt containing demonstrations.
+2. Extract the activation at a particular layer and position — typically the last
+   token of the demonstrations.
+3. Run the model on a *fresh* prompt with **no demonstrations at all**, and patch
+   that activation in.
+4. The model performs the task.
+
+</Steps>
+
+**The demonstrations are not needed at inference** once you have the vector. The
+task has been reduced to a point in activation space.
+
+**Why this is more than a curiosity.** It says ICL factorises: the prompt's job is
+to produce a task representation, and the query's job is to be processed under it.
+Those are separable stages, which is why the vector transplants. It also connects
+directly to the [linear representation
+hypothesis](/foundations/latent-spaces/) — tasks, like concepts, are directions.
+
+## What the accounts explain
+
+| | Induction heads | Bayesian | Implicit GD | Task vectors |
+|---|---|---|---|---|
+| Level | mechanism | statistics | algorithm | representation |
+| Explains pattern continuation | **yes** | partly | no | partly |
+| Explains novel function learning | no | no | **yes** | no |
+| Explains random-label robustness | partly | **yes** | no | **yes** |
+| Explains the training-time phase change | **yes** | no | no | no |
+| Verified causally | **yes** | no | in toy settings | **yes** |
+| Evidence from real LLMs | **yes** | indirect | limited | **yes** |
+
+**Nothing explains everything**, and the row structure suggests why: they are
+answering different questions. Treating them as rivals is the mistake.
+
+<Tier level="formal" />
+
+## The setup
+
+Given a prompt of $k$ demonstrations and a query:
+
+$$
+P = \big(x_1, y_1, x_2, y_2, \dots, x_k, y_k, x_{\text{query}}\big),
+$$
+
+the model produces $p_\theta(y \mid P)$ with $\theta$ **fixed**. Define in-context
+learning as the property that accuracy improves with $k$:
+
+$$
+\mathbb{E}\big[\mathcal{A}(k)\big] > \mathbb{E}\big[\mathcal{A}(0)\big],
+$$
+
+typically with a roughly log-linear improvement over a range of $k$ before
+saturating.
+
+## The Bayesian account
+
+Model pretraining as generating documents from a mixture over latent concepts
+$\theta$:
+
+$$
+p(\text{doc}) = \int p(\text{doc}\mid \theta)\,p(\theta)\,d\theta .
+$$
+
+A model trained to convergence on this distribution computes the posterior
+predictive:
+
+$$
+p\big(y \mid x_{\text{query}}, P\big) = \int p\big(y\mid x_{\text{query}},\theta\big)\,p\big(\theta\mid P\big)\,d\theta .
+$$
+
+As $k$ grows, if the demonstrations are informative about $\theta^{\star}$, the
+posterior concentrates:
+
+$$
+p\big(\theta \mid P\big) \longrightarrow \delta_{\theta^{\star}},
+$$
+
+recovering the task-specific predictor. **Improvement with $k$ is posterior
+concentration.**
+
+**Why the prompt works despite low likelihood.** Xie et al.'s key technical point:
+the prompt is *not* a typical sample from the pretraining distribution — the
+transitions between independent examples are unlikely under any single concept. The
+argument is that this "distribution mismatch" contributes an $O(k)$ penalty that is
+**dominated** by the $O(k)$ evidence for $\theta^\star$, provided the signal exceeds
+the mismatch. So the posterior still concentrates correctly, and the analysis
+predicts ICL should fail when the mismatch term dominates — which matches the
+empirical brittleness to prompt format.
+
+## Attention as gradient descent
+
+The constructive result. Consider linear self-attention with query, key, value
+matrices $W_Q, W_K, W_V$ acting on tokens $e_j = (x_j, y_j)$.
+
+Take a linear regression task $y = w^\top x$ and a current estimate $w$. One step of
+gradient descent on the squared loss over the in-context examples is
+
+$$
+\Delta w = -\eta\,\nabla_w \frac{1}{2}\sum_{j=1}^{k}\big(w^{\top}x_j - y_j\big)^2 = -\eta \sum_{j=1}^{k}\big(w^{\top}x_j - y_j\big)x_j .
+$$
+
+**The construction.** Choose the attention parameters as
+
+$$
+W_K = W_Q = \begin{pmatrix} I_x & 0 \\ 0 & 0\end{pmatrix},
+\qquad
+W_V = \begin{pmatrix} 0 & 0 \\ w_0^{\top} & -1 \end{pmatrix},
+$$
+
+with an identity read-out. Then the update a linear attention layer applies to the
+query token's $y$-slot is
+
+$$
+\Delta y_{\text{query}} = \sum_{j} \big(x_{\text{query}}^{\top}x_j\big)\big(w_0^{\top}x_j - y_j\big),
+$$
+
+which is exactly $x_{\text{query}}^\top \Delta w$ for the gradient step above, with
+$\eta$ absorbed into the scaling.
+
+**So one linear attention layer = one gradient step**, and $L$ layers implement $L$
+steps. von Oswald et al. then showed empirically that transformers *trained* on
+these tasks converge to weights close to this construction, and that layer-wise
+in-context predictions track the corresponding GD iterates.
+
+**Akyürek et al.'s complementary result** is a capacity statement: transformers of a
+given depth can implement ridge regression and exact least squares, and the
+algorithm the trained model implements shifts with problem dimension and depth —
+behaving like ridge in some regimes and like exact OLS in others.
+
+**Read this correctly.** These establish that the function class of a transformer
+*contains* these algorithms and that training finds them on synthetic tasks. Neither
+establishes that a production LLM classifying sentiment is doing this.
+
+## Induction heads, formally
+
+From the [interpretability](/foundations/interpretability/) treatment: the circuit
+uses **K-composition**, where layer 2's keys are built from layer 1's output rather
+than from the embedding.
+
+For a sequence containing `[A][B] … [A]`, the induction head's attention score at
+the current position is
+
+$$
+\big(W_Q^{(2)} e(A)\big)^{\top}\big(W_K^{(2)} W_{OV}^{(1)} e(A)\big),
+$$
+
+which is large exactly at positions following an earlier $A$, since layer 1 wrote
+$A$-information into those positions. The head then copies via $W_{OV}^{(2)}$.
+
+**The phase-change evidence.** Olsson et al. define an ICL score as the difference
+in loss between predicting the 500th token and the 50th token of a context — how
+much the model benefits from more context. Plotting it against training step shows
+a sharp improvement in a narrow window, coinciding with induction head formation and
+with a visible bump in the training loss.
+
+That is a mechanistic account of an emergent capability, and it remains the field's
+strongest such result.
+
+## Task vectors
+
+Formally, let $h^{(\ell)}_{-1}(P)$ be the activation at layer $\ell$, final
+demonstration position, for prompt $P$. The **task vector** is
+
+$$
+v_{\mathcal{T}} = \mathbb{E}_{P\sim\mathcal{T}}\Big[h^{(\ell)}_{-1}(P)\Big],
+$$
+
+averaged over prompts for task $\mathcal{T}$. Then run the model on a
+demonstration-free query and **patch**:
+
+$$
+h^{(\ell)}_{-1}\big(x_{\text{query}}\big) \leftarrow v_{\mathcal{T}}.
+$$
+
+The model performs $\mathcal{T}$.
+
+**Two properties worth noting.** The vectors are **causal** — patching changes
+behaviour, so this is not a correlational probe. And they are **compositional** in
+limited ways: Todd et al. found vector arithmetic over function vectors can
+compose tasks, echoing the [linear representation
+hypothesis](/foundations/latent-spaces/).
+
+**The layer matters.** Effectiveness peaks at intermediate layers. Too early and the
+task has not been formed; too late and the computation conditioned on it has already
+happened.
+
+## Scaling with the number of examples
+
+Empirically, accuracy grows roughly logarithmically over a range:
+
+$$
+\mathcal{A}(k) \approx a + b\log k,
+$$
+
+before saturating. The saturation point moved substantially with long-context
+models.
+
+**Many-shot ICL** (Agarwal et al., 2024) revisited this with hundreds or thousands
+of examples and found continued gains well past the few-shot regime, plus two
+things that are practically useful:
+
+- **Reinforced ICL** — replace human-written rationales with model-generated ones
+  filtered for correctness, which removes the human bottleneck on example count.
+- **Unsupervised ICL** — supply only *inputs*, no outputs, and still see gains,
+  which is further evidence that the input distribution rather than the mapping is
+  doing much of the work.
+
+Many-shot also reduces sensitivity to example ordering and can override pretraining
+priors that few-shot cannot — suggesting the regimes are qualitatively different,
+not just quantitatively.
+
+<Tier level="frontier" />
+
+## Where this stands, as of 2026
+
+**The explanations have stratified rather than converged.** Induction heads explain
+the mechanism and the training-time phase change. The Bayesian account explains
+task *selection* and the robustness to wrong labels. Implicit gradient descent
+explains genuine in-context *function fitting* in controlled settings. Task vectors
+explain the representational format. The field has largely stopped treating these
+as competitors.
+
+**Many-shot changed the practical picture.** With long contexts, hundreds of
+examples are affordable, and the resulting behaviour is closer to lightweight
+fine-tuning than to the classic few-shot phenomenon — including overriding
+pretraining priors, which few-shot could not do.
+
+**Task vectors are a genuine capability, not just an analysis tool.** Extracting a
+task into a vector means you can apply it without spending context on
+demonstrations, which is directly useful when context is the scarce resource.
+
+**Reasoning models complicate the story.** Models trained with [RL on verifiable
+rewards](/training/post-training/) do much of the adaptation through generated
+reasoning tokens rather than through the prompt's demonstrations. Whether that is
+still in-context learning, or a different capability wearing the same clothes, is
+not settled.
+
+## Open problems
+
+- **We cannot predict when ICL will work.** Performance is highly sensitive to
+  format, ordering, and example selection, and no theory predicts the sensitivity in
+  advance.
+
+- **The gap between toy and real remains.** The implicit-gradient-descent results
+  are on linear attention and synthetic functions. Nothing establishes the same
+  mechanism operates on natural language tasks.
+
+- **Ordering effects are unexplained.** Permuting the same demonstrations can swing
+  accuracy substantially. Recency and primacy effects are documented, and no account
+  predicts their magnitude.
+
+- **The relationship to fine-tuning is unclear.** ICL and fine-tuning sometimes
+  reach similar performance by apparently different routes. Whether they induce
+  similar internal computations is open — task vectors suggest partly yes.
+
+- **Nothing persists.** Every conversation starts from zero. Whether that is a
+  limitation to fix or a property to preserve is a design question the field has not
+  settled.
+
+## Practical guidance
+
+- **Fix the format first.** It contributes more than the labels. Consistent
+  separators, consistent casing, consistent answer shape.
+- **Cover the label space.** Every possible output should appear at least once among
+  the demonstrations.
+- **Match the input distribution** to your real queries. This matters more than
+  choosing "good" examples.
+- **Test ordering.** It is a real variable; if performance is borderline, permuting
+  is a cheap thing to try.
+- **If context is scarce**, consider extracting a task vector rather than spending
+  tokens on demonstrations.
+- **If context is plentiful**, use many more examples than the classic 3–5. The
+  gains continue much further than the few-shot literature suggested.
+
+## Reading path
+
+1. **Min et al. (2022)** — the random-label experiment. Read it first; it corrects
+   the intuition everything else builds on.
+2. **Olsson et al. (2022), Induction Heads** — the mechanism, plus the
+   training-dynamics evidence.
+3. **Garg et al. (2022)** — the clean experimental setup that made "is this a
+   learning algorithm?" answerable.
+4. **von Oswald et al. (2022)** — the construction showing attention can implement
+   gradient descent. Work through the parameter choice.
+5. **Hendel et al. (2023)** and **Todd et al. (2023)** — task and function vectors,
+   read together.
+6. **Agarwal et al. (2024)** — many-shot, for how the picture changes with long
+   context.
+
+<Papers papers={frontmatter.papers} />

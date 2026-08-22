@@ -1,0 +1,494 @@
+---
+title: Choosing Hardware
+description: "A decision guide from laptop to cluster — what each tier can actually train and serve, when consumer cards are the right answer, when to rent instead of buy, and what breaks at each scale."
+sidebar:
+  order: 3
+depth: frontier
+readingTime: 36
+prereqs:
+  - label: "Compute Budgeting"
+    slug: "hardware/compute-budgeting"
+papers:
+  - title: "QLoRA: Efficient Finetuning of Quantized LLMs"
+    authors: "Tim Dettmers, Artidoro Pagnoni, Ari Holtzman, Luke Zettlemoyer"
+    year: 2023
+    url: "https://arxiv.org/abs/2305.14314"
+  - title: "ZeRO-Offload: Democratizing Billion-Scale Model Training"
+    authors: "Jie Ren et al."
+    year: 2021
+    url: "https://arxiv.org/abs/2101.06840"
+  - title: "PyTorch FSDP: Experiences on Scaling Fully Sharded Data Parallel"
+    authors: "Yanli Zhao et al."
+    year: 2023
+    url: "https://arxiv.org/abs/2304.11277"
+  - title: "Efficient Memory Management for Large Language Model Serving with PagedAttention (vLLM)"
+    authors: "Woosuk Kwon et al."
+    year: 2023
+    url: "https://arxiv.org/abs/2309.06180"
+  - title: "The Llama 3 Herd of Models (infrastructure and failure statistics)"
+    authors: "Aaron Grattafiori et al. (Llama Team, AI @ Meta)"
+    year: 2024
+    url: "https://arxiv.org/abs/2407.21783"
+  - title: "OPT: Open Pre-trained Transformer Language Models (and its training logbook)"
+    authors: "Susan Zhang et al."
+    year: 2022
+    url: "https://arxiv.org/abs/2205.01068"
+  - title: "Megatron-LM: Training Multi-Billion Parameter Language Models Using Model Parallelism"
+    authors: "Mohammad Shoeybi et al."
+    year: 2019
+    url: "https://arxiv.org/abs/1909.08053"
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+<Abstract>
+"What hardware do we need?" is really four questions wearing one coat: what fits
+in memory, what finishes in acceptable time, what you can actually get hold of,
+and what it costs to own versus rent. This page answers them tier by tier — from
+a laptop to a thousand-GPU cluster — with the memory arithmetic that decides tier
+membership, the break-even analysis for buying, and an honest account of what
+breaks at each level.
+</Abstract>
+
+<KeyPoints>
+
+- **Memory capacity picks your tier; everything else is a refinement.** Work out what must be resident, compare it to what a card holds, and most of the decision is made.
+- **Rent unless you have sustained high utilisation.** The break-even against a $30k+ workstation is roughly 8,000–10,000 GPU-hours of genuine use. Most teams overestimate their utilisation by a wide margin.
+- **Consumer cards are excellent value and come with real constraints.** No NVLink on the 40/50 series, no ECC, no datacenter deployment under NVIDIA's driver licence, and half-rate tensor throughput under the FP32 accumulation PyTorch defaults to.
+- **The jump from one node to many is the hard one.** Inside a node you have NVLink; outside you have a network roughly 18× slower. That cliff dictates which parallelism strategies are viable and is where most scaling disappointments originate.
+- **Data loading and storage are the most commonly under-provisioned components.** A cluster that can consume 10 GB/s of tokens attached to storage that delivers 1 GB/s is an expensive idle cluster, and this failure is invisible in every spec sheet.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## Ask what has to fit
+
+Before anything else, do this arithmetic. It resolves most of the question.
+
+**For inference**, the resident set is weights plus KV cache plus a working
+margin:
+
+- Weights: parameters × bytes per weight. FP16 is 2, INT8 is 1, 4-bit is ~0.55 with the scaling metadata.
+- KV cache: see the [formula](/hardware/compute-budgeting/) — at long context or high batch it can exceed the weights.
+- Overhead: CUDA context, activations, fragmentation. Add 10–20%.
+
+**For training**, add gradients and optimizer state — about **16 bytes per
+parameter** for standard mixed-precision Adam — plus activations, which scale
+with batch and sequence length.
+
+<Aside type="tip" title="The four numbers worth memorising">
+- **Inference, FP16:** ~2 GB per billion parameters.
+- **Inference, 4-bit:** ~0.6 GB per billion parameters.
+- **LoRA fine-tuning, 4-bit base:** ~1 GB per billion, plus activations.
+- **Full fine-tuning, Adam:** ~16 GB per billion parameters.
+
+A 70B model: 140 GB to serve in FP16, ~42 GB in 4-bit, ~1.1 TB to fully
+fine-tune. Those three numbers put you in three completely different tiers, from
+one consumer card to a multi-node cluster, for the same model.
+</Aside>
+
+## The tiers
+
+<Figure
+  lead="Five tiers, and the memory ceiling that separates each from the next."
+  caption="What each hardware tier can realistically do. Read it by finding the row where your resident-set arithmetic lands, then check the 'breaks here' column, because that is what will actually bite you. The steepest step is from one node to many: inside a node you get NVLink at 900 GB/s or more per GPU, outside you get a network at roughly 50 GB/s per GPU, and that single discontinuity determines which parallelism strategies work. Note that serving and training sit in different tiers for the same model — a 70B you can serve on one card in 4-bit needs a small cluster to fully fine-tune."
+>
+<svg viewBox="0 0 760 460" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Hardware tiers with capabilities and failure modes">
+  <rect class="f-grey" x="30" y="40" width="700" height="26" rx="3"/>
+  <text class="on-fill-sm" x="42" y="58">Tier</text>
+  <text class="on-fill-sm" x="190" y="58">Memory</text>
+  <text class="on-fill-sm" x="290" y="58">Can train</text>
+  <text class="on-fill-sm" x="460" y="58">Can serve</text>
+  <text class="on-fill-sm" x="592" y="58">Breaks here</text>
+
+  <rect class="bx" x="30" y="72" width="700" height="66" rx="3"/>
+  <text class="sm" x="42" y="94">Laptop / Colab T4</text>
+  <text class="xs" x="42" y="112">CPU or 16 GB</text>
+  <text class="xs" x="190" y="94">8–16 GB</text>
+  <text class="xs" x="290" y="94">LoRA up to ~3B;</text>
+  <text class="xs" x="290" y="110">small CNNs, tabular</text>
+  <text class="xs" x="460" y="94">≤8B in 4-bit,</text>
+  <text class="xs" x="460" y="110">short context</text>
+  <text class="xs" x="592" y="94">OOM at any real</text>
+  <text class="xs" x="592" y="110">batch; no NVLink</text>
+
+  <rect class="bx" x="30" y="144" width="700" height="66" rx="3"/>
+  <text class="sm" x="42" y="166">One consumer GPU</text>
+  <text class="xs" x="42" y="184">4090 / 5090</text>
+  <text class="xs" x="190" y="166">24–32 GB</text>
+  <text class="xs" x="290" y="166">QLoRA up to ~34B;</text>
+  <text class="xs" x="290" y="182">full FT up to ~1.5B</text>
+  <text class="xs" x="460" y="166">≤34B in 4-bit;</text>
+  <text class="xs" x="460" y="182">13B in FP16</text>
+  <text class="xs" x="592" y="166">FP32-accum halves</text>
+  <text class="xs" x="592" y="182">tensor throughput</text>
+
+  <rect class="bx" x="30" y="216" width="700" height="66" rx="3"/>
+  <text class="sm" x="42" y="238">Workstation, 2–4 GPUs</text>
+  <text class="xs" x="42" y="256">or 1× RTX PRO 6000</text>
+  <text class="xs" x="190" y="238">96–128 GB</text>
+  <text class="xs" x="290" y="238">Full FT to ~7B;</text>
+  <text class="xs" x="290" y="254">LoRA to 70B</text>
+  <text class="xs" x="460" y="238">70B in 4-bit;</text>
+  <text class="xs" x="460" y="254">34B in FP16</text>
+  <text class="xs" x="592" y="238">PCIe-only comms;</text>
+  <text class="xs" x="592" y="254">power and cooling</text>
+
+  <rect class="bx" x="30" y="288" width="700" height="66" rx="3"/>
+  <text class="sm" x="42" y="310">One 8-GPU node</text>
+  <text class="xs" x="42" y="328">HGX H100 / B200</text>
+  <text class="xs" x="190" y="310">640–1440 GB</text>
+  <text class="xs" x="290" y="310">Full FT to ~70B;</text>
+  <text class="xs" x="290" y="326">pretrain ≤3B</text>
+  <text class="xs" x="460" y="310">400B+ in 4-bit;</text>
+  <text class="xs" x="460" y="326">70B at high batch</text>
+  <text class="xs" x="592" y="310">Single point of</text>
+  <text class="xs" x="592" y="326">failure; no HA</text>
+
+  <rect class="bx" x="30" y="360" width="700" height="66" rx="3"/>
+  <text class="sm" x="42" y="382">Multi-node cluster</text>
+  <text class="xs" x="42" y="400">64–10,000+ GPUs</text>
+  <text class="xs" x="190" y="382">TBs</text>
+  <text class="xs" x="290" y="382">Pretraining at scale</text>
+  <text class="xs" x="460" y="382">Anything, with</text>
+  <text class="xs" x="460" y="398">real throughput</text>
+  <text class="xs" x="592" y="382">Node failures,</text>
+  <text class="xs" x="592" y="398">stragglers, network</text>
+
+  <text class="xs" x="30" y="446">Every row is a different engineering discipline, not the same one with a bigger budget. Crossing a boundary changes what goes wrong.</text>
+</svg>
+</Figure>
+
+<Tier level="mechanics" />
+
+## Consumer versus datacenter, honestly
+
+An RTX 5090 offers 32 GB at 1.79 TB/s for around $2,000. An H100 offers 80 GB at
+3.35 TB/s for around $25,000-plus. The consumer card is dramatically better per
+dollar on both axes. The gap is not marketing, and the reasons it does not close
+are worth knowing precisely.
+
+**What you actually lose:**
+
+- **No NVLink on the 40 and 50 series.** GPU-to-GPU traffic goes over PCIe at 64 GB/s against NVLink's 900 GB/s. Tensor parallelism is effectively off the table; data parallelism with gradient all-reduce still works but the all-reduce is now a substantial fraction of step time.
+- **No ECC memory.** Silent bit flips are rare but nonzero, and a multi-week training run is exactly the situation where "rare" accumulates. For inference, an occasional corrupted token is tolerable; for a long training run it is not.
+- **Half-rate tensor throughput under FP32 accumulation.** GeForce parts run FP16 tensor operations with FP32 accumulation at exactly half the FP16-accumulate rate. PyTorch and cuBLAS default to FP32 accumulation, so a 4090's real-world dense figure is ~165 TFLOP/s, not the 330 implied by the headline.
+- **Licence restrictions.** NVIDIA's driver licence prohibits datacenter deployment of GeForce cards. This is not a technical limit; it is a contractual one, and it is enforced. For a research workstation it is irrelevant. For a product it is not.
+- **Cooling and power in density.** Four 575 W cards in one chassis is a serious thermal and electrical problem — 2.3 kW before the rest of the system, which exceeds a standard 15 A domestic circuit.
+
+**What you keep:** essentially all the software. CUDA, PyTorch, vLLM, the whole
+stack runs unchanged. For single-GPU research, prototyping, and personal
+inference, a consumer card is the correct answer and the price difference is not
+buying you much.
+
+<Aside type="note" title="The middle option people miss">
+The RTX PRO 6000 Blackwell workstation card gives 96 GB of ECC GDDR7 at 1.79 TB/s,
+around 504 dense TFLOP/s with no accumulation penalty, and no datacenter licence
+restriction. It costs several times a 5090 but a fraction of an H100, and 96 GB
+in one card removes an entire class of sharding problems.
+
+For a team that needs to fine-tune 7B–13B models or serve a 70B in 4-bit without
+building a cluster, this tier is frequently the best answer and is routinely
+overlooked in favour of arguing about 4090s versus H100s.
+</Aside>
+
+## Apple Silicon and unified memory
+
+A Mac Studio with 512 GB of unified memory can hold models that need a
+multi-GPU node on the NVIDIA side. That is real and it matters for local
+inference.
+
+The honest limits:
+
+- **Bandwidth is the constraint.** Apple's top configurations reach roughly 800 GB/s. An H100 is 3.35 TB/s and a B200 is 7.7 TB/s. Since decoding is bandwidth-bound, tokens per second scales accordingly.
+- **Compute is far behind** for training. Prefill and any training-like workload are compute-bound and Apple has an order of magnitude less.
+- **The software ecosystem is thinner.** MLX is good and improving; llama.cpp is excellent. But most research code assumes CUDA, and the porting cost is real.
+
+The fair summary: outstanding for local inference of large models at modest speed,
+particularly where memory capacity is the binding constraint. Not a training
+platform.
+
+## AMD, in 2026
+
+ROCm has become genuinely usable. PyTorch works, vLLM works, the major training
+frameworks work. MI300X and MI355X offer more memory per GPU than their NVIDIA
+contemporaries — 192 GB and 288 GB against 80 GB and 180 GB — which is a real
+advantage for serving large models with fewer devices.
+
+The remaining gap is in the long tail: a custom kernel, a niche library, a fused
+operation someone wrote for CUDA five years ago. The 90% case works well; the
+last 10% costs engineering time that is easy to underestimate.
+
+The decision rule that holds up: if your workload is standard transformer
+training or serving through mainstream frameworks, AMD is worth pricing
+seriously. If your work depends on the CUDA long tail, or you cannot afford to
+spend weeks on infrastructure, the switching cost is likely to exceed the saving.
+
+## Renting versus buying
+
+The arithmetic is straightforward and most teams get it wrong in the same
+direction.
+
+A 4× RTX 6000-class workstation costs roughly $30,000 to $40,000 all-in, plus
+power (call it $0.30/hour at 2 kW), plus somewhere to put it, plus your time
+maintaining it. Amortised over three years that is around $1.30 to $1.80 per
+GPU-hour **if fully utilised**.
+
+Renting an H100 costs $3.30 to $4.00 per GPU-hour on-demand from a neocloud, and
+an H100 is meaningfully faster than the card you bought.
+
+**Break-even sits around 8,000 to 10,000 GPU-hours of genuine use** — roughly a
+year of continuous 4-GPU operation. Below that, renting wins outright.
+
+<Aside type="caution" title="The utilisation trap">
+Teams estimate their utilisation at 60–80% and achieve 10–20%. Hardware sits idle
+during data preparation, analysis, writing, meetings, holidays, and the weeks
+between projects. A workstation used four hours a day at full load is at 17%
+utilisation, which puts its effective cost at roughly $8 per GPU-hour — twice the
+rental price for slower hardware.
+
+Buy hardware when you have *measured* sustained utilisation, not when you have
+projected it. And note the non-financial reasons that legitimately favour buying:
+data that cannot leave your premises, latency-sensitive interactive work, and the
+genuine value of not thinking about a meter.
+</Aside>
+
+## Rental market, August 2026
+
+Per-GPU-hour on-demand, from published price pages. Hyperscaler figures are
+instance prices divided by GPU count.
+
+| Provider | H100 SXM | H200 SXM | B200 |
+|---|---|---|---|
+| RunPod | $3.29 | $4.59 | $6.79 |
+| Nebius | $3.85 | $4.50 | $7.15 |
+| Lambda | $3.99 | — | $6.69 |
+| Together AI | $3.99 | $5.99 | $8.19 |
+| CoreWeave | $6.16 | $6.31 | $8.60 |
+| AWS (p5.48xlarge ÷8) | $6.88 | — | ~$14 |
+| GCP (a3-highgpu ÷8) | $11.06 | $10.60 | — |
+
+Three observations. **Neoclouds are 2–3× cheaper than hyperscalers** for raw GPU
+time; you give up managed services, integration and, often, reliability
+guarantees. **Reserved and committed pricing is typically 40–60% below
+on-demand**, which changes the buy-versus-rent calculation substantially for
+predictable workloads. **Spot and preemptible instances run about half of
+on-demand** and are excellent for checkpointed training, useless for serving.
+
+Do not compare dollars per hour. Compare dollars per unit of work: a B200 at
+$6.79 doing 2.3× the throughput of an H100 at $3.29 is slightly better value, not
+twice as expensive.
+
+<Tier level="formal" />
+
+## Matching parallelism to interconnect
+
+Which parallelism strategies are available is a function of your network, not
+your preference. This is the most important structural fact about choosing
+multi-GPU hardware.
+
+| Strategy | Communicates | Volume per step | Needs |
+|---|---|---|---|
+| Data parallel | Once per step | $2N$ bytes (all-reduce of gradients) | Tolerates the network; PCIe is workable at small scale |
+| ZeRO / FSDP | Per layer, both passes | ~$3N$ bytes total | NVLink strongly preferred; usable over fast networks |
+| Tensor parallel | Twice per layer | $2 \cdot b \cdot s \cdot d$ per all-reduce, per layer | NVLink essentially mandatory — never cross node boundaries |
+| Pipeline parallel | Once per stage boundary | $b \cdot s \cdot d$ per micro-batch | Tolerates the network well; introduces bubbles |
+| Expert parallel | Two all-to-alls per MoE layer | Depends on routing | High-bandwidth, low-latency; sensitive to imbalance |
+
+The standard 3D recipe follows directly from that table: **tensor parallelism
+within a node** (over NVLink), **pipeline parallelism across a small number of
+nodes**, **data parallelism across everything else**. Each strategy is placed at
+the interconnect tier whose bandwidth it can afford.
+
+<Aside type="tip" title="What the NVL72 rack actually sells you">
+A GB200 NVL72 puts 72 GPUs in one NVLink domain. That does not merely make things
+faster — it moves the boundary. Tensor parallelism across 72 GPUs becomes viable,
+which changes the achievable batch sizes and the memory-per-model-shard, which
+changes what is trainable at all.
+
+Understood this way, rack-scale systems are not a faster chip. They are a larger
+region in which the expensive boundary does not exist, and that is what the price
+premium buys.
+</Aside>
+
+<Figure
+  lead="The decision, as a sequence of questions with arithmetic answers."
+  caption="Follow the branches with your own numbers. The first two questions — what must be resident, and how many GPU-hours per month you will genuinely use — resolve the majority of cases without any judgement call. The remaining branches are where taste enters, and the annotations note what each choice actually costs you. The one branch people skip is the utilisation check: it is the difference between a workstation that pays for itself and one that is a $35,000 space heater with a 17% duty cycle."
+>
+<svg viewBox="0 0 760 470" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Hardware selection decision tree">
+  <defs>
+    <marker id="ch-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor" opacity="0.6"/>
+    </marker>
+  </defs>
+
+  <rect class="f-blue" x="250" y="30" width="260" height="40" rx="5"/>
+  <text class="on-fill-sm" x="380" y="47" text-anchor="middle">How many GB must be resident?</text>
+  <text class="on-fill-sm" x="380" y="63" text-anchor="middle">weights + optimizer + KV cache + 20%</text>
+
+  <path class="ar" d="M310,72 L180,104" marker-end="url(#ch-a)"/>
+  <path class="ar" d="M380,72 L380,104" marker-end="url(#ch-a)"/>
+  <path class="ar" d="M450,72 L590,104" marker-end="url(#ch-a)"/>
+
+  <rect class="f-green" x="70" y="108" width="220" height="34" rx="4"/>
+  <text class="on-fill-sm" x="180" y="130" text-anchor="middle">under ~30 GB</text>
+
+  <rect class="f-amber" x="300" y="108" width="160" height="34" rx="4"/>
+  <text class="on-fill-sm" x="380" y="130" text-anchor="middle">30–600 GB</text>
+
+  <rect class="f-pink" x="480" y="108" width="220" height="34" rx="4"/>
+  <text class="on-fill-sm" x="590" y="130" text-anchor="middle">over ~600 GB</text>
+
+  <path class="ar" d="M180,144 L180,176" marker-end="url(#ch-a)"/>
+  <path class="ar" d="M380,144 L380,176" marker-end="url(#ch-a)"/>
+  <path class="ar" d="M590,144 L590,176" marker-end="url(#ch-a)"/>
+
+  <rect class="bx" x="70" y="180" width="220" height="56" rx="4"/>
+  <text class="xs" x="82" y="200">One consumer card, 4090/5090.</text>
+  <text class="xs" x="82" y="216">Or 96 GB RTX PRO if you want</text>
+  <text class="xs" x="82" y="230">headroom without sharding.</text>
+
+  <rect class="bx" x="300" y="180" width="160" height="56" rx="4"/>
+  <text class="xs" x="312" y="200">Multi-GPU workstation</text>
+  <text class="xs" x="312" y="216">or one 8-GPU node.</text>
+  <text class="xs" x="312" y="230">Rent this, don't buy it.</text>
+
+  <rect class="bx" x="480" y="180" width="220" height="56" rx="4"/>
+  <text class="xs" x="492" y="200">Multi-node cluster. Budget for</text>
+  <text class="xs" x="492" y="216">network, storage, and the</text>
+  <text class="xs" x="492" y="230">failure-recovery engineering.</text>
+
+  <line class="bx" x1="30" y1="254" x2="730" y2="254" opacity="0.3"/>
+
+  <rect class="f-purple" x="250" y="270" width="260" height="40" rx="5"/>
+  <text class="on-fill-sm" x="380" y="287" text-anchor="middle">GPU-hours per month, measured?</text>
+  <text class="on-fill-sm" x="380" y="303" text-anchor="middle">not projected — measured</text>
+
+  <path class="ar" d="M320,312 L200,344" marker-end="url(#ch-a)"/>
+  <path class="ar" d="M440,312 L560,344" marker-end="url(#ch-a)"/>
+
+  <rect class="bx" x="70" y="348" width="260" height="72" rx="4"/>
+  <text class="sm" x="82" y="370">under ~250 h/month</text>
+  <text class="xs" x="82" y="390">Rent. Break-even against a $35k</text>
+  <text class="xs" x="82" y="406">workstation is 8–10k GPU-hours,</text>
+  <text class="xs" x="82" y="418">about a year of continuous use.</text>
+
+  <rect class="bx" x="430" y="348" width="270" height="72" rx="4"/>
+  <text class="sm" x="442" y="370">sustained, above ~50% duty</text>
+  <text class="xs" x="442" y="390">Buying becomes defensible. Also</text>
+  <text class="xs" x="442" y="406">buy for data-residency constraints</text>
+  <text class="xs" x="442" y="418">or latency-sensitive interactive work.</text>
+
+  <text class="xs" x="30" y="450">Reserved and committed cloud pricing sits 40–60% below on-demand, which moves the break-even further toward renting than most comparisons assume.</text>
+</svg>
+</Figure>
+
+## Storage and data loading
+
+The most commonly under-provisioned component, and the one that produces the most
+baffling symptom: an expensive cluster running at 15% utilisation with no
+apparent bottleneck.
+
+Estimate the demand. A cluster consuming $R$ tokens per second at $B$ bytes per
+token needs $RB$ bytes per second sustained. 64 H100s training a 7B model process
+roughly 600,000 tokens/second; at ~4 bytes per token of tokenized data that is
+2.4 GB/s of continuous read, before any augmentation, shuffling or decompression.
+For image or video work, multiply by one to three orders of magnitude.
+
+Rules that hold up:
+
+- **Local NVMe for the hot dataset.** Network storage for the cold copy. A single NVMe drive delivers 3–7 GB/s; network filesystems vary from excellent to catastrophic.
+- **Pre-tokenize and shard.** Tokenizing on the fly wastes CPU and creates jitter. Store fixed-size shards in a format designed for sequential streaming.
+- **Provision CPU for the dataloader.** A rough guide is 8–16 CPU cores per GPU for text, more for anything requiring decoding. Under-provisioned CPU starves the GPUs and looks exactly like a slow GPU.
+- **Profile the input pipeline separately.** Run the dataloader with the model disabled and measure its standalone throughput. If it cannot saturate the GPUs alone, it certainly will not alongside them.
+
+## What breaks, by scale
+
+<Steps>
+
+1. **One GPU.** Out-of-memory errors, and almost nothing else. Fix by reducing batch size, enabling gradient checkpointing, or quantizing. Failures are immediate and legible.
+
+2. **One node, several GPUs.** Load imbalance and communication overhead. Symptom: 4 GPUs give 3× the throughput, not 4×. Usually the all-reduce, or a dataloader that cannot feed four devices.
+
+3. **A few nodes.** The network becomes visible. Tensor parallelism that worked within a node collapses across nodes. Now you need to think about topology, and about which parallelism axis maps to which interconnect tier.
+
+4. **Tens of nodes.** Stragglers. One slow GPU — thermal throttling, a degraded link, a bad card — sets the pace for a synchronous job. Detection requires per-rank instrumentation; without it the whole cluster simply runs slowly for reasons nobody can name.
+
+5. **Hundreds to thousands of nodes.** Hardware failure becomes routine rather than exceptional. Meta reported 419 unexpected interruptions over 54 days on a 16,384-GPU Llama 3 run — about eight per day, with roughly 78% attributed to hardware. At this scale the engineering problem is not throughput but checkpoint frequency, fast restart, and automated fault detection. Your effective throughput is peak throughput times the fraction of time you are not recovering.
+
+</Steps>
+
+<Tier level="frontier" />
+
+## Where this stands, as of 2026
+
+**Availability is a real constraint, not a footnote.** For much of the past three
+years the question has been what you can obtain rather than what you would
+prefer. Multi-month lead times on current-generation parts and multi-year
+capacity commitments are normal. Plan around the hardware you can actually get.
+
+**Power is becoming the binding constraint on new capacity.** A GB200 NVL72 rack
+exceeds 100 kW and requires liquid cooling. Datacenter grid interconnection
+timelines, not silicon supply, increasingly gate deployment — which has made
+performance per watt a procurement criterion rather than an environmental
+talking point.
+
+**The consumer-to-datacenter gap is widening in capability and narrowing in
+value.** Datacenter parts pull ahead on memory capacity, bandwidth and
+interconnect every generation, while consumer parts remain far better per dollar
+for anything that fits on one card. Both trends are likely to continue, which
+keeps the tier boundaries sharp.
+
+**Inference is where the hardware market is moving.** With reasoning models
+spending thousands of tokens per query, serving compute has grown faster than
+training compute. That favours bandwidth and memory capacity over peak FLOPs, and
+several vendors are designing accordingly.
+
+**Rack-scale is becoming the unit of purchase.** NVL72 and AMD's Helios racks
+sell a communication domain, not a chip. The competitive question is shifting
+from FLOPs per package to how many accelerators can be placed in one
+high-bandwidth region, which is a networking and packaging problem more than a
+process-node one.
+
+## Open problems
+
+<Steps>
+
+1. **Failure tolerance in synchronous training.** Every large run still relies on checkpoint-and-restart. Genuinely elastic training that survives node loss without a global stall exists in research and not in practice.
+
+2. **Cost transparency.** There is no accepted way to compare accelerators on price-per-unit-of-real-work. Every published comparison is either a vendor benchmark or an anecdote.
+
+3. **Heterogeneous clusters.** Mixing GPU generations is common and poorly supported: synchronous training runs at the speed of the slowest device, and the schedulers that would fix this are immature.
+
+4. **Utilisation at the fleet level.** Individual jobs reach 40–55% MFU; fleet-level utilisation across a shared cluster is often far lower, and scheduling research has not kept pace with hardware.
+
+5. **Sizing without running.** Predicting throughput for a given model, parallelism configuration and cluster remains largely empirical. Analytical performance models exist but are not accurate enough to replace a pilot run.
+
+</Steps>
+
+## Practical guidance
+
+- **Do the memory arithmetic first.** It determines your tier and rules out most options in two minutes.
+- **Rent until you have measured sustained utilisation above roughly 50%.** Projected utilisation is not evidence.
+- **For a single researcher, a 24–32 GB consumer card plus rented GPU-hours for the heavy runs is close to optimal** — local iteration is fast and cheap, and you pay for scale only when you need it.
+- **For a small team, one 96 GB workstation card removes more friction than several smaller ones**, because it removes sharding from the equation entirely.
+- **Never buy a cluster before running the workload on a rented one.** Utilisation, dataloader throughput and failure rates are all things you discover by measurement.
+- **Provision storage and CPU alongside GPUs, not afterwards.** The most expensive idle GPU is the one waiting on a dataloader.
+- **Assume 2–3× your ideal compute estimate.** Restarts, failed runs and hyperparameter search are the normal case, not the exception.
+
+## Reading path
+
+Back to [Compute Budgeting](/hardware/compute-budgeting/) for the FLOP and memory
+formulas these decisions rest on, or [Accelerators](/hardware/accelerators/) for
+why bandwidth dominates. For the parallelism strategies referenced throughout,
+[Distributed Training](/systems/distributed-training/). For serving-side sizing,
+[Inference and Serving](/systems/inference/). For the memory-reduction techniques
+that move a workload down a tier, [Fine-Tuning](/training/fine-tuning/).
+
+<Papers />

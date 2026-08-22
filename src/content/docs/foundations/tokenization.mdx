@@ -1,0 +1,698 @@
+---
+title: Tokenization
+description: "How text becomes numbers — BPE, WordPiece, Unigram, byte-level fallback — and why this unglamorous preprocessing step causes arithmetic failures, multilingual unfairness and glitch tokens."
+sidebar:
+  order: 1
+depth: frontier
+readingTime: 35
+papers:
+  - title: "A New Algorithm for Data Compression (original BPE)"
+    authors: "Philip Gage"
+    year: 1994
+    url: "https://dl.acm.org/doi/10.5555/177910.177914"
+  - title: "Japanese and Korean voice search (WordPiece)"
+    authors: "Mike Schuster, Kaisuke Nakajima"
+    year: 2012
+    url: "https://doi.org/10.1109/ICASSP.2012.6289079"
+  - title: "Neural Machine Translation of Rare Words with Subword Units"
+    authors: "Rico Sennrich, Barry Haddow, Alexandra Birch"
+    year: 2015
+    url: "https://arxiv.org/abs/1508.07909"
+  - title: "Google's Neural Machine Translation System: Bridging the Gap between Human and Machine Translation"
+    authors: "Wu, Schuster, Chen, et al."
+    year: 2016
+    url: "https://arxiv.org/abs/1609.08144"
+  - title: "Subword Regularization: Improving Neural Network Translation Models with Multiple Subword Candidates"
+    authors: "Taku Kudo"
+    year: 2018
+    url: "https://arxiv.org/abs/1804.10959"
+  - title: "SentencePiece: A simple and language independent subword tokenizer and detokenizer for Neural Text Processing"
+    authors: "Taku Kudo, John Richardson"
+    year: 2018
+    url: "https://arxiv.org/abs/1808.06226"
+  - title: "Language Models are Unsupervised Multitask Learners (GPT-2, byte-level BPE)"
+    authors: "Radford, Wu, Child, Luan, Amodei, Sutskever"
+    year: 2019
+    url: "https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf"
+  - title: "Between Words and Characters: A Brief History of Open-Vocabulary Modeling and Tokenization in NLP"
+    authors: "Mielke et al."
+    year: 2021
+    url: "https://arxiv.org/abs/2112.10508"
+  - title: "CANINE: Pre-training an Efficient Tokenization-Free Encoder for Language Representation"
+    authors: "Clark, Garrette, Turc, Wieting"
+    year: 2021
+    url: "https://arxiv.org/abs/2103.06874"
+  - title: "ByT5: Towards a token-free future with pre-trained byte-to-byte models"
+    authors: "Xue, Barua, Constant, et al."
+    year: 2021
+    url: "https://arxiv.org/abs/2105.13626"
+  - title: "MEGABYTE: Predicting Million-byte Sequences with Multiscale Transformers"
+    authors: "Yu, Simig, Flaherty, Aghajanyan, Zettlemoyer, Lewis"
+    year: 2023
+    url: "https://arxiv.org/abs/2305.07185"
+  - title: "Language Model Tokenizers Introduce Unfairness Between Languages"
+    authors: "Petrov, La Malfa, Torr, Bibi"
+    year: 2023
+    url: "https://arxiv.org/abs/2305.15425"
+  - title: "Tokenization Is More Than Compression"
+    authors: "Schmidt, Reddy, Zhang, Alameddine, Uzan, Pinter, Tanner"
+    year: 2024
+    url: "https://arxiv.org/abs/2402.18376"
+  - title: "Fishing for Magikarp: Automatically Detecting Under-trained Tokens in Large Language Models"
+    authors: "Sander Land, Max Bartolo"
+    year: 2024
+    url: "https://arxiv.org/abs/2405.05417"
+  - title: "Byte Latent Transformer: Patches Scale Better Than Tokens"
+    authors: "Pagnoni, Pasunuru, Rodriguez, et al."
+    year: 2024
+    url: "https://arxiv.org/abs/2412.09871"
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps, Tabs, TabItem, Card } from '@astrojs/starlight/components';
+
+<Abstract>
+A language model never sees text. It sees integers, and something upstream
+decided which integers. That decision is made once, before training, by a
+compression algorithm from 1994 that knows nothing about language — and it
+propagates into everything downstream: why models miscount letters, why some
+languages cost four times more to serve, why certain strings make models
+behave bizarrely, and why "how many r's in strawberry" was ever hard.
+</Abstract>
+
+<KeyPoints>
+
+- **The tokenizer is frozen before the model exists.** It is fitted on a corpus, its vocabulary is fixed, and every downstream property inherits from it. You cannot fix a tokenization problem by training longer.
+- **BPE is a compression algorithm, not a linguistic one.** It merges frequent adjacent pairs. Nothing in it knows about morphemes, words or meaning — that it produces roughly morpheme-like units for English is a side effect of English statistics.
+- **Models cannot see inside tokens.** `strawberry` may be three tokens, none of which is a letter. Asking how many r's it contains is asking about information the model never received, and this explains a whole family of "surprisingly stupid" failures.
+- **Tokenizers are unfair across languages, measurably.** The same sentence can take 1.5× to over 4× more tokens in some languages than in English — which directly multiplies cost, latency, and effective context length for those speakers.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## The problem
+
+Neural networks do arithmetic on numbers. Text is a sequence of characters. Something has to bridge that, and there are only three real options.
+
+<Steps>
+
+1. **One number per word.** Small sequences, and the vocabulary is unbounded —
+   there are always new words, names, typos and compounds. Anything unseen becomes
+   `<UNK>` and its information is destroyed.
+
+2. **One number per character.** Vocabulary of ~100, nothing is ever unknown, and
+   sequences become enormously long. Since [attention is
+   quadratic](/architectures/transformers/), long sequences are expensive.
+
+3. **One number per frequent chunk.** Common words stay whole; rare words split
+   into pieces. Bounded vocabulary, moderate sequence length, nothing unrepresentable.
+
+</Steps>
+
+Option 3 is **subword tokenization**, and essentially every modern model uses it.
+
+## How the pieces are chosen
+
+The dominant algorithm is **byte-pair encoding**, and it is startlingly simple.
+
+Start with every character as its own token. Then repeat: **find the most frequent
+adjacent pair in your corpus, and merge it into a single new token.** Do that
+50,000 times. The merges you performed, in order, are your tokenizer.
+
+That is the whole algorithm. Notice what is absent — no grammar, no dictionary, no
+notion of a word or a morpheme. It is pure frequency counting, and it was invented
+in 1994 as a **data compression** algorithm, then repurposed for NLP two decades
+later.
+
+<Aside type="tip" title="Why it produces sensible-looking pieces anyway">
+Frequent character sequences in English *are* mostly morphemes — `ing`, `tion`,
+`un`, `re` recur constantly because English builds words from them. So BPE
+rediscovers morphology by counting, without representing it. That is elegant and it
+is also why the pieces get much worse for languages whose statistics differ.
+</Aside>
+
+## What this costs you
+
+**Models cannot see inside a token.** If `berry` is one token, the model receives
+one integer. The letters are not in there. Asking it to count the r's in
+`strawberry` is asking about information that was discarded before the model saw
+anything.
+
+This is not a reasoning failure. It is a **representation** failure, and it
+explains a cluster of otherwise baffling behaviours: character counting, reversing
+strings, rhyming, and some arithmetic.
+
+**Numbers tokenize badly.** Depending on the tokenizer, `1234` might be `1234`, or
+`123|4`, or `12|34`. The digit grouping is inconsistent and does not align with
+place value, so the model must learn arithmetic across pieces that do not respect
+the structure of arithmetic. Modern tokenizers often force single-digit splitting
+for exactly this reason.
+
+**Some languages cost far more.** The tokenizer was fitted on a corpus that was
+mostly English. A language poorly represented in that corpus gets split into more,
+smaller pieces — so the same meaning costs more tokens, more money, more latency,
+and consumes more of the context window.
+
+<Tier level="mechanics" />
+
+## The three algorithms
+
+<Figure
+  lead="BPE builds up; Unigram prunes down."
+  caption="BPE starts from characters and greedily merges the most frequent adjacent pair, recording the merge order as the tokenizer. WordPiece does the same but scores candidate merges by likelihood gain rather than raw frequency, which prefers pairs that are informative rather than merely common. Unigram inverts the whole procedure: start with a large candidate vocabulary and iteratively remove the pieces whose deletion costs the least likelihood. The direction matters — Unigram ends with a probabilistic model over segmentations, so it can score alternatives and sample among them, which BPE cannot."
+>
+<svg viewBox="0 0 760 340" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="BPE merging upward versus Unigram pruning downward">
+  <defs>
+    <marker id="tk1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <text class="lb" x="180" y="20" text-anchor="middle">BPE — bottom-up merging</text>
+
+  <g>
+    <rect class="f-blue" x="40" y="34" width="26" height="24" rx="3"/>
+    <text class="xs" x="53" y="51" text-anchor="middle">l</text>
+    <rect class="f-blue" x="70" y="34" width="26" height="24" rx="3"/>
+    <text class="xs" x="83" y="51" text-anchor="middle">o</text>
+    <rect class="f-blue" x="100" y="34" width="26" height="24" rx="3"/>
+    <text class="xs" x="113" y="51" text-anchor="middle">w</text>
+    <rect class="f-blue" x="130" y="34" width="26" height="24" rx="3"/>
+    <text class="xs" x="143" y="51" text-anchor="middle">e</text>
+    <rect class="f-blue" x="160" y="34" width="26" height="24" rx="3"/>
+    <text class="xs" x="173" y="51" text-anchor="middle">s</text>
+    <rect class="f-blue" x="190" y="34" width="26" height="24" rx="3"/>
+    <text class="xs" x="203" y="51" text-anchor="middle">t</text>
+  </g>
+  <text class="xs" x="240" y="51">every character is a token</text>
+
+  <path class="ar" d="M128,64 L128,80" marker-end="url(#tk1)"/>
+  <text class="xs" x="200" y="76">merge most frequent pair: (e, s)</text>
+
+  <g>
+    <rect class="f-blue" x="40" y="86" width="26" height="24" rx="3"/>
+    <text class="xs" x="53" y="103" text-anchor="middle">l</text>
+    <rect class="f-blue" x="70" y="86" width="26" height="24" rx="3"/>
+    <text class="xs" x="83" y="103" text-anchor="middle">o</text>
+    <rect class="f-blue" x="100" y="86" width="26" height="24" rx="3"/>
+    <text class="xs" x="113" y="103" text-anchor="middle">w</text>
+    <rect class="f-green" x="130" y="86" width="44" height="24" rx="3"/>
+    <text class="xs" x="152" y="103" text-anchor="middle">es</text>
+    <rect class="f-blue" x="178" y="86" width="26" height="24" rx="3"/>
+    <text class="xs" x="191" y="103" text-anchor="middle">t</text>
+  </g>
+
+  <path class="ar" d="M128,116 L128,132" marker-end="url(#tk1)"/>
+  <text class="xs" x="200" y="128">merge (es, t)</text>
+
+  <g>
+    <rect class="f-blue" x="40" y="138" width="26" height="24" rx="3"/>
+    <text class="xs" x="53" y="155" text-anchor="middle">l</text>
+    <rect class="f-blue" x="70" y="138" width="26" height="24" rx="3"/>
+    <text class="xs" x="83" y="155" text-anchor="middle">o</text>
+    <rect class="f-blue" x="100" y="138" width="26" height="24" rx="3"/>
+    <text class="xs" x="113" y="155" text-anchor="middle">w</text>
+    <rect class="f-green" x="130" y="138" width="56" height="24" rx="3"/>
+    <text class="xs" x="158" y="155" text-anchor="middle">est</text>
+  </g>
+
+  <path class="ar" d="M128,168 L128,184" marker-end="url(#tk1)"/>
+  <g>
+    <rect class="f-amber" x="40" y="190" width="66" height="24" rx="3"/>
+    <text class="xs" x="73" y="207" text-anchor="middle">low</text>
+    <rect class="f-green" x="110" y="190" width="56" height="24" rx="3"/>
+    <text class="xs" x="138" y="207" text-anchor="middle">est</text>
+  </g>
+  <text class="xs" x="200" y="207">after 50,000 merges</text>
+
+  <line class="bx" x1="300" y1="14" x2="300" y2="240" opacity="0.3"/>
+
+  <text class="lb" x="530" y="20" text-anchor="middle">Unigram — top-down pruning</text>
+
+  <rect class="f-purple" x="340" y="34" width="380" height="30" rx="4" opacity="0.6"/>
+  <text class="on-fill-sm" x="530" y="54" text-anchor="middle">start: a large candidate vocabulary (all frequent substrings)</text>
+
+  <path class="ar" d="M530,68 L530,86" marker-end="url(#tk1)"/>
+  <rect class="f-purple" x="340" y="90" width="380" height="30" rx="4" opacity="0.45"/>
+  <text class="on-fill-sm" x="530" y="110" text-anchor="middle">remove the pieces whose deletion costs least likelihood</text>
+
+  <path class="ar" d="M530,124 L530,142" marker-end="url(#tk1)"/>
+  <rect class="f-purple" x="340" y="146" width="380" height="30" rx="4" opacity="0.3"/>
+  <text class="on-fill-sm" x="530" y="166" text-anchor="middle">repeat until the target size is reached</text>
+
+  <path class="ar" d="M530,180 L530,196" marker-end="url(#tk1)"/>
+  <rect class="f-green" x="340" y="200" width="380" height="34" rx="4"/>
+  <text class="on-fill-sm" x="530" y="215" text-anchor="middle">result: a probability over each piece</text>
+  <text class="xs" x="530" y="229" text-anchor="middle">→ can score and SAMPLE alternative segmentations</text>
+
+  <line class="bx" x1="40" y1="256" x2="720" y2="256" opacity="0.3"/>
+  <rect class="f-pink" x="40" y="266" width="680" height="60" rx="5" opacity="0.45"/>
+  <text class="on-fill-sm" x="56" y="288">BPE's segmentation is deterministic: apply the merges in learned order.</text>
+  <text class="xs" x="56" y="308">Unigram's is probabilistic, which enables subword regularisation — sampling different splits during</text>
+  <text class="xs" x="56" y="322">training as data augmentation. That is a capability BPE structurally cannot offer.</text>
+</svg>
+</Figure>
+
+<Tabs>
+<TabItem label="BPE">
+
+<Steps>
+
+1. Split the corpus into characters.
+2. Count every adjacent pair.
+3. Merge the most frequent pair into a new symbol; record the merge.
+4. Repeat until you reach the target vocabulary size.
+
+</Steps>
+
+**Encoding** applies the recorded merges in the same order — deterministic and
+fast.
+
+**Used by**: GPT-2 onward, Llama, most open models.
+
+**Its known weakness** is that greedy frequency is a poor proxy for usefulness.
+BPE will happily merge across a morpheme boundary because the pair is common, and
+the merge order is a hard commitment made once.
+
+</TabItem>
+<TabItem label="WordPiece">
+
+Same greedy structure, different scoring. Instead of raw frequency, pick the pair
+maximising
+
+$$
+\frac{P(\text{merged})}{P(\text{first})\,P(\text{second})}
+$$
+
+which is the **pointwise mutual information** between the two pieces.
+
+**What this changes.** Raw frequency favours pairs where either half is itself
+common. PMI favours pairs that co-occur *more than chance would predict* — pieces
+that genuinely belong together. `th` is extremely frequent and not especially
+informative; PMI down-weights it relative to a rarer but more cohesive pair.
+
+**Used by**: BERT, DistilBERT, and the encoder-only family generally.
+
+</TabItem>
+<TabItem label="Unigram">
+
+Inverts the procedure. Start with a large candidate vocabulary, define a
+probabilistic model over segmentations, and **iteratively remove** the pieces whose
+deletion loses the least likelihood.
+
+**What the inversion buys.** You end with $p(\text{piece})$ for every piece, so a
+given string has many possible segmentations, each with a probability. You can find
+the best one by Viterbi — or **sample** among them.
+
+That sampling is **subword regularisation**: use a different segmentation of the
+same text on each training epoch. It is data augmentation for text, it measurably
+improves robustness, and BPE cannot do it because its segmentation is fixed.
+
+**Used by**: T5, ALBERT, XLNet, and multilingual models generally.
+
+</TabItem>
+<TabItem label="SentencePiece">
+
+Not an algorithm — an **implementation** that runs BPE or Unigram, and the thing
+that made tokenization language-agnostic.
+
+**The key design choice**: treat the input as a raw stream including spaces, with
+the space encoded as a visible character (`▁`). Previous tokenizers pre-split on
+whitespace, which assumes the language *has* whitespace-delimited words. Japanese,
+Chinese and Thai do not.
+
+The consequence is that detokenization becomes exactly reversible — concatenate the
+pieces and replace `▁` with a space. No language-specific rules, no lossy
+round-trip.
+
+</TabItem>
+</Tabs>
+
+## Byte-level fallback
+
+What happens when text contains a character the tokenizer never saw — an unusual
+emoji, a rare script, corrupted bytes?
+
+**The old answer** was `<UNK>`, which destroys the information irrecoverably.
+
+**GPT-2's answer** was byte-level BPE: run BPE over **raw UTF-8 bytes** rather than
+Unicode characters. Since there are only 256 possible bytes and all of them are in
+the base vocabulary, *every possible string* is representable. There is no
+out-of-vocabulary case, by construction.
+
+**The cost.** A character outside the tokenizer's training distribution splits into
+its individual UTF-8 bytes — up to four tokens for one character, none of which is
+meaningful on its own. So coverage is universal and *efficiency* is not.
+
+<Aside type="danger" title="This is where multilingual unfairness comes from">
+Petrov et al. measured tokenized length for the same content across languages and
+found ratios exceeding **4×** relative to English for some languages, with a long
+tail of worse cases.
+
+That number is not abstract. API pricing is per token, latency scales with tokens,
+and context windows are measured in tokens. **A speaker of a poorly-tokenized
+language pays several times more for the same conversation and gets a fraction of
+the effective context.** It is a design decision made once, at tokenizer-fitting
+time, that produces a persistent cost asymmetry between language communities.
+</Aside>
+
+## Glitch tokens
+
+A genuinely strange failure mode, and instructive about how tokenizers and models
+interact.
+
+The tokenizer is fitted on one corpus; the model is trained on another. If a string
+was frequent enough in the *tokenizer's* corpus to earn a token, but essentially
+absent from the *model's* training data, that token's embedding is **barely
+trained** — it sits wherever initialisation put it.
+
+Feed such a token to the model and behaviour becomes erratic: refusal to repeat it,
+hallucination, evasion, or unrelated output. The `SolidGoldMagikarp` case (a Reddit
+username that entered a tokenizer's corpus via scraped data) became the canonical
+example.
+
+Land & Bartolo turned this into a detection method — under-trained tokens can be
+found automatically by examining embedding statistics, without needing to discover
+them by accident. The general lesson: **a mismatch between tokenizer corpus and
+model corpus leaves detectable dead weight in the vocabulary.**
+
+<Tier level="formal" />
+
+## BPE, formally
+
+Let $\mathcal{V}_0$ be the set of base symbols and $C$ the corpus as sequences over
+$\mathcal{V}_0$. At each step,
+
+$$
+(a, b)^{\star} = \arg\max_{(a,b)}\ \operatorname{count}_C(ab),
+$$
+
+$$
+\mathcal{V}_{t+1} = \mathcal{V}_t \cup \{ab\}, \qquad C \leftarrow C[ab / (a,b)],
+$$
+
+repeated $k$ times for target vocabulary $|\mathcal{V}_0| + k$.
+
+**Complexity.** Naively, recounting all pairs each step is $O(N)$ for corpus length
+$N$, giving $O(kN)$. The standard implementation maintains a priority queue over
+pair counts and updates only the counts affected by the merge, which is
+$O(N + k\log N)$ in practice — this is why fitting a tokenizer on a large corpus is
+minutes rather than hours.
+
+**Greedy, therefore not optimal.** BPE maximises the *immediate* count reduction at
+each step, and the resulting vocabulary is not the one minimising total encoded
+length for its size. Finding that vocabulary is combinatorial, and nobody does it.
+
+**Encoding is a different algorithm from training.** Training learns an ordered
+merge list; encoding applies it. Since the merges are applied in learned order,
+BPE encoding is deterministic and there is exactly one segmentation per string.
+
+## WordPiece's scoring
+
+$$
+\text{score}(a,b) = \frac{P(ab)}{P(a)\,P(b)} = \frac{\operatorname{count}(ab)/N}{\big(\operatorname{count}(a)/N\big)\big(\operatorname{count}(b)/N\big)}.
+$$
+
+Taking logs, this is exactly pointwise mutual information:
+
+$$
+\operatorname{PMI}(a,b) = \log\frac{P(a,b)}{P(a)P(b)}.
+$$
+
+**Why this is the right correction.** Under a unigram model, merging $a$ and $b$
+into one symbol changes the corpus log-likelihood by approximately
+$\operatorname{count}(ab)\cdot\operatorname{PMI}(a,b)$ — the merge is worth doing in
+proportion to both how often the pair occurs *and* how much more often than
+independence predicts. Frequency alone captures only the first factor.
+
+## The Unigram language model
+
+Model a segmentation $\mathbf{x} = (x_1,\dots,x_M)$ as independent draws:
+
+$$
+P(\mathbf{x}) = \prod_{i=1}^{M} p(x_i), \qquad \sum_{x\in\mathcal{V}} p(x) = 1 .
+$$
+
+The probability of a *string* $X$ marginalises over all valid segmentations:
+
+$$
+P(X) = \sum_{\mathbf{x}\in S(X)} P(\mathbf{x}),
+$$
+
+and the best segmentation is
+
+$$
+\mathbf{x}^{\star} = \arg\max_{\mathbf{x}\in S(X)} P(\mathbf{x}),
+$$
+
+found by **Viterbi** in $O(|X| \cdot L)$ for maximum piece length $L$.
+
+**Training** is EM over a fixed candidate set:
+
+<Steps>
+
+1. **E-step.** Compute expected counts of each piece via the forward-backward
+   algorithm over segmentation lattices.
+2. **M-step.** Set $p(x)$ proportional to its expected count.
+3. **Prune.** For each piece, compute the **loss** $\ell_x$ — the drop in total
+   corpus log-likelihood if $x$ were removed and its occurrences re-segmented.
+   Drop the bottom fraction by $\ell_x$.
+4. Repeat until the target vocabulary size.
+
+</Steps>
+
+**Subword regularisation** samples from the segmentation posterior instead of
+taking the Viterbi path, with a temperature $\alpha$:
+
+$$
+P_\alpha(\mathbf{x}\mid X) \;\propto\; P(\mathbf{x})^{\alpha}.
+$$
+
+$\alpha \to \infty$ recovers Viterbi (deterministic); $\alpha = 1$ samples from the
+true posterior; $\alpha \to 0$ approaches uniform over segmentations. Kudo's result
+is that intermediate $\alpha$ improves translation quality, particularly in
+low-resource settings — the augmentation matters most when data is scarce.
+
+**BPE-dropout** is the analogous trick for BPE: randomly skip merges during
+encoding with probability $p$. Cruder, and it recovers some of the benefit.
+
+## Fertility, and measuring a tokenizer
+
+The standard metric is **fertility** — tokens per word:
+
+$$
+F = \frac{\text{number of tokens}}{\text{number of words}} .
+$$
+
+$F = 1$ means every word is one token. English on a modern tokenizer sits around
+1.3; poorly-supported languages can exceed 4.
+
+**Why compression is not the whole story.** It is tempting to treat lower fertility
+as strictly better — fewer tokens, cheaper inference. Schmidt et al. tested this
+directly and found compression correlates with downstream performance only weakly.
+A tokenizer can compress well by merging across morpheme boundaries, producing
+pieces that are efficient and semantically incoherent.
+
+**What else matters**, empirically: alignment of token boundaries with morpheme
+boundaries, consistency of a given word's segmentation across contexts, and even
+distribution of token frequencies (a vocabulary where a few tokens dominate wastes
+capacity).
+
+## Vocabulary size, as a trade-off
+
+Let $V$ be vocabulary size, $d$ the model dimension, $L(V)$ the expected sequence
+length. Two costs move in opposite directions:
+
+$$
+\underbrace{\text{embedding + unembedding params} = 2Vd}_{\text{grows with } V}
+\qquad
+\underbrace{\text{attention cost} \propto L(V)^2}_{\text{shrinks with } V}
+$$
+
+Larger $V$ means shorter sequences (cheaper attention, more content per context
+window) and more parameters spent on the vocabulary — parameters that see very
+sparse gradients, since rare tokens appear rarely.
+
+**The empirical sweet spot** has moved upward over time: 30k–50k was standard
+around 2019, and 100k–260k is common now. The driver is multilinguality — covering
+many scripts requires more pieces — plus the observation that the softmax over $V$
+is a small share of total compute in a large model.
+
+**The sparse-gradient problem is real.** A token appearing once per billion tokens
+receives essentially no gradient signal, and its embedding stays near
+initialisation. That is precisely the glitch-token mechanism, viewed from the
+optimisation side.
+
+<Figure
+  lead="The model receives integers, and the letters are gone."
+  caption="The failure that made 'how many r's in strawberry' famous is not a reasoning failure — it is a perception failure, and the information was destroyed one step before the model. Top: the word arrives as three integers, and nothing in the model's input encodes that token 1911 contains the letters s-t-r-a-w. Bottom: the same mechanism explains why arithmetic is hard. Digit groupings differ between operands and do not respect place value, so the model must do addition over pieces whose boundaries are adversarial to the structure of addition. The fix is a tokenizer constraint — force single-digit tokens — not a bigger model."
+>
+<svg viewBox="0 0 760 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Tokenization destroying character information and misaligning digits">
+  <defs>
+    <marker id="tk2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <text class="lb" x="14" y="20">Character counting</text>
+
+  <rect class="f-grey" x="30" y="34" width="180" height="32" rx="4"/>
+  <text class="on-fill-sm" x="120" y="55" text-anchor="middle">"strawberry"</text>
+  <path class="ar" d="M214,50 L248,50" marker-end="url(#tk2)"/>
+  <text class="xs" x="231" y="42" text-anchor="middle">tokenize</text>
+
+  <rect class="f-blue" x="254" y="34" width="72" height="32" rx="4"/>
+  <text class="on-fill-sm" x="290" y="55" text-anchor="middle">straw</text>
+  <rect class="f-blue" x="330" y="34" width="60" height="32" rx="4"/>
+  <text class="on-fill-sm" x="360" y="55" text-anchor="middle">ber</text>
+  <rect class="f-blue" x="394" y="34" width="52" height="32" rx="4"/>
+  <text class="on-fill-sm" x="420" y="55" text-anchor="middle">ry</text>
+
+  <path class="ar" d="M350,72 L350,92" marker-end="url(#tk2)"/>
+  <rect class="f-pink" x="254" y="96" width="192" height="32" rx="4"/>
+  <text class="on-fill-sm" x="350" y="117" text-anchor="middle">[ 1911 , 19772 , 894 ]</text>
+  <text class="xs" x="480" y="106">this is ALL the model receives</text>
+  <text class="xs" x="480" y="122">— no letters anywhere in it</text>
+
+  <text class="xs" x="30" y="150">"How many r's?" asks about information discarded before the model existed.</text>
+
+  <line class="bx" x1="14" y1="168" x2="746" y2="168" opacity="0.3"/>
+
+  <text class="lb" x="14" y="192">Arithmetic</text>
+
+  <text class="xs" x="30" y="216">1234 →</text>
+  <rect class="f-amber" x="86" y="202" width="70" height="26" rx="3"/>
+  <text class="xs" x="121" y="219" text-anchor="middle">123</text>
+  <rect class="f-amber" x="160" y="202" width="34" height="26" rx="3"/>
+  <text class="xs" x="177" y="219" text-anchor="middle">4</text>
+
+  <text class="xs" x="30" y="254">5678 →</text>
+  <rect class="f-green" x="86" y="240" width="52" height="26" rx="3"/>
+  <text class="xs" x="112" y="257" text-anchor="middle">56</text>
+  <rect class="f-green" x="142" y="240" width="52" height="26" rx="3"/>
+  <text class="xs" x="168" y="257" text-anchor="middle">78</text>
+
+  <path class="dash" d="M121,232 L112,236" opacity="0.7"/>
+  <path class="dash" d="M177,232 L168,236" opacity="0.7"/>
+  <text class="xs" x="212" y="220">groupings differ between operands</text>
+  <text class="xs" x="212" y="240">and align with no place value —</text>
+  <text class="xs" x="212" y="260">the structure fights the arithmetic</text>
+
+  <rect class="f-green" x="480" y="200" width="256" height="68" rx="5" opacity="0.55"/>
+  <text class="on-fill-sm" x="496" y="222">The fix: force one token per digit</text>
+  <text class="xs" x="496" y="242">A tokenizer constraint, not a model change.</text>
+  <text class="xs" x="496" y="258">Several modern tokenizers now do this.</text>
+
+  <line class="bx" x1="14" y1="286" x2="746" y2="286" opacity="0.3"/>
+  <text class="xs" x="14" y="308">A cluster of "surprisingly stupid" model behaviours — counting, reversing, rhyming, arithmetic — trace to this one preprocessing decision.</text>
+</svg>
+</Figure>
+
+## Why arithmetic is hard
+
+Consider adding two numbers. Place value requires aligning digits by position. If
+the tokenizer produces
+
+$$
+1234 \to [\,\texttt{123},\ \texttt{4}\,], \qquad 5678 \to [\,\texttt{56},\ \texttt{78}\,],
+$$
+
+the model must recover digit positions from tokens whose boundaries do not
+correspond to any place value, and the grouping differs between the two operands.
+The information is present but the structure is adversarial.
+
+**The fix is a tokenizer constraint**, not a modelling one: force each digit to be
+its own token. Several modern tokenizers do this explicitly, and arithmetic
+performance improves measurably. Note what this means — a persistent "reasoning"
+weakness was substantially a preprocessing bug.
+
+**The same argument covers character-level tasks.** Counting letters, reversing
+strings, and detecting rhymes all require sub-token information. The model can
+sometimes reconstruct it from context (it has seen spellings discussed in text) but
+it is inference, not perception.
+
+<Tier level="frontier" />
+
+## Where this stands, as of 2026
+
+**Tokenizer-free models exist and have not displaced subwords.** ByT5 operates on
+raw bytes and is genuinely more robust to noise, misspellings and unseen scripts —
+at a substantial compute cost, because byte sequences are several times longer and
+attention is quadratic.
+
+**Hierarchical byte models are the serious attempt.** MEGABYTE splits the sequence
+into patches, runs a large model over patches and a small one within them,
+recovering most of the efficiency. **Byte Latent Transformer** (2024) goes further:
+patch boundaries are determined **dynamically by the entropy of a small byte-level
+model** — allocating more compute where the text is unpredictable and less where it
+is not. That is a genuinely different idea from a fixed vocabulary, and its scaling
+results are competitive with BPE-based models at matched compute.
+
+**Whether tokenization survives is a live question.** The argument for removal is
+that every problem on this page is a tokenizer artefact. The argument against is
+that fixed vocabularies are enormously efficient and the efficiency gap has not
+closed. As of 2026 production models are overwhelmingly still subword-based.
+
+**Multilingual unfairness is acknowledged and partly addressed.** Newer tokenizers
+are fitted on more balanced corpora and are measurably fairer than GPT-2-era ones.
+The asymmetry has narrowed and has not disappeared, and it is now standard to report
+fertility across languages rather than only aggregate compression.
+
+## Open problems
+
+- **No principled way to choose vocabulary size.** It is swept. The interaction with
+  model size, data volume and language coverage is not characterised.
+
+- **Tokenizers cannot be changed after training.** Improving the tokenizer means
+  retraining from scratch, so a model is permanently stuck with a decision made
+  before it existed. Vocabulary-transfer methods exist and are lossy.
+
+- **Compression is a poor objective and we keep optimising it.** Schmidt et al.
+  showed the correlation with downstream quality is weak, and no better fitting
+  objective has replaced it.
+
+- **Domain mismatch.** A tokenizer fitted on web text handles code, mathematics and
+  protein sequences badly. Domain-specific tokenizers help and fragment the
+  ecosystem.
+
+- **Under-trained tokens are detectable and not routinely audited.** The tooling
+  exists; checking for them is not standard practice before release.
+
+## Practical guidance
+
+<Card title="Working with tokenizers" icon="setting">
+**Always inspect the actual tokenization** of representative inputs before debugging
+model behaviour. Many "the model can't do X" reports dissolve on looking at the
+token IDs.
+
+**Check fertility on your domain.** If your text tokenizes at 3× the tokenizer's
+design point, your costs and effective context are 3× worse than the headline
+numbers suggest.
+
+**For arithmetic-heavy work**, prefer a model whose tokenizer splits digits
+individually. This is checkable in one line.
+
+**Never assume token count equals word count** for pricing, context budgeting or
+truncation logic. Measure it.
+
+**If you fine-tune on a new domain**, the tokenizer is unchanged — added vocabulary
+requires embedding surgery, and new tokens start untrained.
+</Card>
+
+## Reading path
+
+1. **Sennrich et al. (2015)** — BPE for NMT. Short, and the algorithm is two pages.
+2. **Kudo (2018), Subword Regularization** — for the Unigram model and why a
+   probabilistic segmentation is worth having.
+3. **Petrov et al. (2023)** — the multilingual measurements. Concrete, and it
+   reframes tokenization as a fairness question rather than an engineering detail.
+4. **Schmidt et al. (2024)** — the argument that compression is the wrong objective.
+5. **Pagnoni et al. (2024), Byte Latent Transformer** — the strongest current case
+   that fixed vocabularies are avoidable.
+
+<Papers papers={frontmatter.papers} />

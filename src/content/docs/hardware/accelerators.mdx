@@ -1,0 +1,538 @@
+---
+title: Accelerators and the Memory Hierarchy
+description: "What a GPU actually is, why memory bandwidth rather than FLOPs decides most real workloads, and how to read a vendor spec sheet without being misled by it."
+sidebar:
+  order: 1
+depth: frontier
+readingTime: 38
+prereqs:
+  - label: "Backpropagation"
+    slug: "foundations/backpropagation"
+papers:
+  - title: "Roofline: An Insightful Visual Performance Model for Multicore Architectures"
+    authors: "Samuel Williams, Andrew Waterman, David Patterson"
+    year: 2009
+    url: "https://dl.acm.org/doi/10.1145/1498765.1498785"
+  - title: "In-Datacenter Performance Analysis of a Tensor Processing Unit"
+    authors: "Norman P. Jouppi et al."
+    year: 2017
+    url: "https://arxiv.org/abs/1704.04760"
+  - title: "TPU v4: An Optically Reconfigurable Supercomputer for Machine Learning with Hardware Support for Embeddings"
+    authors: "Norman P. Jouppi et al."
+    year: 2023
+    url: "https://arxiv.org/abs/2304.01433"
+  - title: "FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness"
+    authors: "Tri Dao, Daniel Y. Fu, Stefano Ermon, Atri Rudra, Christopher Ré"
+    year: 2022
+    url: "https://arxiv.org/abs/2205.14135"
+  - title: "Mixed Precision Training"
+    authors: "Paulius Micikevicius et al."
+    year: 2017
+    url: "https://arxiv.org/abs/1710.03740"
+  - title: "FP8 Formats for Deep Learning"
+    authors: "Paulius Micikevicius et al."
+    year: 2022
+    url: "https://arxiv.org/abs/2209.05433"
+  - title: "A Study of BFLOAT16 for Deep Learning Training"
+    authors: "Dhiraj Kalamkar et al."
+    year: 2019
+    url: "https://arxiv.org/abs/1905.12322"
+  - title: "The Case for Co-Designing Model Architectures with Hardware"
+    authors: "Quentin Anthony et al."
+    year: 2024
+    url: "https://arxiv.org/abs/2401.14489"
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+<Abstract>
+Almost everyone shopping for AI hardware compares the wrong number. Peak FLOPs is
+the figure on the box, but the overwhelming majority of deep-learning kernels
+finish long before the arithmetic units are saturated, because they are waiting
+on memory. This page builds the mental model that makes hardware decisions
+predictable: a small number of bytes-per-second and FLOPs-per-second figures, one
+ratio that combines them, and a set of honest caveats about how vendors report
+all three.
+</Abstract>
+
+<KeyPoints>
+
+- **Bandwidth, not FLOPs, is the scarce resource.** An H100 can do about 990 dense BF16 TFLOP/s and read about 3.35 TB/s. That is roughly 300 FLOPs per byte. Any kernel doing less arithmetic per byte than that is memory-bound, and most are.
+- **Arithmetic intensity is the one number to compute.** FLOPs divided by bytes moved. Compare it to the machine's ratio and you know immediately whether more compute or more bandwidth would help.
+- **Capacity decides what you can run; bandwidth decides how fast.** These are different constraints and people routinely conflate them. 141 GB of HBM3e does not make an H200 faster at training — it makes larger batches and longer contexts possible, which then makes it faster.
+- **Vendor spec sheets are not comparable as printed.** NVIDIA's H100 table prints only 2:4-sparse numbers; AMD's platform brochures print 8-GPU sparse aggregates; GeForce cards halve their tensor throughput under the FP32 accumulation that PyTorch actually uses. Halve, divide, and check the footnote before comparing anything.
+- **Lower precision is a bandwidth optimisation that happens to also be a compute optimisation.** FP8 weights move half the bytes of BF16 and, on hardware with an FP8 path, run twice as fast. The second effect gets the attention; the first is usually the one that matters.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## Start with a kitchen
+
+A GPU is a kitchen with an enormous number of cooks and one narrow doorway to the
+pantry.
+
+The cooks are the arithmetic units. There are tens of thousands of them and they
+are extremely fast. The pantry is high-bandwidth memory (HBM), which holds your
+model weights and activations. The doorway is the memory bus.
+
+Now the question that decides everything: **for each trip to the pantry, how much
+cooking gets done?**
+
+If a cook fetches one ingredient and performs one operation with it, the kitchen
+is limited by the doorway. Adding cooks changes nothing. If a cook fetches one
+ingredient and performs three hundred operations with it, the kitchen is limited
+by the cooks, and a wider doorway changes nothing.
+
+Deep learning contains both kinds of work, and knowing which kind you are doing
+is most of what hardware intuition is.
+
+<Figure
+  lead="The whole machine, in one picture: three tiers of storage with bandwidths that differ by two orders of magnitude."
+  caption="Bandwidths and capacities are approximate for an H100-class GPU. Note the shape of the pyramid: registers and shared memory are enormously fast and tiny; HBM is roomy and about 100× slower than on-chip storage; anything over PCIe or the network is slower again by another order of magnitude. Every performance technique in deep learning — tiling, kernel fusion, FlashAttention, activation checkpointing, gradient accumulation — is a strategy for keeping data in a faster tier for longer. When someone says a kernel is 'IO-aware', this pyramid is the IO they mean."
+>
+<svg viewBox="0 0 760 420" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="GPU memory hierarchy with bandwidths and capacities">
+  <defs>
+    <marker id="hw-a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor" opacity="0.6"/>
+    </marker>
+  </defs>
+
+  <text class="lb" x="30" y="26">Faster and smaller, going up</text>
+
+  <polygon class="f-pink" points="300,42 460,42 500,92 260,92"/>
+  <text class="on-fill-sm" x="380" y="66" text-anchor="middle">Registers</text>
+  <text class="on-fill-sm" x="380" y="84" text-anchor="middle">~256 KB per SM · ~100 TB/s</text>
+
+  <polygon class="f-purple" points="260,98 500,98 540,152 220,152"/>
+  <text class="on-fill-sm" x="380" y="122" text-anchor="middle">Shared memory / L1</text>
+  <text class="on-fill-sm" x="380" y="142" text-anchor="middle">228 KB per SM · ~20 TB/s</text>
+
+  <polygon class="f-blue" points="220,158 540,158 580,212 180,212"/>
+  <text class="on-fill-sm" x="380" y="182" text-anchor="middle">L2 cache</text>
+  <text class="on-fill-sm" x="380" y="202" text-anchor="middle">50 MB · ~7 TB/s</text>
+
+  <polygon class="f-green" points="180,218 580,218 620,278 140,278"/>
+  <text class="on-fill-sm" x="380" y="244" text-anchor="middle">HBM — where your model lives</text>
+  <text class="on-fill-sm" x="380" y="266" text-anchor="middle">80 GB (H100) · 3.35 TB/s</text>
+
+  <polygon class="f-amber" points="140,284 620,284 660,340 100,340"/>
+  <text class="on-fill-sm" x="380" y="310" text-anchor="middle">NVLink to peer GPUs · 900 GB/s (NVLink 4)</text>
+  <text class="on-fill-sm" x="380" y="330" text-anchor="middle">PCIe Gen5 x16 to host · 64 GB/s</text>
+
+  <polygon class="f-grey" points="100,346 660,346 690,398 70,398"/>
+  <text class="on-fill-sm" x="380" y="372" text-anchor="middle">Network to other nodes · 400 Gb/s = 50 GB/s per GPU</text>
+  <text class="on-fill-sm" x="380" y="390" text-anchor="middle">Storage · 1–10 GB/s</text>
+
+  <path class="ar" d="M46,392 L46,52" marker-end="url(#hw-a1)"/>
+  <text class="xs" x="54" y="230">~2000× bandwidth span</text>
+</svg>
+</Figure>
+
+## The one ratio
+
+Take any piece of work. Count the floating-point operations it performs. Count the
+bytes it must move from HBM. Divide.
+
+That is **arithmetic intensity**, and it has units of FLOPs per byte.
+
+Every machine has its own ratio: peak FLOP/s divided by peak bytes/s. For an H100
+in BF16 that is roughly 989 × 10¹² ÷ 3.35 × 10¹² ≈ **295 FLOPs per byte**.
+
+Now compare:
+
+- Your kernel's intensity is **above** the machine's ratio → you are compute-bound. Buy more FLOPs, or use lower precision to get more FLOPs.
+- Your kernel's intensity is **below** it → you are memory-bound. Buy more bandwidth, or restructure the computation to move fewer bytes. Adding FLOPs does nothing at all.
+
+<Aside type="caution" title="The number that surprises people">
+Generating one token from a 70B model at batch size 1 has an arithmetic intensity
+of about **2 FLOPs per byte**. The machine wants 295. You are using roughly 0.7%
+of the GPU's arithmetic capability, and no amount of extra compute will help.
+
+This is not a bug in your code. It is the structure of the problem, and it is why
+[inference](/systems/inference/) is a separate engineering discipline from
+training.
+</Aside>
+
+## Why matrix multiplication is special
+
+Deep learning runs on GPUs for one structural reason: matrix multiplication has
+arithmetic intensity that grows with size.
+
+Multiply two $n \times n$ matrices. You move $3n^2$ elements and perform $2n^3$
+operations. Intensity is $2n^3 / (3n^2 \cdot \text{bytes}) \propto n$. Make the
+matrices bigger and each byte does more work.
+
+Contrast an elementwise operation — adding a bias, applying GELU. You read an
+element, do one or two operations, write it back. Intensity is a small constant,
+independent of size, and always far below the machine's ratio. Those kernels are
+*always* memory-bound, which is why compilers work so hard to fuse them into the
+matmul that produced their input.
+
+<Aside type="tip" title="What this predicts, correctly">
+Three things follow immediately, and all three are true in practice:
+
+1. **Bigger batches are more efficient** — until you run out of memory, because they raise intensity.
+2. **Small models on big GPUs waste the GPU** — the matrices are too small to reach the machine's ratio.
+3. **Attention was slow for reasons that had nothing to do with FLOPs** — the $n^2$ score matrix was being written to and read from HBM. FlashAttention did not reduce the arithmetic; it kept the tiles on chip. Same FLOPs, several times faster.
+</Aside>
+
+<Tier level="mechanics" />
+
+## What is physically on the die
+
+An NVIDIA datacenter GPU is a grid of **streaming multiprocessors** (SMs) — 132 on
+an H100 SXM. Each SM contains:
+
+- **CUDA cores** — general-purpose FP32/INT32 lanes. These do the elementwise work, the reductions, the indexing.
+- **Tensor cores** — fixed-function units that consume small matrix tiles and emit a matrix product. This is where essentially all the advertised FLOPs come from. On an H100, tensor cores provide roughly 15× the BF16 throughput of the CUDA cores.
+- **Shared memory / L1** — 228 KB per SM, software-managed. The staging area for tiling.
+- **Register file** — 256 KB per SM, the fastest storage on the chip.
+
+Threads are grouped into **warps** of 32 that execute in lockstep. Warps are
+grouped into **thread blocks** which are resident on one SM and can share its
+shared memory. This is why tile sizes in high-performance kernels are always
+multiples of awkward numbers: they are chosen so that a tile fits in shared
+memory and the warps map cleanly onto the tensor-core instruction shape.
+
+<Aside type="note" title="The practical consequence for model design">
+Tensor cores operate on fixed tile shapes, so dimensions that are not multiples of
+those shapes leave lanes idle. Anthony et al. quantify this: hidden sizes and
+vocabulary sizes divisible by 64 (better, 128) can be substantially faster than
+nearby values that are not. Choosing a hidden size of 4096 rather than 4000 is not
+superstition — it is alignment with the hardware's tile geometry.
+</Aside>
+
+## Reading the roofline
+
+The roofline model, from Williams, Waterman and Patterson, plots achievable
+performance against arithmetic intensity. It is two straight lines on a log-log
+plot, and it is the single most useful diagram in performance engineering.
+
+<Figure
+  lead="Two lines and a corner: everything you can achieve on a given machine."
+  caption="The diagonal is the bandwidth limit — at low arithmetic intensity, performance is bandwidth times intensity, and nothing you do to the arithmetic units matters. The horizontal line is the compute limit. The corner sits at the machine balance point, about 295 FLOPs/byte for an H100 in BF16. Real kernels are plotted as points; the vertical distance to the roof is your headroom. Notice where the common deep-learning workloads land: batch-1 decoding is off the left edge, two orders of magnitude below the corner, while a large training matmul sits close to the roof. This is why the same GPU can look magnificent and useless on the same model depending on what you ask it to do."
+>
+<svg viewBox="0 0 760 420" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Roofline model with deep learning workloads plotted">
+  <defs>
+    <marker id="hw-a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor" opacity="0.6"/>
+    </marker>
+  </defs>
+
+  <line class="bx" x1="90" y1="340" x2="700" y2="340"/>
+  <line class="bx" x1="90" y1="340" x2="90" y2="50"/>
+  <text class="lb" x="90" y="34">Achievable TFLOP/s (log)</text>
+  <text class="lb" x="700" y="380" text-anchor="end">Arithmetic intensity, FLOPs per byte (log)</text>
+
+  <text class="xs" x="130" y="360" text-anchor="middle">1</text>
+  <text class="xs" x="250" y="360" text-anchor="middle">10</text>
+  <text class="xs" x="370" y="360" text-anchor="middle">100</text>
+  <text class="xs" x="490" y="360" text-anchor="middle">1000</text>
+  <text class="xs" x="610" y="360" text-anchor="middle">10000</text>
+
+  <text class="xs" x="82" y="300" text-anchor="end">10</text>
+  <text class="xs" x="82" y="220" text-anchor="end">100</text>
+  <text class="xs" x="82" y="140" text-anchor="end">1000</text>
+
+  <path class="thick" d="M110,330 L455,90" stroke="currentColor" fill="none"/>
+  <line class="thick" x1="455" y1="90" x2="700" y2="90" stroke="currentColor"/>
+
+  <line class="dash" x1="455" y1="90" x2="455" y2="340"/>
+  <text class="xs" x="461" y="332">machine balance ≈ 295</text>
+
+  <text class="sm" x="150" y="272" transform="rotate(-35 150 272)">slope = memory bandwidth, 3.35 TB/s</text>
+  <text class="sm" x="560" y="78">roof = 989 dense BF16 TFLOP/s</text>
+
+  <circle cx="140" cy="322" r="6" class="f-pink"/>
+  <text class="xs" x="152" y="318">batch-1 decode (~2 FLOP/byte) — 0.7% of peak</text>
+
+  <circle cx="215" cy="270" r="6" class="f-amber"/>
+  <text class="xs" x="227" y="266">batch-8 decode</text>
+
+  <circle cx="330" cy="188" r="6" class="f-purple"/>
+  <text class="xs" x="342" y="184">unfused elementwise chain / small matmul</text>
+
+  <circle cx="470" cy="108" r="6" class="f-green"/>
+  <text class="xs" x="482" y="126">large training matmul — near roof</text>
+
+  <path class="ar" d="M148,314 L206,266" marker-end="url(#hw-a2)"/>
+  <text class="xs" x="120" y="392">Moving right = raising intensity: bigger batches, fused kernels, tiling. Moving up without moving right is impossible.</text>
+</svg>
+</Figure>
+
+## Precision, and what each format buys
+
+Numeric format changes three things at once: bytes moved, arithmetic throughput,
+and numerical behaviour. Conflating them causes most of the confusion.
+
+| Format | Bits | Exponent / mantissa | Dynamic range | Typical use |
+|---|---|---|---|---|
+| FP32 | 32 | 8 / 23 | ~10³⁸ | Master weights, optimizer state, loss scaling |
+| TF32 | 19 stored as 32 | 8 / 10 | same as FP32 | Drop-in matmul acceleration on Ampere+ |
+| FP16 | 16 | 5 / 10 | ~10⁵ | Older mixed precision; needs loss scaling |
+| BF16 | 16 | 8 / 7 | same as FP32 | The default for training since Ampere |
+| FP8 (E4M3) | 8 | 4 / 3 | ~10² | Forward activations and weights |
+| FP8 (E5M2) | 8 | 5 / 2 | ~10⁴ | Gradients, which need range more than precision |
+| FP4 / NVFP4 | 4 | block-scaled | tiny | Inference, and increasingly pretraining |
+
+<Aside type="tip" title="Why BF16 beat FP16 despite being less precise">
+BF16 has *fewer* mantissa bits than FP16 — 7 against 10 — so it represents each
+number less precisely. It won anyway, because it keeps FP32's 8 exponent bits and
+therefore FP32's dynamic range.
+
+Training failures at low precision are overwhelmingly *range* failures: a gradient
+underflows to zero or an activation overflows to infinity. FP16 training needs
+loss scaling — multiplying the loss by a large constant to drag gradients into
+representable range — and that machinery is fiddly and can diverge. BF16 needs
+none of it, because anything that fits in FP32's range fits in BF16's.
+
+Precision you can average away over a batch. Range you cannot. That is the whole
+argument, and it generalises: the FP8 pair splits along exactly the same line,
+with E5M2 (more range) reserved for gradients and E4M3 (more precision) for
+forward values.
+</Aside>
+
+## The interconnect tiers
+
+A single GPU is rarely the unit of interest. What matters is how quickly GPUs can
+talk, and the bandwidth falls off a cliff at each boundary.
+
+<Figure
+  lead="Three communication tiers, each roughly an order of magnitude slower than the one inside it."
+  caption="Within a node, NVLink and NVSwitch give every GPU a fast all-to-all path — 900 GB/s per GPU on H100, 1.8 TB/s on Blackwell. Between nodes you drop to the network: 400 Gb/s per GPU is the common deployment, which is 50 GB/s — roughly 18× less than NVLink. This cliff is why parallelism strategy is a topology question: tensor parallelism communicates inside every layer and must stay within the NVLink domain, while data parallelism communicates once per step and tolerates the network. Note also the gap between NVIDIA's reference GB200 NVL72 networking (800 Gb/s per GPU) and what the large clouds actually deploy (400 Gb/s) — reference architectures are not what you rent."
+>
+<svg viewBox="0 0 760 380" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Interconnect tiers from NVLink to datacenter network">
+  <rect class="bx" x="30" y="46" width="330" height="150" rx="6"/>
+  <text class="lb" x="46" y="70">Node — 8 GPUs on one baseboard</text>
+  <rect class="f-green" x="52" y="84" width="60" height="34" rx="3"/>
+  <text class="on-fill-sm" x="82" y="105" text-anchor="middle">GPU 0</text>
+  <rect class="f-green" x="124" y="84" width="60" height="34" rx="3"/>
+  <text class="on-fill-sm" x="154" y="105" text-anchor="middle">GPU 1</text>
+  <rect class="f-green" x="196" y="84" width="60" height="34" rx="3"/>
+  <text class="on-fill-sm" x="226" y="105" text-anchor="middle">GPU 2</text>
+  <rect class="f-green" x="268" y="84" width="60" height="34" rx="3"/>
+  <text class="on-fill-sm" x="298" y="105" text-anchor="middle">GPU 3</text>
+  <rect class="f-blue" x="52" y="132" width="276" height="26" rx="3"/>
+  <text class="on-fill-sm" x="190" y="150" text-anchor="middle">NVSwitch — full bisection</text>
+  <text class="xs" x="52" y="178">900 GB/s per GPU (NVLink 4) · 1.8 TB/s (NVLink 5)</text>
+  <text class="xs" x="52" y="192">latency ~1–2 µs</text>
+
+  <rect class="bx" x="400" y="46" width="330" height="150" rx="6"/>
+  <text class="lb" x="416" y="70">Rack — GB200 NVL72</text>
+  <text class="sm" x="416" y="94">72 GPUs in one NVLink domain</text>
+  <text class="xs" x="416" y="116">130 TB/s aggregate across the domain</text>
+  <text class="xs" x="416" y="134">Every GPU sees every other at NVLink speed —</text>
+  <text class="xs" x="416" y="148">the node boundary effectively moves out to 72.</text>
+  <text class="xs" x="416" y="172">This is the actual product being sold: not a</text>
+  <text class="xs" x="416" y="186">faster chip, a bigger fast-communication domain.</text>
+
+  <rect class="bx" x="30" y="216" width="700" height="120" rx="6"/>
+  <text class="lb" x="46" y="240">Cluster — InfiniBand or RoCE fabric</text>
+  <rect class="f-amber" x="52" y="254" width="120" height="30" rx="3"/>
+  <text class="on-fill-sm" x="112" y="274" text-anchor="middle">node</text>
+  <rect class="f-amber" x="184" y="254" width="120" height="30" rx="3"/>
+  <text class="on-fill-sm" x="244" y="274" text-anchor="middle">node</text>
+  <rect class="f-amber" x="316" y="254" width="120" height="30" rx="3"/>
+  <text class="on-fill-sm" x="376" y="274" text-anchor="middle">node</text>
+  <rect class="f-grey" x="448" y="254" width="266" height="30" rx="3"/>
+  <text class="on-fill-sm" x="581" y="274" text-anchor="middle">leaf / spine switches</text>
+  <text class="xs" x="52" y="304">400 Gb/s = 50 GB/s per GPU typical (NDR InfiniBand or EFA) · 800 Gb/s XDR on newer builds</text>
+  <text class="xs" x="52" y="322">latency ~3–10 µs · congestion and topology now matter as much as raw port speed</text>
+</svg>
+</Figure>
+
+<Tier level="formal" />
+
+## Arithmetic intensity, precisely
+
+For a kernel that performs $W$ floating-point operations and moves $Q$ bytes
+between HBM and the chip, the arithmetic intensity is
+
+$$
+I = \frac{W}{Q}.
+$$
+
+Let $\pi$ be the machine's peak throughput in FLOP/s and $\beta$ its peak memory
+bandwidth in bytes/s. Attainable performance is
+
+$$
+P = \min(\pi,\; \beta \cdot I).
+$$
+
+The **machine balance** is $I^\star = \pi / \beta$, the intensity at which the two
+terms are equal. Below it you are bandwidth-limited; above it, compute-limited.
+
+<Aside type="caution" title="What the roofline deliberately ignores">
+This model assumes bandwidth and compute are each independently saturable and
+perfectly overlapped. Reality intrudes in at least four ways:
+
+- **Latency, not just bandwidth.** With too few concurrent memory requests in flight you cannot reach $\beta$ at all, regardless of intensity. Occupancy exists to hide latency.
+- **Caches.** $Q$ is HBM traffic, so a kernel that hits in L2 has a much better effective intensity than a naive count suggests. This is exactly the lever tiling pulls.
+- **Power and clocks.** Sustained heavy tensor-core work throttles clocks below the boost frequency the peak number assumes. Achieving 100% of a printed peak is not merely difficult; it is often thermally impossible.
+- **Kernel launch and synchronisation.** Small operations spend more time being scheduled than executing.
+
+The roofline is a bound and a diagnostic, not a prediction. Its value is that when
+you measure far below the roof, it tells you *which* roof you are under.
+</Aside>
+
+## A worked intensity calculation
+
+Take a linear layer $Y = XW$ with $X \in \mathbb{R}^{B \times d}$ and
+$W \in \mathbb{R}^{d \times d}$, in BF16 (2 bytes).
+
+**FLOPs:** $2Bd^2$ — one multiply and one add per element of the inner product.
+
+**Bytes:** read $X$ ($2Bd$), read $W$ ($2d^2$), write $Y$ ($2Bd$), so
+$Q = 4Bd + 2d^2$.
+
+$$
+I = \frac{2Bd^2}{4Bd + 2d^2} = \frac{Bd}{2B + d}.
+$$
+
+Two regimes fall straight out.
+
+**Large batch, $B \gg d$:** the $d$ term in the denominator vanishes and
+$I \to d/2$. With $d = 4096$ that is 2048 FLOPs/byte, comfortably compute-bound.
+The weight read is amortised across the whole batch.
+
+**Batch of one, $B = 1$:** $I = d/(2 + d) \to 1$. You read the entire weight
+matrix to perform a single vector-matrix product. One FLOP per byte, against a
+machine that wants 295.
+
+That ratio — $d/2$ against $1$ — is the entire quantitative case for batching, and
+the reason a serving system's throughput and its latency pull in opposite
+directions.
+
+## Where the FLOPs come from
+
+A tensor core computes a small matrix product per instruction. On Hopper the
+relevant instruction family operates on tiles of shape $64 \times N \times 16$ per
+warpgroup. Peak throughput is
+
+$$
+\pi = (\text{SMs}) \times (\text{tensor cores per SM}) \times (\text{FLOPs per core-cycle}) \times f_{\text{clock}}.
+$$
+
+For H100 SXM: 132 SMs × 4 tensor cores × 1024 BF16 FLOPs per cycle × 1.755 GHz
+≈ 949 TFLOP/s, which lands within a couple of percent of the published 989 —
+the gap is clock-boost accounting.
+
+The point of doing this arithmetic once is that it makes the structure visible:
+peak FLOPs is a product of four numbers, and vendors improve it by increasing any
+of them. A generational "2× FLOPs" claim may be twice the tensor cores, or the
+same cores at half the precision, and those two have very different implications
+for your workload.
+
+<Aside type="caution" title="Reading a spec sheet without being fooled">
+Five traps, each of which has produced widely repeated wrong numbers:
+
+1. **Sparse vs dense.** NVIDIA's datacenter tables often print 2:4-structured-sparse figures; dense is exactly half. NVIDIA's H100 page prints only sparse, while the A100 page prints both — so a naive H100/A100 comparison overstates the gap by 2×.
+2. **Per-package vs per-GPU.** A GB200 superchip contains two B200 GPUs. Superchip tables must be halved before comparing to a single GPU.
+3. **Platform vs chip.** AMD's MI355X *platform* brochure headlines an 8-GPU sparse aggregate. Divide by 8, then by 2.
+4. **Accumulation precision on consumer cards.** GeForce parts run FP16 tensor ops with FP32 accumulation at exactly half rate. PyTorch and cuBLAS default to FP32 accumulation, so an RTX 4090 delivers roughly 165 dense TFLOP/s in practice, not the 330 implied by the FP16-accumulate figure.
+5. **SKU divergence under one name.** "B200" denotes both the HGX part (180 GB, 7.7 TB/s, 1000 W) and the GB200-rack part (186 GB, 8 TB/s, 1200 W). The widely quoted "192 GB" appears in no current NVIDIA datasheet.
+</Aside>
+
+## The current landscape
+
+Dense figures throughout. Sourced from vendor datasheets as of August 2026; see
+the caveats above before comparing rows across vendors.
+
+| Accelerator | Dense BF16 | Dense FP8 | Memory | Bandwidth | TDP | Scale-up per chip |
+|---|---|---|---|---|---|---|
+| A100 80GB SXM | 312 TF | — | 80 GB HBM2e | 2.04 TB/s | 400 W | 600 GB/s |
+| H100 SXM | 990 TF | 1979 TF | 80 GB HBM3 | 3.35 TB/s | 700 W | 900 GB/s |
+| H200 SXM | 990 TF | 1979 TF | 141 GB HBM3e | 4.8 TB/s | 700 W | 900 GB/s |
+| B200 (HGX) | 2.25 PF | 4.5 PF | 180 GB HBM3e | 7.7 TB/s | 1000 W | 1.8 TB/s |
+| B300 (HGX) | 2.25 PF | 4.5 PF | 270 GB HBM3e | 7.7 TB/s | 1100 W | 1.8 TB/s |
+| AMD MI300X | 1.31 PF | 2.61 PF | 192 GB HBM3 | 5.3 TB/s | 750 W | 896 GB/s |
+| AMD MI355X | 2.52 PF | 5.03 PF | 288 GB HBM3e | 8 TB/s | 1400 W | 1.08 TB/s |
+| TPU v6e | 918 TF | — | 32 GB | 1.64 TB/s | n/p | 800 GB/s |
+| TPU v7 (Ironwood) | 2.31 PF | 4.61 PF | 192 GB HBM3e | 7.37 TB/s | n/p | 1.2 TB/s |
+| Trainium2 | 667 TF | 1.30 PF | 96 GB HBM3 | 2.9 TB/s | n/p | 1.28 TB/s |
+| RTX 5090 | 210 TF | — | 32 GB GDDR7 | 1.79 TB/s | 575 W | — |
+| RTX PRO 6000 Blackwell | 504 TF | — | 96 GB GDDR7 | 1.79 TB/s | 600 W | — |
+
+Read the columns as answering different questions. **Memory capacity** determines
+what fits. **Bandwidth** determines decode speed and how badly memory-bound
+kernels hurt. **Dense FLOPs** determines training throughput once you are large
+enough to be compute-bound. **Scale-up bandwidth** determines how far you can
+push tensor parallelism before communication dominates.
+
+Note what the table shows about generational progress: from H100 to B200,
+bandwidth rose 2.3× while dense BF16 rose 2.3×. The ratio barely moved. Hardware
+is not escaping the memory wall; it is holding position on it.
+
+<Tier level="frontier" />
+
+## Where this stands, as of 2026
+
+**HBM is the binding constraint on the whole industry.** Capacity and bandwidth
+per package have grown far more slowly than transistor budgets, and HBM supply —
+not fab capacity for the logic die — has been the practical limiter on
+accelerator volume. HBM4 arrives with Rubin and MI455X at roughly 22–23 TB/s per
+package, a real step, but memory has been losing ground to compute for two
+decades and one generation does not reverse that.
+
+**The unit of purchase has shifted from chip to rack.** GB200 NVL72 puts 72 GPUs
+in a single NVLink domain at 130 TB/s aggregate. The product is not a faster GPU;
+it is a larger region within which the node boundary does not exist. That changes
+which parallelism strategies are viable — see [Distributed
+Training](/systems/distributed-training/) — and it is the main reason
+rack-scale systems command the premium they do.
+
+**Precision is still descending.** FP8 training is now routine; FP4 pretraining is
+being reported and the hardware paths exist on Blackwell and MI355X. Each step
+halves bytes moved and doubles nominal throughput, which is the only lever that
+has been reliably available. How far it goes is unresolved: the error introduced
+by block-scaled 4-bit formats is not uniformly benign across architectures, and
+the reported successes involve careful mixed-precision recipes rather than a flat
+format switch.
+
+**Alternatives are real but narrow.** TPUs are genuinely competitive on
+throughput-per-dollar for workloads that fit the XLA compilation model, and
+Google's pod-scale optical interconnect is a distinct architectural bet.
+Trainium's cost position is strong. But CUDA's software depth remains the
+dominant practical fact, and "it benchmarks well" and "your existing code runs on
+it" are different claims.
+
+## Open problems
+
+<Steps>
+
+1. **The memory wall.** Compute per package has grown far faster than bandwidth per package for twenty years. Processing-in-memory and 3D-stacked logic are proposed answers; neither has shipped at scale for training.
+
+2. **Numerical stability at 4 bits and below.** Block scaling, stochastic rounding and mixed-precision recipes make it work, but there is no theory that predicts which architectures and which optimisers tolerate a given format. Practice is empirical.
+
+3. **Utilisation.** Well-tuned large-scale pretraining reaches roughly 35–55% model FLOPs utilisation. The remaining half is lost to communication, bubbles, memory stalls and imperfect kernels. Recovering it is worth as much as a hardware generation and is far less well funded.
+
+4. **Power and siting.** A GB200 NVL72 rack draws well over 100 kW and requires liquid cooling. Grid interconnect timelines, not chip supply, increasingly gate deployment — which makes performance per watt a business constraint, not an environmental footnote.
+
+5. **Benchmarks that mean anything.** MLPerf is the serious attempt, but peak-FLOPs marketing continues to drive purchasing. There is no widely accepted way to compare accelerators on a workload you actually care about without running it.
+
+</Steps>
+
+## Practical guidance
+
+- **Compute arithmetic intensity before buying anything.** It takes five minutes and tells you whether bandwidth or FLOPs is your constraint. Buying the wrong one is expensive and common.
+- **Size on memory first.** Ask what fits, then ask how fast. A workload that does not fit runs at zero.
+- **Profile before optimising.** Nsight Compute or PyTorch's profiler will tell you your achieved bandwidth and occupancy. Guessing which kernel is slow has a poor hit rate.
+- **Halve every sparse number you see, and check the footnote.** If a comparison looks too favourable, it usually involves two different footnote conventions.
+- **Treat rental pricing as the real currency.** As of August 2026, per-GPU-hour on-demand rates cluster around $3.3–4.0 for H100, $4.5–6.0 for H200 and $6.7–8.6 for B200 across the neoclouds, with hyperscalers roughly 1.5–3× higher. Divide by throughput to compare properly — see [Compute Budgeting](/hardware/compute-budgeting/).
+
+## Reading path
+
+Next: [Compute Budgeting](/hardware/compute-budgeting/) turns these numbers into
+answers about how many GPU-hours a specific job needs. Then [Choosing
+Hardware](/hardware/choosing-hardware/) for the decision itself. For why decoding
+is bandwidth-bound in detail, [Inference and Serving](/systems/inference/); for
+what happens when one GPU is not enough, [Distributed
+Training](/systems/distributed-training/).
+
+<Papers />

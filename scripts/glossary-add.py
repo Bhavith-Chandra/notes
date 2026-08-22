@@ -1,29 +1,19 @@
----
-title: Glossary
-description: "Short, precise definitions for the terms used across this atlas, each linking to the page that explains it properly."
-sidebar:
-  order: 1
-depth: mechanics
-readingTime: 26
----
+#!/usr/bin/env python3
+"""Merge new glossary entries into reference/glossary.mdx, keeping each letter
+section alphabetical by term. Idempotent: an entry whose term already exists is
+skipped rather than duplicated, so this can be re-run after future page additions.
 
-import { Aside } from '@astrojs/starlight/components';
+Entry format assumed by the parser: a paragraph beginning `**Term** — ...`,
+separated from its neighbours by a blank line, under a `## X` letter heading.
+"""
+import re
+import sys
+from pathlib import Path
 
-Definitions are deliberately short and deliberately opinionated — where a term is
-commonly used loosely, the entry says so. Each links to the page that treats it
-properly.
+ROOT = Path(__file__).resolve().parent.parent
+GLOSSARY = ROOT / "src/content/docs/reference/glossary.mdx"
 
-<Aside type="tip">
-Use your browser's find (⌘F / Ctrl+F), or the site search in the header, which
-indexes every page rather than just this one.
-</Aside>
-
-## A
-
-**Ablation** — removing a component and measuring what breaks. The only reliable
-way to establish that a part of a system is doing work; a paper without ablations
-is telling you what it built, not what mattered.
-
+NEW = r"""
 **Activation patching** — replacing one activation in a forward pass with the
 value it took on a different input, then measuring the effect on the output. The
 workhorse causal method in [interpretability](/foundations/interpretability/);
@@ -40,24 +30,10 @@ gradient unbiased while cutting its variance, which is why nearly every practica
 method estimates advantages rather than raw returns. See [Reinforcement
 Learning](/training/reinforcement-learning/).
 
-**ALiBi** — Attention with Linear Biases. Injects position by adding a
-distance-proportional penalty to attention scores instead of using position
-embeddings. See [Transformers](/architectures/transformers/).
-
-**Alignment (representation)** — how close the embeddings of semantically
-equivalent inputs are. One half of the [Wang–Isola
-decomposition](/training/self-supervision/); the other half is uniformity. Not to
-be confused with AI alignment, which is unrelated.
-
 **Anisotropy** — the tendency of contextual embeddings to occupy a narrow cone
 rather than filling the space, so that random pairs of vectors have high cosine
 similarity. Measured, and partly correctable by whitening or removing dominant
 directions. See [Latent Spaces](/foundations/latent-spaces/).
-
-**Arithmetic intensity** — floating-point operations performed per byte moved
-from memory. Compare it to the machine's own ratio (about 295 FLOPs/byte for an
-H100 in BF16) and you immediately know whether more compute or more bandwidth
-would help. See [Accelerators](/hardware/accelerators/).
 
 **ATE (Average Treatment Effect)** — $\mathbb{E}[Y(1) - Y(0)]$, the expected
 difference in outcome between treating everyone and treating no one. A
@@ -65,48 +41,16 @@ counterfactual quantity, not a correlation, and only identifiable from
 observational data under assumptions you must state. See [Causal
 Inference](/foundations/causal-inference/).
 
-**Attention** — a differentiable dictionary lookup: queries are matched against
-keys to produce weights, which blend values. The core operation of the
-[transformer](/architectures/transformers/).
-
-**Augmentation** — a transformation applied to an input that is assumed not to
-change its meaning. In contrastive learning your augmentation set *is* your
-specification of what the model should ignore, which makes it a modelling
-decision, not preprocessing.
-
-**Autoencoder (AE)** — encoder plus decoder trained to reconstruct the input
-through a bottleneck. See [Neural Encoders](/encoders/neural-encoders/).
-
 **Autoregressive model** — a generative model that factorises the joint
 distribution into a product of conditionals, $p(x) = \prod_i p(x_i \mid x_{<i})$,
 and samples one element at a time. Exact likelihoods, sequential sampling. See
 [Generative Models](/architectures/generative-models/).
-
-## B
-
-**Backbone** — the architectural substrate (ResNet, ViT) as distinct from the
-objective that trains it. The same backbone under different objectives produces
-very different encoders.
-
-**Barlow Twins** — a self-supervised method that prevents collapse by driving the
-cross-correlation matrix between two views toward the identity. See
-[JEPA](/architectures/jepa/).
-
-**Base rate** — the unconditional frequency of an outcome. Target encodings are
-base rates conditioned on a category, which is why they drift when the underlying
-rates shift.
 
 **Belief state** — the posterior over the hidden environment state given the full
 history of observations and actions. The provably sufficient statistic for acting
 optimally in a POMDP, and the thing every recurrent or latent-state model is
 approximating whether it says so or not. See [State
 Representations](/foundations/state-representations/).
-
-**BF16 (bfloat16)** — 16-bit float with FP32's 8 exponent bits and only 7
-mantissa bits. Less precise than FP16 but with the same dynamic range, which is
-why it displaced FP16 for training: low-precision failures are almost always
-range failures, not precision failures. See
-[Accelerators](/hardware/accelerators/).
 
 **Bisimulation** — an equivalence relation that treats two states as identical
 when they yield the same rewards and transition to equivalent states. Gives a
@@ -125,57 +69,20 @@ the most frequent adjacent pair. Originally a 1994 compression algorithm,
 repurposed for NLP; still the most widely deployed tokenizer. See
 [Tokenization](/foundations/tokenization/).
 
-**BYOL** — Bootstrap Your Own Latent. The result that showed contrastive negatives
-are unnecessary if you use a stop-gradient and an EMA target. See
-[JEPA](/architectures/jepa/).
-
 **Byte-level BPE** — BPE run over raw bytes rather than Unicode characters, so
 the vocabulary can represent any string with no out-of-vocabulary case at the
 cost of longer sequences for non-Latin scripts. See
 [Tokenization](/foundations/tokenization/).
-
-## C
 
 **Calibration** — whether a model's stated confidence matches its empirical
 accuracy. A model can be highly accurate and badly calibrated, which matters
 whenever the output feeds a decision rather than a leaderboard. See
 [Evaluation](/foundations/evaluation/).
 
-**Causal mask** — the attention mask that prevents a position from attending to
-later positions. The single difference between an encoder-only and a decoder-only
-transformer. See [Encoder–Decoder](/encoders/encoder-decoder/).
-
-**CEM (Cross-Entropy Method)** — a derivative-free planner that samples action
-sequences, keeps the best, refits a Gaussian to them, and repeats. Cannot
-represent multimodal solutions. See [Planning and
-MPC](/world-models/planning-and-mpc/).
-
-**Chinchilla scaling** — the finding that parameters and training tokens should
-scale roughly in proportion (~20 tokens per parameter), correcting the earlier
-Kaplan conclusion that favoured parameters. See
-[Transformers](/architectures/transformers/).
-
-**Chinchilla-optimal** — the parameter/token split that minimises loss for a
-fixed *training* budget, roughly 20 tokens per parameter. Not the deployment
-optimum, which is a smaller model trained longer. See [Compute
-Budgeting](/hardware/compute-budgeting/).
-
 **Circuit** — a subgraph of a network's computation that implements an
 identifiable behaviour end to end. The unit of explanation in mechanistic
 [interpretability](/foundations/interpretability/); [induction
 heads](/training/in-context-learning/) are the canonical example.
-
-**Codebook collapse** — in VQ-VAE, the failure where most codebook entries go
-unused so the effective vocabulary is far smaller than allocated.
-
-**Collapse (representation)** — the degenerate solution where an encoder outputs
-the same or near-same vector regardless of input. Comes in five distinguishable
-forms; see [JEPA](/architectures/jepa/).
-
-**Compute rule (6ND)** — the estimate that training a model of $N$ parameters on $D$ tokens
-costs about $6ND$ FLOPs: 2 for the forward pass, 4 for the backward. Breaks down
-at long context, for mixture-of-experts, and below about 1B parameters. See
-[Compute Budgeting](/hardware/compute-budgeting/).
 
 **Confounder** — a variable that causes both the treatment and the outcome,
 manufacturing an association between them that survives any amount of data. The
@@ -198,28 +105,15 @@ equilibrium. Biased, but the bias is often tolerable and the alternative is
 intractable. See [Energy-Based
 Models](/architectures/energy-based-models/).
 
-**Contrastive learning** — training by pulling matched pairs together and pushing
-unmatched pairs apart. Requires negatives. See [Self-Supervised
-Learning](/training/self-supervision/).
-
-**Cross-attention** — attention where queries come from one sequence and keys and
-values from another. The only structural difference between an encoder–decoder and
-two stacked transformers.
-
 **CTC (Connectionist Temporal Classification)** — a loss that marginalises over
 all alignments between an input sequence and a shorter target, removing the need
 for frame-level labels. The foundation of alignment-free speech recognition. See
 [Speech and Audio](/domains/speech-audio/).
 
-## D
-
 **Data parallelism** — replicating the model across devices and splitting the
 batch, then all-reducing gradients. The simplest scaling axis and the first one
 to use; it does nothing for models too large to fit on one device. See
 [Distributed Training](/systems/distributed-training/).
-
-**Decoder-only** — a transformer using causal masking throughout, trained on
-next-token prediction. GPT, Llama, Claude.
 
 **Demonstration** — an input–output example placed in the prompt. Min et al.
 showed these largely supply label space, format and input distribution rather
@@ -231,14 +125,6 @@ to predict the noise added to corrupted data. The identity that connects
 [energy-based models](/architectures/energy-based-models/) and
 [diffusion](/architectures/diffusion/), and the reason diffusion sidesteps the
 partition function entirely.
-
-**Dimensional collapse** — embeddings vary but occupy a low-dimensional subspace
-of the space allocated. Invisible to a variance check; visible in the singular
-value spectrum.
-
-**DINO / DINOv2** — self-distillation methods producing the current default
-general-purpose visual features. Notable for emergent object segmentation in
-attention maps with no segmentation supervision.
 
 **Disentanglement** — the property that individual latent coordinates correspond
 to independent generative factors. Intuitively appealing, provably unidentifiable
@@ -261,64 +147,25 @@ directly through a closed-form relation to the implied reward, removing the
 separate reward model and RL loop. Simpler and more stable than PPO-based RLHF,
 with a narrower behaviour envelope. See [Post-Training](/training/post-training/).
 
-## E
-
-**ELBO** — Evidence Lower Bound. A tractable lower bound on the log-likelihood,
-derived by Jensen's inequality. Its gap to the true log-likelihood is exactly the
-KL between the approximate and true posterior. See [Probability for
-ML](/foundations/probability-for-ml/).
-
-**EMA (Exponential Moving Average)** — a slowly-updated copy of a network's
-weights, used as a prediction target. The lag is what makes collapse dynamically
-unstable in JEPAs.
-
-**Encoder** — one word for three things: a learned function mapping data to
-vectors, an architectural position that reads rather than generates, and a
-preprocessing step turning categories into numbers. See
-[Encoders](/encoders/).
-
-**Encoder-only** — a transformer with bidirectional attention, trained with masked
-language modelling. BERT, ModernBERT. Cannot generate autoregressively.
-
 **Energy function** — a scalar $E_\theta(x)$ assigning low values to plausible
 configurations and high values to implausible ones. Defines a distribution only
 after normalisation, and the whole difficulty of [energy-based
 models](/architectures/energy-based-models/) lives in that normaliser.
-
-## F
-
-**Feature hashing** — mapping categories to a fixed number of buckets via a hash,
-with signed contributions so collisions cancel in expectation. See [Feature
-Encoding](/encoders/feature-encoding/).
 
 **Fertility** — average tokens per word for a given tokenizer and language. The
 standard measure of tokenizer efficiency; ratios above four between languages
 translate directly into higher cost and shorter effective context for the
 disadvantaged language. See [Tokenization](/foundations/tokenization/).
 
-**FlashAttention** — an exact attention implementation that tiles the computation
-to avoid materialising the full attention matrix in slow memory. Same function,
-several times faster.
-
 **Flow matching** — trains a continuous-time velocity field by regressing onto a
 target vector field along a prescribed probability path, rather than reversing a
 diffusion. Simpler objective, often straighter paths, fewer sampling steps. See
 [Generative Models](/architectures/generative-models/).
 
-**FP8** — 8-bit float in two variants: E4M3 (more precision, used for forward
-weights and activations) and E5M2 (more range, used for gradients). The split
-follows the same range-versus-precision logic that made BF16 win. See
-[Accelerators](/hardware/accelerators/).
-
-**Free bits** — a VAE training trick allowing a fixed KL budget per latent
-dimension without penalty, used to prevent posterior collapse.
-
 **FSDP (Fully Sharded Data Parallel)** — shards parameters, gradients and
 optimiser state across data-parallel ranks, gathering each layer only when
 needed. The PyTorch-native form of the ZeRO idea. See [Distributed
 Training](/systems/distributed-training/).
-
-## G
 
 **GAN (Generative Adversarial Network)** — a generator trained against a
 discriminator in a minimax game. Sharp samples, no tractable likelihood, and
@@ -330,31 +177,16 @@ absent from training, leaving its embedding untrained and its behaviour erratic.
 A direct consequence of fitting the tokenizer on a different corpus from the
 model. See [Tokenization](/foundations/tokenization/).
 
-**GQA (Grouped-Query Attention)** — sharing key/value heads across groups of query
-heads to shrink the KV cache. The current standard, sitting between full
-multi-head and multi-query.
-
 **Gradient accumulation** — summing gradients over several micro-batches before
 stepping, to emulate a large batch under a memory limit. Equivalent to the large
 batch only if normalisation statistics are handled correctly. See [Distributed
 Training](/systems/distributed-training/).
-
-**Grokking** — delayed generalisation: a model memorises the training set, then
-much later and abruptly generalises. Interesting because it separates memorisation
-from generalisation in time.
 
 **GRPO (Group Relative Policy Optimization)** — replaces the learned value
 baseline with the mean reward of a sampled group of completions for the same
 prompt. Cheaper than PPO and well suited to verifiable-reward settings such as
 maths and code. See [Reinforcement
 Learning](/training/reinforcement-learning/).
-
-## H
-
-**HBM (High-Bandwidth Memory)** — stacked DRAM sitting beside the compute die,
-delivering terabytes per second. Where your model actually lives, and the
-resource that most workloads are waiting on. See
-[Accelerators](/hardware/accelerators/).
 
 **Hopfield network** — an associative memory storing patterns as minima of an
 energy landscape; retrieval is descent from a partial cue. The modern continuous
@@ -365,12 +197,6 @@ reappearing. See [Energy-Based Models](/architectures/energy-based-models/).
 assignments of masked frames, where the clusters are refined across iterations.
 See [Speech and Audio](/domains/speech-audio/).
 
-## I
-
-**I-JEPA** — Image Joint-Embedding Predictive Architecture. Predicts
-representations of masked target blocks from a context block, with no augmentations
-at all. See [JEPA](/architectures/jepa/).
-
 **In-context learning** — adapting behaviour from examples in the prompt with no
 weight update. Named for what it looks like rather than what it is; whether it
 constitutes learning is exactly the open question. See [In-Context
@@ -380,15 +206,6 @@ Learning](/training/in-context-learning/).
 occurrence of the current token and copies what followed it. Emerges during
 training in a sharp phase change that coincides with the onset of in-context
 learning. See [In-Context Learning](/training/in-context-learning/).
-
-**InfoNCE** — the standard contrastive loss. Lower-bounds mutual information by
-$\log N - \mathcal{L}$, where $N$ is the number of samples — note the bound is
-capped by batch size and therefore loose in practice.
-
-**Information bottleneck** — the framing that a representation should maximise
-$I(Z;Y)$ while minimising $I(Z;X)$. Clarifying as a framework; its stronger claim
-as an explanation of generalisation did not survive scrutiny. See
-[Representations](/foundations/representations/).
 
 **Instrumental variable** — a variable that affects the treatment but influences
 the outcome only through it, enabling causal identification despite unmeasured
@@ -401,40 +218,14 @@ occupies, typically far below the ambient dimension. The quantitative content of
 the manifold hypothesis, and estimable. See [Latent
 Spaces](/foundations/latent-spaces/).
 
-## J
-
 **Jensen's inequality** — for convex $f$, $f(\mathbb{E}[X]) \le \mathbb{E}[f(X)]$.
 The one-line reason the ELBO is a lower bound on the log-evidence. See
 [Probability for ML](/foundations/probability-for-ml/).
-
-**JEPA** — Joint-Embedding Predictive Architecture. Predicts the representation of
-one part of a signal from another part, in embedding space, with no decoder and no
-negatives.
-
-## K
-
-**KL divergence** — $\mathbb{E}_p[\log p/q]$. Measures how badly $q$ approximates
-$p$. Asymmetric, and the asymmetry is the useful part: forward KL covers all
-modes, reverse KL commits to one.
-
-**KV cache** — stored keys and values from previous tokens, reused during
-generation. Frequently larger than the model weights at long context, and the
-reason GQA exists.
-
-## L
 
 **Langevin dynamics** — sampling by gradient ascent on log-density plus injected
 Gaussian noise. The standard sampler for [energy-based
 models](/architectures/energy-based-models/); needs only the score, never the
 partition function, which is precisely why it is used.
-
-**Latent space** — the vector space an encoder maps into. Its geometry — whether
-distances and angles mean anything — is a property of the training objective, not
-of the architecture.
-
-**Linear probe** — a linear classifier trained on frozen features to test whether a
-property is linearly decodable. High accuracy is informative; low accuracy is
-nearly uninformative.
 
 **Linear representation hypothesis** — the claim that human-interpretable
 features are encoded as directions in activation space, so that concepts can be
@@ -452,16 +243,6 @@ weights, cutting trainable parameters by orders of magnitude. The default
 parameter-efficient fine-tuning method; the rank is a real capacity constraint,
 not a free lunch. See [Fine-Tuning](/training/fine-tuning/).
 
-## M
-
-**Macro-action** — a latent compression of a chunk of primitive actions, used to
-shrink the high-level search space in [hierarchical
-planning](/world-models/hierarchy/).
-
-**MAE (Masked Autoencoder)** — masks ~75% of image patches and reconstructs pixels.
-Competitive despite the theoretical argument that pixel reconstruction wastes
-capacity — an open tension.
-
 **Manifold hypothesis** — the assumption that natural high-dimensional data lies
 near a low-dimensional manifold. The reason representation learning is possible
 at all, and the premise nearly every method on this site inherits. See [Latent
@@ -472,18 +253,10 @@ node aggregates transformed messages from its neighbours, then updates its own
 state. Expressive power is bounded by the Weisfeiler–Lehman test. See [Graph
 Neural Networks](/domains/graph-neural-networks/).
 
-**MFU (Model FLOPs Utilisation)** — achieved model FLOP/s divided by the
-hardware's peak. Well-tuned large-scale pretraining reaches 40–55%; plan with
-40%, never with peak. The variant that also counts recomputation is HFU and is
-always larger. See [Compute Budgeting](/hardware/compute-budgeting/).
-
 **Mixed precision** — computing in bf16 or fp16 while keeping a master copy of
 weights and certain reductions in fp32. Nearly free throughput, provided the
 numerically sensitive operations stay in high precision. See [Distributed
 Training](/systems/distributed-training/).
-
-**MLM (Masked Language Modelling)** — predicting hidden tokens from bidirectional
-context. Supervises ~15% of positions, versus 100% for causal LM.
 
 **Mode collapse** — a generator producing a narrow slice of the data
 distribution while scoring well on sample quality. Characteristic failure of
@@ -491,23 +264,10 @@ adversarial training, and the reason likelihood-free evaluation needs coverage
 metrics as well as fidelity ones. See [Generative
 Models](/architectures/generative-models/).
 
-**Model exploitation** — a planner finding action sequences where the learned model
-is optimistically wrong. The reason a more accurate model can yield a worse
-planner. See [Planning and MPC](/world-models/planning-and-mpc/).
-
 **MoE (Mixture of Experts)** — replaces a dense feed-forward layer with many
 experts and a router that activates a few per token, decoupling parameter count
 from per-token compute. See [Mixture of
 Experts](/architectures/mixture-of-experts/).
-
-**MPC (Model Predictive Control)** — plan over a horizon, execute only the first
-action, re-plan. The receding horizon bounds execution error at $O(\epsilon)$
-rather than $O(\epsilon L^H)$.
-
-**MPPI** — Model Predictive Path Integral control. Like CEM but weights all
-samples by $\exp(-S/\lambda)$ rather than taking a hard top-$K$ cut.
-
-## N
 
 **NCE (Noise-Contrastive Estimation)** — learns an unnormalised model by training
 a classifier to distinguish data from a known noise distribution, turning density
@@ -524,27 +284,10 @@ tractable Jacobian determinants, giving exact likelihoods and exact inference at
 the cost of architectural constraints. See [Generative
 Models](/architectures/generative-models/).
 
-**NVLink** — NVIDIA's GPU-to-GPU interconnect, 900 GB/s per GPU on Hopper and
-1.8 TB/s on Blackwell, against roughly 50 GB/s per GPU over the datacenter
-network. That ~18× cliff at the node boundary is what decides which parallelism
-strategy goes where. See [Choosing Hardware](/hardware/choosing-hardware/).
-
-## O
-
-**Option** — a temporally extended action with an initiation set, a policy, and a
-termination condition. The classical formalism for hierarchy (Sutton, Precup &
-Singh, 1999).
-
-**Out-of-fold (OOF)** — computing a statistic using only data outside the current
-validation fold. The correct way to compute target encodings, and skipping it is
-the most common serious bug in applied tabular ML.
-
 **Over-smoothing** — the convergence of node representations toward each other as
 graph network depth increases, erasing the distinctions the network was meant to
 learn. The main reason deep GNNs underperform shallow ones. See [Graph Neural
 Networks](/domains/graph-neural-networks/).
-
-## P
 
 **PagedAttention** — manages the KV cache in fixed-size non-contiguous blocks,
 the way an OS pages memory, eliminating the fragmentation that otherwise wastes
@@ -560,16 +303,10 @@ micro-batches through the stages. Adds a pipeline bubble whose relative cost
 falls as micro-batch count rises. See [Distributed
 Training](/systems/distributed-training/).
 
-**Polysemantic** — a neuron that responds to multiple unrelated features. A
-consequence of superposition, and a sign the neuron basis is the wrong basis.
-
 **POMDP** — a Markov decision process in which the agent sees observations rather
 than the true state. The formalism that makes state representation a problem
 rather than a given. See [State
 Representations](/foundations/state-representations/).
-
-**Posterior collapse** — in a VAE, the encoder converging to the prior so the
-latent carries no information. Not a bug — a local optimum the KL term rewards.
 
 **PPO (Proximal Policy Optimization)** — a policy-gradient method that constrains
 each update by clipping the importance ratio. Long the default for RLHF, being
@@ -581,34 +318,15 @@ of future tests rather than by a posterior over hidden states. Grounded entirely
 in observables, which sidesteps the question of what the "true" state is. See
 [State Representations](/foundations/state-representations/).
 
-**Pre-norm** — placing layer normalisation on the residual branch input rather than
-after the addition. Removes the need for learning-rate warmup; universal since
-~2020 and not in the original transformer paper.
-
-## Q
-
 **Quantization** — reducing numerical precision of weights or activations,
 typically to int8 or 4-bit, to cut memory and bandwidth. The quality cost is
 small when outlier channels are handled and large when they are not. See
 [Inference](/systems/inference/).
 
-## R
-
 **RAG (Retrieval-Augmented Generation)** — retrieving relevant documents and
 conditioning generation on them. Addresses staleness and attribution; does not by
 itself address the model ignoring or misreading what it retrieved. See
 [Retrieval](/systems/retrieval/).
-
-**Receding horizon** — re-planning at every timestep after executing one action.
-The mechanism that makes MPC tolerant of inaccurate models.
-
-**Reparameterisation trick** — rewriting $z \sim \mathcal{N}(\mu,\sigma^2)$ as $z =
-\mu + \sigma\epsilon$ with $\epsilon \sim \mathcal{N}(0,I)$, so gradients flow
-through $\mu$ and $\sigma$. About variance, not correctness — both estimators are
-unbiased.
-
-**Residual stream** — the running vector that transformer blocks read from and add
-to. The modern mental model treats it as a shared bus rather than a pipeline.
 
 **Reward hacking** — optimising the specified reward in ways that violate the
 intent behind it. Not a bug in the optimiser but a consequence of the reward
@@ -618,16 +336,6 @@ being a proxy. See [AI Safety](/foundations/ai-safety/).
 human preference comparisons, then optimise the policy against it. The standard
 post-training recipe, and the source of both instruction-following and
 sycophancy. See [Post-Training](/training/post-training/).
-
-**Roofline model** — plots attainable performance against arithmetic intensity as
-two lines: a bandwidth-limited diagonal and a compute-limited ceiling. A bound
-and a diagnostic rather than a prediction, and the fastest way to find out which
-limit you are under. See [Accelerators](/hardware/accelerators/).
-
-**RoPE (Rotary Position Embedding)** — encodes position by rotating queries and
-keys, so that dot products depend only on relative offset. Current default.
-
-## S
 
 **Score matching** — fits a model by matching $\nabla_x \log p_\theta(x)$ to the
 data score, which eliminates the partition function because the gradient of
@@ -644,19 +352,6 @@ whitespace treated as an ordinary symbol, so it needs no language-specific
 pre-tokenizer. Often confused with an algorithm; it implements both BPE and
 Unigram. See [Tokenization](/foundations/tokenization/).
 
-**SM (Streaming Multiprocessor)** — the repeated unit of an NVIDIA GPU, 132 of
-them on an H100, each containing CUDA cores, tensor cores, shared memory and a
-register file. See [Accelerators](/hardware/accelerators/).
-
-**Sparse (2:4 structured)** — a sparsity pattern keeping two non-zeros in every
-group of four, which tensor cores can exploit for 2× throughput. Worth knowing
-mainly because vendor spec sheets often print sparse figures without saying so;
-dense is exactly half. See [Accelerators](/hardware/accelerators/).
-
-**Sparse autoencoder (SAE)** — a wide autoencoder with an $\ell_1$ penalty, trained
-to recover an overcomplete basis of monosemantic features from superposed
-activations. Suffers feature splitting, with no principled dictionary size.
-
 **Speculative decoding** — a small draft model proposes several tokens and the
 target model verifies them in one pass, accepting the longest correct prefix.
 Output is distributionally identical to the target model. See
@@ -672,31 +367,14 @@ not change over time. Assumed by most classical forecasting methods and violated
 by most real series, which is what differencing and detrending are for. See [Time
 Series](/domains/time-series/).
 
-**Stop-gradient** — blocking gradient flow through a path. In JEPAs it is what
-prevents the student from pulling the target down to meet it.
-
-**Straight-through estimator** — copying gradients across a non-differentiable
-operation as if it were the identity. Biased, and it works. Used for VQ-VAE's
-quantisation step.
-
 **Sufficient statistic** — a function of the data that loses no information about
 the quantity of interest. The precise standard a state representation must meet,
 and the reason "compress the history" is only half the requirement. See [State
 Representations](/foundations/state-representations/).
 
-**Superposition** — representing more features than dimensions by assigning
-non-orthogonal directions and tolerating interference, which sparsity makes cheap.
-See [Representations](/foundations/representations/).
-
 **Sycophancy** — a model agreeing with the user's stated position rather than
 reporting its best estimate. A predictable consequence of optimising against
 human approval ratings. See [AI Safety](/foundations/ai-safety/).
-
-## T
-
-**Target encoding** — replacing a category with the mean outcome for that category.
-The strongest categorical encoding and the most dangerous; leaks the label unless
-computed out-of-fold.
 
 **Task vector** — a single activation direction, extracted from a prompt
 containing demonstrations, that carries the task and can be transplanted into a
@@ -709,55 +387,20 @@ $r + \gamma V(s')$ rather than a full Monte-Carlo return. Lower variance, biased
 while the estimate is wrong, and the basis of most value-based RL. See
 [Reinforcement Learning](/training/reinforcement-learning/).
 
-**Temperature ($\tau$)** — the softmax scaling in contrastive losses. Controls how
-much gradient concentrates on hard negatives. Genuinely sensitive; typical range
-0.07–0.2.
-
-**Tensor core** — fixed-function unit that consumes small matrix tiles and emits
-a matrix product. Essentially all advertised FLOPs come from these, and their
-fixed tile shapes are why hidden sizes divisible by 128 run faster than nearby
-values. See [Accelerators](/hardware/accelerators/).
-
 **Tensor parallelism** — splitting individual weight matrices across devices so a
 single layer is computed collectively. Needs high-bandwidth interconnect, since
 it communicates within every layer rather than once per step. See [Distributed
 Training](/systems/distributed-training/).
-
-**Tier** — in this atlas, one of the four depth levels every page passes through:
-intuition, mechanics, formal, frontier. See [How to read a
-page](/how-to-read/).
 
 **Tokenizer-free model** — a model operating directly on bytes or characters,
 learning its own segmentation. Removes the tokenizer's fairness and brittleness
 problems at a compute cost that has been shrinking. See
 [Tokenization](/foundations/tokenization/).
 
-## U
-
-**Uniformity** — how evenly embeddings spread over the hypersphere. The
-counterweight to alignment; good alignment with poor uniformity means collapse.
-
 **Unigram LM** — a tokenizer that starts from a large candidate vocabulary and
 prunes it to maximise corpus likelihood under a unigram model, keeping a
 distribution over segmentations rather than a single greedy one. See
 [Tokenization](/foundations/tokenization/).
-
-## V
-
-**VAE (Variational Autoencoder)** — encodes to a distribution rather than a point
-and regularises toward a prior, producing a smooth samplable latent space at the
-cost of blurry reconstructions.
-
-**VICReg** — Variance-Invariance-Covariance Regularisation. Prevents collapse with
-three explicit terms, which makes it unusually diagnosable when it fails.
-
-**V-JEPA / V-JEPA 2** — the video JEPA line. V-JEPA 2 adds an action-conditioned
-predictor and supports zero-shot robot planning from a goal image.
-
-**VQ-VAE** — quantises the latent to entries of a learned codebook, giving discrete
-tokens and sharp reconstructions. Fails via codebook collapse.
-
-## W
 
 **Weisfeiler–Lehman test** — a colour-refinement heuristic for graph isomorphism
 that upper-bounds the expressive power of standard message-passing networks. The
@@ -772,12 +415,133 @@ that prevents collapse. See [Latent Spaces](/foundations/latent-spaces/).
 likelihood rather than raw frequency, which is the single substantive difference
 from BPE. See [Tokenization](/foundations/tokenization/).
 
-**World model** — a learned transition function: given a state and an action,
-predict the next state. Learned once, reusable across tasks, and queried by a
-planner at decision time. See [World Models](/world-models/).
-
-## Z
-
 **ZeRO** — shards optimiser state, gradients and parameters across data-parallel
 ranks in three progressive stages, removing the redundancy of plain replication.
 See [Distributed Training](/systems/distributed-training/).
+
+**Arithmetic intensity** — floating-point operations performed per byte moved
+from memory. Compare it to the machine's own ratio (about 295 FLOPs/byte for an
+H100 in BF16) and you immediately know whether more compute or more bandwidth
+would help. See [Accelerators](/hardware/accelerators/).
+
+**BF16 (bfloat16)** — 16-bit float with FP32's 8 exponent bits and only 7
+mantissa bits. Less precise than FP16 but with the same dynamic range, which is
+why it displaced FP16 for training: low-precision failures are almost always
+range failures, not precision failures. See
+[Accelerators](/hardware/accelerators/).
+
+**Chinchilla-optimal** — the parameter/token split that minimises loss for a
+fixed *training* budget, roughly 20 tokens per parameter. Not the deployment
+optimum, which is a smaller model trained longer. See [Compute
+Budgeting](/hardware/compute-budgeting/).
+
+**FP8** — 8-bit float in two variants: E4M3 (more precision, used for forward
+weights and activations) and E5M2 (more range, used for gradients). The split
+follows the same range-versus-precision logic that made BF16 win. See
+[Accelerators](/hardware/accelerators/).
+
+**HBM (High-Bandwidth Memory)** — stacked DRAM sitting beside the compute die,
+delivering terabytes per second. Where your model actually lives, and the
+resource that most workloads are waiting on. See
+[Accelerators](/hardware/accelerators/).
+
+**MFU (Model FLOPs Utilisation)** — achieved model FLOP/s divided by the
+hardware's peak. Well-tuned large-scale pretraining reaches 40–55%; plan with
+40%, never with peak. The variant that also counts recomputation is HFU and is
+always larger. See [Compute Budgeting](/hardware/compute-budgeting/).
+
+**NVLink** — NVIDIA's GPU-to-GPU interconnect, 900 GB/s per GPU on Hopper and
+1.8 TB/s on Blackwell, against roughly 50 GB/s per GPU over the datacenter
+network. That ~18× cliff at the node boundary is what decides which parallelism
+strategy goes where. See [Choosing Hardware](/hardware/choosing-hardware/).
+
+**Roofline model** — plots attainable performance against arithmetic intensity as
+two lines: a bandwidth-limited diagonal and a compute-limited ceiling. A bound
+and a diagnostic rather than a prediction, and the fastest way to find out which
+limit you are under. See [Accelerators](/hardware/accelerators/).
+
+**SM (Streaming Multiprocessor)** — the repeated unit of an NVIDIA GPU, 132 of
+them on an H100, each containing CUDA cores, tensor cores, shared memory and a
+register file. See [Accelerators](/hardware/accelerators/).
+
+**Sparse (2:4 structured)** — a sparsity pattern keeping two non-zeros in every
+group of four, which tensor cores can exploit for 2× throughput. Worth knowing
+mainly because vendor spec sheets often print sparse figures without saying so;
+dense is exactly half. See [Accelerators](/hardware/accelerators/).
+
+**Tensor core** — fixed-function unit that consumes small matrix tiles and emits
+a matrix product. Essentially all advertised FLOPs come from these, and their
+fixed tile shapes are why hidden sizes divisible by 128 run faster than nearby
+values. See [Accelerators](/hardware/accelerators/).
+
+**Compute rule (6ND)** — the estimate that training a model of $N$ parameters on $D$ tokens
+costs about $6ND$ FLOPs: 2 for the forward pass, 4 for the backward. Breaks down
+at long context, for mixture-of-experts, and below about 1B parameters. See
+[Compute Budgeting](/hardware/compute-budgeting/).
+
+"""
+
+
+def split_entries(block: str):
+    parts = [p.strip() for p in re.split(r"\n\s*\n", block.strip()) if p.strip()]
+    out = []
+    for p in parts:
+        m = re.match(r"\*\*(.+?)\*\*", p)
+        if not m:
+            print(f"WARN: unparsed entry: {p[:60]}", file=sys.stderr)
+            continue
+        out.append((m.group(1), p))
+    return out
+
+
+def sort_key(term: str):
+    # Sort on the bare term, ignoring any parenthetical gloss and case.
+    t = re.sub(r"\s*\(.*?\)", "", term)
+    return re.sub(r"[^a-z0-9 ]", "", t.lower())
+
+
+def main():
+    text = GLOSSARY.read_text()
+    head, body = text.split("\n## A\n", 1)
+    body = "## A\n" + body
+
+    # Parse existing sections.
+    chunks = re.split(r"\n(?=## )", body)
+    sections = {}
+    order = []
+    for c in chunks:
+        letter = c.split("\n", 1)[0][3:].strip()
+        rest = c.split("\n", 1)[1] if "\n" in c else ""
+        sections[letter] = split_entries(rest)
+        order.append(letter)
+
+    existing = {sort_key(t) for entries in sections.values() for t, _ in entries}
+
+    added = 0
+    for term, para in split_entries(NEW):
+        if sort_key(term) in existing:
+            continue
+        letter = sort_key(term)[0].upper()
+        sections.setdefault(letter, [])
+        sections[letter].append((term, para))
+        existing.add(sort_key(term))
+        added += 1
+
+    letters = sorted(sections.keys())
+    out = [head.rstrip(), ""]
+    total = 0
+    for letter in letters:
+        entries = sorted(sections[letter], key=lambda e: sort_key(e[0]))
+        total += len(entries)
+        out.append(f"## {letter}")
+        out.append("")
+        for _, para in entries:
+            out.append(para)
+            out.append("")
+
+    GLOSSARY.write_text("\n".join(out).rstrip() + "\n")
+    print(f"added {added} entries; glossary now has {total} across {len(letters)} letters")
+
+
+if __name__ == "__main__":
+    main()

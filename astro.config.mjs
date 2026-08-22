@@ -109,6 +109,11 @@ export default defineConfig({
           items: [{ autogenerate: { directory: 'systems' } }],
         },
         {
+          label: 'Hardware & Compute',
+          collapsed: true,
+          items: [{ autogenerate: { directory: 'hardware' } }],
+        },
+        {
           label: 'Domains',
           collapsed: true,
           items: [{ autogenerate: { directory: 'domains' } }],
