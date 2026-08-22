@@ -1,0 +1,181 @@
+---
+title: Embeddings
+description: "What an embedding actually is, the four questions that determine whether one is any good, and a map of the whole territory from word2vec to instruction-tuned LLM embedders."
+sidebar:
+  order: 0
+  label: Embeddings — Start Here
+depth: frontier
+readingTime: 28
+papers:
+  - title: "Efficient Estimation of Word Representations in Vector Space (word2vec)"
+    authors: "Tomas Mikolov, Kai Chen, Greg Corrado, Jeffrey Dean"
+    year: 2013
+    url: "https://arxiv.org/abs/1301.3781"
+  - title: "Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks"
+    authors: "Nils Reimers, Iryna Gurevych"
+    year: 2019
+    url: "https://arxiv.org/abs/1908.10084"
+  - title: "MTEB: Massive Text Embedding Benchmark"
+    authors: "Niklas Muennighoff, Nouamane Tazi, Loïc Magne, Nils Reimers"
+    year: 2022
+    url: "https://arxiv.org/abs/2210.07316"
+  - title: "Learning Transferable Visual Models From Natural Language Supervision (CLIP)"
+    authors: "Alec Radford et al."
+    year: 2021
+    url: "https://arxiv.org/abs/2103.00020"
+  - title: "Understanding Contrastive Representation Learning through Alignment and Uniformity on the Hypersphere"
+    authors: "Tongzhou Wang, Phillip Isola"
+    year: 2020
+    url: "https://arxiv.org/abs/2005.10242"
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+<Abstract>
+An embedding is a map from things to vectors such that geometry means something.
+That is the entire idea, and everything difficult about embeddings comes from one
+question the definition leaves open: *means what, exactly?* A vector space where
+nearby means "appears in similar contexts" is a different object from one where
+nearby means "answers this question", and confusing the two is the most common
+and most expensive mistake in applied embedding work.
+</Abstract>
+
+<KeyPoints>
+
+- **An embedding is defined by its training objective, not by its architecture.** Two models with identical weights-shapes trained on different objectives produce spaces where "similar" means different things. Ask what the objective made close, not what the model is.
+- **Similarity is not one thing.** Topical similarity, semantic equivalence, question-answer relevance and stylistic similarity are four different relations. Most retrieval failures are a mismatch between the relation you need and the relation the model was trained on.
+- **Static and contextual embeddings answer different questions.** word2vec gives one vector per word type; a transformer gives one per token occurrence. The first is a lexicon, the second is a reading.
+- **Cosine similarity is a convention, not a law.** Whether it is the right metric depends on how the model was trained. Using cosine on a model trained with unnormalised dot products silently changes the ranking.
+- **The benchmark you optimise decides what you get.** MTEB has meaningfully improved the field and is now heavily gamed; a top-of-leaderboard model can be worse than a mid-table one on your actual data.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## The idea, and the trap inside it
+
+Suppose you want a computer to know that *cat* and *kitten* are related. You could
+write that down. You would then need to write down every other such fact, forever.
+
+The alternative: assign every word a list of numbers, and arrange those numbers so
+that related words end up near each other. Now relatedness is a distance
+computation rather than a lookup, and it generalises to pairs you never
+considered.
+
+That is an embedding. It works remarkably well and it hides a question that most
+practical difficulty flows from: **near in what sense?**
+
+<Aside type="caution" title="The question that decides everything">
+Consider four pairs of texts:
+
+- "How do I reset my password?" / "Password reset instructions" — *the same topic*.
+- "How do I reset my password?" / "Click Settings, then Security, then Reset" — *question and its answer*, which share almost no vocabulary.
+- "The film was terrible" / "The film was wonderful" — *near-identical form, opposite meaning*.
+- "The film was terrible" / "Ce film était horrible" — *same meaning, different language*.
+
+There is no single embedding space in which all four pairs have the "right"
+similarity, because the four notions conflict. A model trained on question-answer
+pairs will place the second pair close; a model trained on paraphrase will place
+the third pair close because they differ by one word, which is exactly wrong for
+sentiment.
+
+**The similarity your embedding computes is the similarity its training objective
+rewarded.** Nothing else. Choosing an embedding model is choosing which of these
+relations you want, and that choice cannot be deferred to a leaderboard.
+</Aside>
+
+## The four questions
+
+Any embedding — of words, sentences, images, users, molecules — is characterised
+by the answers to four questions. Get these straight and most of the field
+organises itself.
+
+<Figure
+  lead="Four questions, and the design space they span."
+  caption="Every embedding model is a point in this space. The rows are independent choices, which is why the combinatorics are large and why 'which embedding model should I use' has no context-free answer. Notice that the objective row is the one that determines what similarity means — everything else is engineering. A common failure is to select on the last row, dimension and cost, having never examined the second."
+>
+<svg viewBox="0 0 760 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The four defining questions for any embedding model">
+  <rect class="f-blue" x="30" y="34" width="200" height="76" rx="5"/>
+  <text class="on-fill-sm" x="46" y="58">1 · WHAT is embedded?</text>
+  <text class="xs" x="46" y="80">word type · token occurrence</text>
+  <text class="xs" x="46" y="96">sentence · document · image</text>
+  <text class="xs" x="46" y="104"> </text>
+  <text class="xs" x="250" y="58">Decides the unit. One vector per word</text>
+  <text class="xs" x="250" y="74">type is a lexicon; one per occurrence is</text>
+  <text class="xs" x="250" y="90">a reading. Chunking a document is itself</text>
+  <text class="xs" x="250" y="106">a modelling decision, not preprocessing.</text>
+
+  <rect class="f-purple" x="30" y="122" width="200" height="76" rx="5"/>
+  <text class="on-fill-sm" x="46" y="146">2 · WHAT made it close?</text>
+  <text class="xs" x="46" y="168">co-occurrence · paraphrase</text>
+  <text class="xs" x="46" y="184">query–document · caption–image</text>
+  <text class="xs" x="250" y="146">The objective. This is the row that</text>
+  <text class="xs" x="250" y="162">defines what "similar" means, and the</text>
+  <text class="xs" x="250" y="178">one people skip. Everything downstream</text>
+  <text class="xs" x="250" y="194">inherits whatever this rewarded.</text>
+
+  <rect class="f-green" x="30" y="210" width="200" height="76" rx="5"/>
+  <text class="on-fill-sm" x="46" y="234">3 · HOW is it compared?</text>
+  <text class="xs" x="46" y="256">cosine · dot product</text>
+  <text class="xs" x="46" y="272">Euclidean · learned metric</text>
+  <text class="xs" x="250" y="234">Must match training. A model trained</text>
+  <text class="xs" x="250" y="250">with unnormalised dot products ranks</text>
+  <text class="xs" x="250" y="266">differently under cosine — the norm was</text>
+  <text class="xs" x="250" y="282">carrying information you just discarded.</text>
+
+  <rect class="f-amber" x="30" y="298" width="200" height="76" rx="5"/>
+  <text class="on-fill-sm" x="46" y="322">4 · WHAT does it cost?</text>
+  <text class="xs" x="46" y="344">dimension · precision</text>
+  <text class="xs" x="46" y="360">index type · reindex cost</text>
+  <text class="xs" x="250" y="322">1536 float32 dims = 6 KB per item.</text>
+  <text class="xs" x="250" y="338">Ten million items = 60 GB before the</text>
+  <text class="xs" x="250" y="354">index. Quantization and Matryoshka</text>
+  <text class="xs" x="250" y="370">truncation both attack this.</text>
+</svg>
+</Figure>
+
+## The map
+
+<Steps>
+
+1. **Static word embeddings** — one vector per word type, learned from co-occurrence statistics. word2vec, GloVe, fastText. Largely superseded for downstream use, but they are where the geometry was first understood, and the analysis is still the clearest available. See [Word Embeddings](/embeddings/word-embeddings/).
+
+2. **Contextual token embeddings** — one vector per occurrence, produced by a transformer. The same word gets different vectors in different sentences. These are the internal representations discussed in [Representations](/foundations/representations/) and [Latent Spaces](/foundations/latent-spaces/).
+
+3. **Text embeddings** — a single vector for a sentence, passage or document, produced by a model trained specifically for that. SBERT through E5, GTE, BGE and the current LLM-based embedders. This is what people usually mean by "embeddings" in 2026. See [Text Embeddings](/embeddings/text-embeddings/).
+
+4. **Multimodal embeddings** — a shared space for images and text, trained on paired data. CLIP and its descendants. See [Multimodal Models](/architectures/multimodal/).
+
+5. **Entity and categorical embeddings** — learned vectors for users, products, categories, nodes. See [Feature Encoding](/encoders/feature-encoding/) and [Graph Neural Networks](/domains/graph-neural-networks/).
+
+</Steps>
+
+## Where the operational problems live
+
+The theory is comfortable. The operational side is where projects fail, and it
+gets its own page — [Vector Search and Production
+Embeddings](/embeddings/vector-search/) — because the failure modes are specific
+and repeatable: choosing a dimension without measuring the recall cost, discovering
+that re-embedding a corpus takes a week, indexes that lose recall silently, and
+the fact that embeddings of private text are substantially invertible.
+
+## Reading path
+
+If you want the geometry and the historical understanding, start with [Word
+Embeddings](/embeddings/word-embeddings/). If you are choosing a model for a
+retrieval system today, start with [Text
+Embeddings](/embeddings/text-embeddings/). If you already have a model and need
+it to work at scale, go to [Vector Search](/embeddings/vector-search/).
+
+Adjacent: [Neural Encoders](/encoders/neural-encoders/) for the architectures that
+produce embeddings, [Latent Spaces](/foundations/latent-spaces/) for the geometry
+of the spaces themselves, [Retrieval](/systems/retrieval/) for the system that
+consumes them, and [Self-Supervised Learning](/training/self-supervision/) for the
+contrastive machinery that trains them.
+
+<Papers />

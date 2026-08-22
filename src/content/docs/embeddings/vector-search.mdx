@@ -1,0 +1,606 @@
+---
+title: Vector Search and Production Embeddings
+description: "What happens after you have the vectors — storage arithmetic, int8 and binary quantization, how HNSW and IVF-PQ actually work, filtered search, reindexing, and the fact that embeddings of private text are largely invertible."
+sidebar:
+  order: 3
+depth: frontier
+readingTime: 40
+prereqs:
+  - label: "Text Embeddings"
+    slug: "embeddings/text-embeddings"
+papers:
+  - title: "Efficient and robust approximate nearest neighbor search using Hierarchical Navigable Small World graphs (HNSW)"
+    authors: "Yu A. Malkov, D. A. Yashunin"
+    year: 2016
+    url: "https://arxiv.org/abs/1603.09320"
+  - title: "Product Quantization for Nearest Neighbor Search"
+    authors: "Hervé Jégou, Matthijs Douze, Cordelia Schmid"
+    year: 2011
+    url: "https://ieeexplore.ieee.org/document/5432202"
+  - title: "Accelerating Large-Scale Inference with Anisotropic Vector Quantization (ScaNN)"
+    authors: "Ruiqi Guo et al."
+    year: 2019
+    url: "https://arxiv.org/abs/1908.10396"
+  - title: "Billion-scale similarity search with GPUs (FAISS)"
+    authors: "Jeff Johnson, Matthijs Douze, Hervé Jégou"
+    year: 2017
+    url: "https://arxiv.org/abs/1702.08734"
+  - title: "DiskANN: Fast Accurate Billion-point Nearest Neighbor Search on a Single Node"
+    authors: "Suhas Jayaram Subramanya et al."
+    year: 2019
+    url: "https://papers.nips.cc/paper_files/paper/2019/hash/09853c7fb1d3f8ee67a61b6bf4a7f8e6-Abstract.html"
+  - title: "Text Embeddings Reveal (Almost) As Much As Text"
+    authors: "John X. Morris, Volodymyr Kuleshov, Vitaly Shmatikov, Alexander M. Rush"
+    year: 2023
+    url: "https://arxiv.org/abs/2310.06816"
+  - title: "Information Leakage in Embedding Models"
+    authors: "Congzheng Song, Ananth Raghunathan"
+    year: 2020
+    url: "https://arxiv.org/abs/2004.00053"
+  - title: "Matryoshka Representation Learning"
+    authors: "Aditya Kusupati et al."
+    year: 2022
+    url: "https://arxiv.org/abs/2205.13147"
+  - title: "ColBERT: Efficient and Effective Passage Search via Contextualized Late Interaction over BERT"
+    authors: "Omar Khattab, Matei Zaharia"
+    year: 2020
+    url: "https://arxiv.org/abs/2004.12832"
+  - title: "The Faiss library"
+    authors: "Matthijs Douze et al."
+    year: 2024
+    url: "https://arxiv.org/abs/2401.08281"
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+<Abstract>
+Getting good vectors is the research problem. Storing a hundred million of them,
+searching them in ten milliseconds, filtering by metadata without destroying
+recall, and replacing them all when you upgrade the model — that is the
+engineering problem, and it is where embedding projects actually fail. This page
+covers the arithmetic, the index structures, the operational traps, and one
+security result that most teams have not internalised: embeddings of private text
+can be inverted back into approximate text.
+</Abstract>
+
+<KeyPoints>
+
+- **Do the storage arithmetic before choosing a dimension.** 100 million items at 1536 float32 dimensions is 614 GB of raw vectors, before the index, which typically adds 30–100%.
+- **Quantization is nearly free accuracy-wise and is not optional at scale.** int8 gives 4× compression at a fraction of a percent of recall; binary gives 32× and, with float rescoring of the top candidates, recovers most of the loss.
+- **HNSW is fast and memory-hungry; IVF-PQ is compact and slower.** That is the whole trade-off, and which one you want follows from whether your vectors fit in RAM.
+- **Filtered search is the genuinely hard problem.** "Nearest neighbours where `tenant_id = 42`" breaks the assumptions both index families rest on, and naive approaches silently lose recall rather than erroring.
+- **Embeddings are not anonymised data.** Morris et al. recovered exact text from embeddings 92% of the time on 32-token inputs. Treat a vector store of user text with the same controls as the text itself.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## The arithmetic that decides your architecture
+
+Before any index, before any library, compute this.
+
+$$
+\text{bytes} = N \times d \times b
+$$
+
+for $N$ items, $d$ dimensions, $b$ bytes per component.
+
+| Corpus | 1536 dims, float32 | 768 dims, float32 | 768 dims, int8 | 768 dims, binary |
+|---|---|---|---|---|
+| 1 M | 6.1 GB | 3.1 GB | 0.77 GB | 96 MB |
+| 10 M | 61 GB | 31 GB | 7.7 GB | 0.96 GB |
+| 100 M | 614 GB | 307 GB | 77 GB | 9.6 GB |
+| 1 B | 6.1 TB | 3.1 TB | 768 GB | 96 GB |
+
+Then add the index. HNSW's graph typically costs another 30–100% on top of the
+vectors themselves.
+
+<Aside type="tip" title="Where the cliffs are">
+Three thresholds change your architecture, and they are worth locating before you
+build:
+
+- **Fits in one machine's RAM** (say under 100 GB): use HNSW, keep everything in memory, stop thinking about it.
+- **Fits on one machine's SSD but not in RAM:** DiskANN-style layouts, or IVF-PQ with the compressed codes resident and full vectors on disk for rescoring.
+- **Does not fit on one machine:** sharding, and now you have a distributed systems problem, with all that implies for consistency, rebalancing and tail latency.
+
+Notice that quantization moves you *down* this list. 100 M × 768 dims is 307 GB in
+float32 — a distributed problem — and 77 GB in int8, which is one large machine.
+That is the real argument for quantization: it is not a memory saving, it is an
+architecture simplification.
+</Aside>
+
+## Reduce dimensions before you compress them
+
+Three ways to use fewer dimensions, in descending order of how well they work.
+
+<Steps>
+
+1. **Matryoshka truncation.** If the model was trained with nested losses, take the first $m$ coordinates. Best quality per dimension by a clear margin, because the model was trained for exactly this. Free at query time.
+
+2. **PCA.** Fit on a sample, project everything. Works reasonably, needs a fitted transform that must be stored and applied identically to queries, and is a second thing that can drift out of sync with your model.
+
+3. **Random projection.** Multiply by a random matrix. Justified by the Johnson–Lindenstrauss lemma, needs no training, and is worse than the alternatives at moderate dimensions. Useful mainly when you cannot fit anything.
+
+</Steps>
+
+The **Johnson–Lindenstrauss lemma** is worth knowing as an intuition anchor: for
+any $n$ points and any $\epsilon \in (0,1)$, a random projection to
+
+$$
+k = O\!\left(\frac{\log n}{\epsilon^{2}}\right)
+$$
+
+dimensions preserves all pairwise distances within a factor $1 \pm \epsilon$ with
+high probability. Note what is absent: $k$ does not depend on the original
+dimension at all, only on the number of points and the tolerance. For a million
+points at 10% distortion, roughly 5,500 dimensions suffices — a bound that is
+famously loose in practice, where a few hundred usually works.
+
+<Tier level="mechanics" />
+
+## Quantization
+
+Three levels, and you should almost always use at least the first.
+
+**Scalar (int8).** Map each float to one of 256 levels using per-dimension or
+global min/max. 4× compression. Recall loss is typically well under 1%, and
+modern CPUs have SIMD instructions for int8 dot products, so it is often *faster*
+as well as smaller. There is no good reason not to do this.
+
+**Binary.** One bit per dimension: the sign. 32× compression, and similarity
+becomes Hamming distance, computable with XOR and a popcount instruction —
+roughly an order of magnitude faster than float comparison.
+
+Naively this loses substantial recall. The fix is **rescoring**: retrieve 10–20×
+more candidates than you need using binary distance, then re-rank those with the
+full-precision vectors, which you fetch only for the shortlist. This recovers most
+of the loss while keeping the search itself binary, and it is now the standard
+recipe.
+
+**Product quantization (PQ).** Split the vector into $m$ subvectors, run k-means
+on each subspace with $2^{8}$ centroids, and store $m$ bytes of centroid indices.
+A 768-dimensional float32 vector (3,072 bytes) becomes 96 bytes at $m = 96$ — 32×
+compression.
+
+The elegance is in the search: precompute a table of distances from the query
+subvector to all 256 centroids in each subspace, then any candidate's approximate
+distance is a sum of $m$ table lookups. No decompression, no multiplication.
+
+<Aside type="note" title="What ScaNN changed">
+Standard PQ minimises reconstruction error — how close the compressed vector is to
+the original. Guo et al. observed that this is the wrong objective for **maximum
+inner product search**, because errors that change the *ranking* matter and errors
+orthogonal to the query direction largely do not.
+
+Their anisotropic quantization loss weights errors parallel to the datapoint more
+heavily than perpendicular ones. Same compression ratio, better retrieval accuracy.
+It is a good illustration of a general lesson: optimising a proxy (reconstruction)
+rather than the actual objective (ranking) leaves performance on the table, and
+the gap can be large.
+</Aside>
+
+## The two index families
+
+<Figure
+  lead="HNSW navigates a graph; IVF-PQ narrows to a few cells and scans compressed codes."
+  caption="The two dominant approximate-nearest-neighbour structures, and why the choice is really a memory decision. HNSW builds a multi-layer proximity graph: search starts at a sparse top layer that covers the space in long hops, then descends into denser layers for local refinement — the same idea as a skip list, in high dimensions. It is fast and its graph costs as much memory again as the vectors. IVF-PQ partitions the space with k-means, searches only the nearest few cells, and scans product-quantized codes inside them using precomputed lookup tables. It is far more compact and it scans more candidates to reach the same recall. Both expose one knob that trades recall against latency: ef_search for HNSW, nprobe for IVF."
+>
+<svg viewBox="0 0 760 430" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="HNSW graph search versus IVF-PQ cell search">
+  <defs>
+    <marker id="vs-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor" opacity="0.6"/>
+    </marker>
+  </defs>
+
+  <text class="lb" x="30" y="26">HNSW — hierarchical proximity graph</text>
+  <rect class="bx" x="30" y="36" width="340" height="240" rx="5"/>
+
+  <text class="xs" x="44" y="58">layer 2 — sparse, long hops</text>
+  <circle cx="80" cy="76" r="5" class="f-purple"/>
+  <circle cx="200" cy="70" r="5" class="f-purple"/>
+  <circle cx="310" cy="80" r="5" class="f-purple"/>
+  <line class="bx" x1="80" y1="76" x2="200" y2="70"/>
+  <line class="bx" x1="200" y1="70" x2="310" y2="80"/>
+
+  <text class="xs" x="44" y="116">layer 1 — medium density</text>
+  <circle cx="80" cy="134" r="4" class="f-blue"/>
+  <circle cx="140" cy="142" r="4" class="f-blue"/>
+  <circle cx="200" cy="128" r="4" class="f-blue"/>
+  <circle cx="258" cy="140" r="4" class="f-blue"/>
+  <circle cx="310" cy="132" r="4" class="f-blue"/>
+  <line class="bx" x1="80" y1="134" x2="140" y2="142"/>
+  <line class="bx" x1="140" y1="142" x2="200" y2="128"/>
+  <line class="bx" x1="200" y1="128" x2="258" y2="140"/>
+  <line class="bx" x1="258" y1="140" x2="310" y2="132"/>
+
+  <text class="xs" x="44" y="176">layer 0 — every vector</text>
+  <circle cx="70" cy="196" r="3" class="f-green"/><circle cx="102" cy="204" r="3" class="f-green"/>
+  <circle cx="134" cy="192" r="3" class="f-green"/><circle cx="166" cy="206" r="3" class="f-green"/>
+  <circle cx="198" cy="194" r="3" class="f-green"/><circle cx="230" cy="204" r="3" class="f-green"/>
+  <circle cx="262" cy="192" r="3" class="f-green"/><circle cx="294" cy="202" r="3" class="f-green"/>
+  <circle cx="326" cy="196" r="3" class="f-green"/>
+  <line class="bx" x1="70" y1="196" x2="102" y2="204"/><line class="bx" x1="102" y1="204" x2="134" y2="192"/>
+  <line class="bx" x1="134" y1="192" x2="166" y2="206"/><line class="bx" x1="166" y1="206" x2="198" y2="194"/>
+  <line class="bx" x1="198" y1="194" x2="230" y2="204"/><line class="bx" x1="230" y1="204" x2="262" y2="192"/>
+  <line class="bx" x1="262" y1="192" x2="294" y2="202"/><line class="bx" x1="294" y1="202" x2="326" y2="196"/>
+
+  <path class="ar dash" d="M80,82 L80,128" marker-end="url(#vs-a)"/>
+  <path class="ar dash" d="M140,148 L166,200" marker-end="url(#vs-a)"/>
+
+  <text class="xs" x="44" y="234">Descend greedily: enter at the top, hop to the</text>
+  <text class="xs" x="44" y="250">closest neighbour, drop a layer, repeat. Knob is</text>
+  <text class="xs" x="44" y="266">ef_search — the size of the candidate frontier.</text>
+
+  <text class="lb" x="400" y="26">IVF-PQ — coarse cells + compressed codes</text>
+  <rect class="bx" x="400" y="36" width="330" height="240" rx="5"/>
+
+  <line class="dash" x1="530" y1="52" x2="530" y2="200"/>
+  <line class="dash" x1="400" y1="126" x2="730" y2="126"/>
+  <line class="dash" x1="465" y1="52" x2="465" y2="126"/>
+  <line class="dash" x1="620" y1="126" x2="620" y2="200"/>
+
+  <circle cx="440" cy="90" r="4" class="f-grey"/><circle cx="500" cy="80" r="4" class="f-grey"/>
+  <circle cx="580" cy="70" r="4" class="f-amber"/><circle cx="600" cy="100" r="4" class="f-amber"/>
+  <circle cx="660" cy="88" r="4" class="f-amber"/><circle cx="470" cy="160" r="4" class="f-grey"/>
+  <circle cx="560" cy="170" r="4" class="f-grey"/><circle cx="660" cy="165" r="4" class="f-grey"/>
+
+  <circle cx="612" cy="84" r="6" fill="none" stroke="currentColor" stroke-width="2"/>
+  <text class="xs" x="622" y="76">query</text>
+  <text class="xs" x="546" y="62">searched cell</text>
+
+  <text class="xs" x="414" y="222">1 · find the nprobe nearest centroids</text>
+  <text class="xs" x="414" y="238">2 · scan only those cells, using PQ codes and</text>
+  <text class="xs" x="414" y="254">    a precomputed 256-entry distance table</text>
+  <text class="xs" x="414" y="270">3 · optionally rescore the shortlist with full vectors</text>
+
+  <line class="bx" x1="30" y1="292" x2="730" y2="292" opacity="0.3"/>
+
+  <rect class="f-grey" x="30" y="304" width="700" height="24" rx="3"/>
+  <text class="on-fill-sm" x="44" y="321">Property</text>
+  <text class="on-fill-sm" x="300" y="321">HNSW</text>
+  <text class="on-fill-sm" x="520" y="321">IVF-PQ</text>
+
+  <text class="xs" x="44" y="348">Memory beyond the vectors</text>
+  <text class="xs" x="300" y="348">+30–100% for the graph</text>
+  <text class="xs" x="520" y="348">tiny; vectors themselves 32× smaller</text>
+
+  <text class="xs" x="44" y="368">Query latency at equal recall</text>
+  <text class="xs" x="300" y="368">lower</text>
+  <text class="xs" x="520" y="368">higher — scans more candidates</text>
+
+  <text class="xs" x="44" y="388">Build time</text>
+  <text class="xs" x="300" y="388">slow, incremental inserts OK</text>
+  <text class="xs" x="520" y="388">fast, but needs a k-means training pass</text>
+
+  <text class="xs" x="44" y="408">Deletes</text>
+  <text class="xs" x="300" y="408">tombstones; graph degrades over time</text>
+  <text class="xs" x="520" y="408">straightforward within a cell</text>
+</svg>
+</Figure>
+
+## The knobs that matter
+
+**HNSW.** Three parameters, and only one is a query-time decision.
+
+- `M` — neighbours per node, typically 16–64. Build-time. Higher gives better recall and more memory; it cannot be changed without rebuilding.
+- `ef_construction` — candidate list size during build, typically 100–500. Build-time. Higher gives a better graph and slower construction.
+- `ef_search` — candidate list size during search, typically 50–500. **Query-time**, and this is your recall/latency dial. Expose it; do not hard-code it.
+
+**IVF.** Two parameters.
+
+- `nlist` — number of cells, conventionally around $\sqrt{N}$. Build-time.
+- `nprobe` — cells searched per query. Query-time, and again your recall dial.
+
+<Aside type="caution" title="Recall is silent when it degrades">
+An ANN index that returns the wrong neighbours does not error. It returns
+plausible-looking results, slightly worse, and nothing in your logs indicates a
+problem. Teams routinely run at 70% recall for months without knowing.
+
+Measure it: hold out a few thousand queries, compute exact brute-force neighbours
+once, and track `recall@k` of the index against that ground truth as a regular job.
+This is cheap and it is the only way to know. Then plot recall against latency by
+sweeping `ef_search` or `nprobe`, and pick your operating point deliberately rather
+than accepting a library default that was tuned on someone else's data.
+</Aside>
+
+<Figure
+  lead="Every index choice is a point on a recall–latency curve, and the curve is what you should be looking at."
+  caption="Sweeping one query-time parameter traces a curve for each index configuration; comparing single points is how people end up with the wrong index. Two structural facts are visible. First, the curves are steep near the top — going from 95% to 99% recall typically costs several times the latency, which is why 'maximum recall' is rarely the right operating point. Second, quantization moves the whole curve rather than sliding along it: binary-with-rescoring gets close to float recall at a fraction of the memory, which is a different kind of win from turning up ef_search. The right procedure is to fix a latency budget, read off the recall each configuration achieves, and pick from there."
+>
+<svg viewBox="0 0 760 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Recall versus latency curves for ANN index configurations">
+  <line class="bx" x1="90" y1="320" x2="700" y2="320"/>
+  <line class="bx" x1="90" y1="320" x2="90" y2="40"/>
+  <text class="lb" x="90" y="26">recall@10</text>
+  <text class="lb" x="700" y="360" text-anchor="end">query latency (log scale)</text>
+
+  <text class="xs" x="82" y="70" text-anchor="end">100%</text>
+  <text class="xs" x="82" y="130" text-anchor="end">95%</text>
+  <text class="xs" x="82" y="190" text-anchor="end">90%</text>
+  <text class="xs" x="82" y="250" text-anchor="end">80%</text>
+  <text class="xs" x="82" y="310" text-anchor="end">60%</text>
+
+  <text class="xs" x="150" y="340" text-anchor="middle">0.5 ms</text>
+  <text class="xs" x="290" y="340" text-anchor="middle">2 ms</text>
+  <text class="xs" x="430" y="340" text-anchor="middle">10 ms</text>
+  <text class="xs" x="570" y="340" text-anchor="middle">50 ms</text>
+  <text class="xs" x="680" y="340" text-anchor="middle">250 ms</text>
+
+  <path class="thick" d="M130,270 C200,150 280,100 420,80" fill="none" stroke="currentColor"/>
+  <circle cx="130" cy="270" r="4" class="f-blue"/>
+  <circle cx="240" cy="140" r="4" class="f-blue"/>
+  <circle cx="420" cy="80" r="4" class="f-blue"/>
+  <text class="xs" x="430" y="76">HNSW float32 — fastest, most memory</text>
+  <text class="xs" x="140" y="286">ef_search = 20</text>
+  <text class="xs" x="250" y="136">ef = 100</text>
+
+  <path class="dash" d="M200,290 C300,180 400,120 560,92" fill="none" stroke="currentColor"/>
+  <circle cx="200" cy="290" r="4" class="f-green"/>
+  <circle cx="380" cy="128" r="4" class="f-green"/>
+  <circle cx="560" cy="92" r="4" class="f-green"/>
+  <text class="xs" x="570" y="90">HNSW + int8 — 4× smaller, ~same curve</text>
+
+  <path class="dash" d="M170,300 C300,220 440,150 640,110" fill="none" stroke="currentColor"/>
+  <circle cx="170" cy="300" r="4" class="f-amber"/>
+  <circle cx="440" cy="150" r="4" class="f-amber"/>
+  <circle cx="640" cy="110" r="4" class="f-amber"/>
+  <text class="xs" x="430" y="182">binary + float rescoring — 32× smaller,</text>
+  <text class="xs" x="430" y="198">recovers most of the recall</text>
+
+  <path class="dash" d="M250,308 C380,260 500,200 680,150" fill="none" stroke="currentColor"/>
+  <circle cx="250" cy="308" r="4" class="f-pink"/>
+  <circle cx="500" cy="200" r="4" class="f-pink"/>
+  <circle cx="680" cy="150" r="4" class="f-pink"/>
+  <text class="xs" x="500" y="234">IVF-PQ, no rescoring — smallest, slowest to recall</text>
+
+  <line class="dash" x1="430" y1="40" x2="430" y2="320"/>
+  <text class="xs" x="436" y="308">a latency budget is a vertical line —</text>
+  <text class="xs" x="436" y="322">read recall off it, don't compare points</text>
+
+  <text class="xs" x="90" y="384">Shapes are illustrative, not measured; the relative ordering and the steepness near the top are what generalise. Always sweep the curve on your own data.</text>
+</svg>
+</Figure>
+
+## Filtered search, the genuinely hard part
+
+Almost every real query has constraints: this tenant, this date range, this
+language, documents this user may see. "Nearest neighbours **subject to** a
+predicate" is much harder than nearest neighbours, and both index families
+struggle for the same underlying reason — they organise by geometry, and your
+filter is not geometric.
+
+<Tabs>
+<TabItem label="Post-filter">
+
+Retrieve $k' \gg k$ by vector similarity, then discard non-matching results.
+
+Simple, and it fails badly when the filter is selective. If 0.1% of documents
+match, retrieving 1,000 candidates yields about one result. You can raise $k'$,
+but the required value depends on the filter's selectivity, which varies per
+query, and unbounded $k'$ is unbounded latency.
+
+**Use when** filters are weakly selective — say, matching more than 10% of the
+corpus.
+
+</TabItem>
+<TabItem label="Pre-filter">
+
+Determine the matching set first, then search only within it.
+
+Exact, and it discards the index: you are back to brute force over the matching
+subset. Fine for a thousand documents, hopeless for ten million.
+
+**Use when** the filter is highly selective and the resulting subset is small
+enough to scan.
+
+</TabItem>
+<TabItem label="Partitioned indexes">
+
+Build a separate index per filter value — per tenant, per language.
+
+Fast and exact within a partition. Costs index overhead per partition, does not
+work for continuous filters like date ranges, and does not handle conjunctions of
+several filters.
+
+**Use when** you have one dominant, low-cardinality, mandatory filter. Multi-tenant
+systems are the canonical fit.
+
+</TabItem>
+<TabItem label="Filter-aware traversal">
+
+Modern approach, and the one most vector databases have converged on: evaluate the
+predicate *during* graph traversal, skipping non-matching nodes while still
+traversing through them to reach matching regions.
+
+Handles arbitrary selectivity gracefully. Requires index and filter engine to be
+integrated, which is precisely what a dedicated vector database provides and a
+bolt-on ANN library does not.
+
+The caveat: at extreme selectivity the graph's connectivity assumption breaks —
+you may need to traverse a long way through non-matching nodes to find matching
+ones — and recall degrades in ways that are hard to predict analytically.
+
+</TabItem>
+</Tabs>
+
+## Updates, deletes and the reindex problem
+
+**Inserts** are fine. HNSW supports incremental insertion natively; IVF assigns to
+the nearest existing centroid.
+
+**Deletes** are not fine. Both families use tombstones — mark as deleted, filter
+at query time — because actually removing a node from an HNSW graph would break
+the connectivity that makes search work. Over time, tombstones accumulate, wasted
+memory grows, and recall degrades because the graph is routing through vertices
+that return nothing. Periodic compaction is mandatory, not optional.
+
+**Drift** is more insidious. IVF's centroids were fitted on the data you had at
+build time. If your corpus distribution shifts — a new product line, a new
+language, a seasonal topic — the cells become unbalanced, some grow enormous, and
+`nprobe` no longer buys the recall it used to. Nothing errors.
+
+<Aside type="caution" title="Reindexing is the real constraint on model improvement">
+Change the embedding model and every vector is invalid. Not degraded — invalid.
+Vectors from two models are not comparable, and mixing them produces results that
+look plausible and are meaningless.
+
+For 100 million documents on a single H100, at maybe 1,000 documents per second
+for a mid-size embedder, a full re-embed is roughly 28 hours of GPU time, plus
+index rebuild, plus a dual-write migration if you cannot take downtime.
+
+This is why teams stay on outdated models. Plan for it:
+
+- **Store the model identifier with every vector.** Non-negotiable. Without it, a partially migrated corpus is unrecoverable.
+- **Support two active indexes** so you can build the new one while serving the old.
+- **Keep the source text.** If you only kept vectors, you cannot migrate at all.
+- **Batch and checkpoint the re-embed job.** It will fail partway through; that should cost minutes, not the whole run.
+</Aside>
+
+<Tier level="formal" />
+
+## Product quantization, formally
+
+Split a vector $x \in \mathbb{R}^{d}$ into $m$ subvectors $x = (x^1, \dots, x^m)$,
+each of dimension $d/m$. For each subspace $j$, learn a codebook
+$C^j = \{c^j_1, \dots, c^j_{K}\}$ by k-means, typically $K = 256$ so each index
+fits in a byte.
+
+The quantizer is $q(x) = (q^1(x^1), \dots, q^m(x^m))$ with
+$q^j(x^j) = \arg\min_{c \in C^j} \|x^j - c\|$. Storage is $m \log_2 K$ bits.
+
+**Asymmetric distance computation** is the reason PQ is fast. Do not quantize the
+query. Instead precompute, for each subspace $j$ and each centroid $k$, the value
+$\|y^j - c^j_k\|^2$. That is $m \times K$ table entries computed once per query.
+Then for any database vector,
+
+$$
+\|y - q(x)\|^2 = \sum_{j=1}^{m} \|y^j - q^j(x^j)\|^2,
+$$
+
+which is $m$ table lookups and $m-1$ additions. No multiplications, no
+decompression, and the whole table fits in L1 cache. Scanning a million
+96-byte codes is a few milliseconds on one core.
+
+The compression ratio is $32d / (m \log_2 K)$. For $d = 768$, $m = 96$, $K = 256$:
+$24576/768 = 32\times$.
+
+## Why high dimensions are hostile
+
+In high dimensions, the ratio between the nearest and farthest points in a random
+dataset approaches 1 — everything is roughly equidistant, and "nearest neighbour"
+loses meaning. This is the concentration of distances, and it is the reason exact
+high-dimensional nearest-neighbour search has no known algorithm that beats a
+linear scan in the worst case.
+
+Real embeddings escape this because they are **not** uniformly distributed: they
+lie near a low-dimensional [manifold](/foundations/latent-spaces/) whose intrinsic
+dimension is far below the ambient one. ANN methods work in practice because they
+exploit that structure.
+
+Two consequences follow directly, and both are practically important:
+
+- **ANN performance depends on your data's intrinsic dimension**, not on $d$. Benchmarks on one corpus transfer poorly to another with different structure, which is why library defaults are a starting point rather than an answer.
+- **Hubness.** In high dimensions some points appear in a disproportionate number of nearest-neighbour lists — they are close to everything. Hubs pollute retrieval results across many unrelated queries and are a real and under-diagnosed cause of "why does this same irrelevant document keep appearing?". Correcting the similarity for hubness, or simply detecting and inspecting hub documents, is worth doing.
+
+## Embeddings are not anonymised
+
+This is the result most teams have not absorbed, and it has direct compliance
+consequences.
+
+Morris et al. trained a model to invert text embeddings — recovering the original
+text from the vector alone. On 32-token inputs they recovered the **exact** text
+92% of the time. Longer texts are harder, but substantial content is still
+recoverable.
+
+Earlier, Song and Raghunathan demonstrated attribute inference and partial
+recovery from embeddings across several model families.
+
+<Aside type="caution" title="What follows operationally">
+**A vector store containing embeddings of user text is a store of user text.**
+Not a derived, anonymised artefact — an encoding.
+
+Concretely:
+
+- Apply the same access controls, encryption, retention and deletion policies to the vector store as to the source text.
+- Under GDPR-style regimes, treat embeddings of personal data as personal data. "It's just numbers" is not a defence a regulator has accepted.
+- A right-to-erasure request must delete the vector, not only the source row. If your index only tombstones, verify that the tombstone actually removes the data rather than hiding it.
+- Third-party embedding APIs mean sending the underlying content to that vendor, whatever the data-processing agreement says about "embeddings only".
+- Vector similarity leaks information even without inversion: if an attacker can query your index, they can test whether a document is present by observing the similarity distribution.
+</Aside>
+
+<Tier level="frontier" />
+
+## Where this stands, as of 2026
+
+**Binary quantization with rescoring has become the default at scale.** 32×
+compression with a small recall cost, recovered by rescoring a shortlist against
+full-precision vectors kept on disk. Combined with Matryoshka truncation, the
+practical storage cost of a large embedding corpus has fallen by one to two
+orders of magnitude in about three years, which has changed what is affordable
+more than any model improvement has.
+
+**Vector search is being absorbed into general databases.** Postgres with
+pgvector, and vector types in most major engines, have largely eliminated the
+need for a dedicated vector database at small and medium scale. Purpose-built
+systems retain an advantage in filtered search, in operating above a few hundred
+million vectors, and in operational tooling — but the default answer for a new
+project is increasingly "use the database you already have".
+
+**Multi-vector retrieval is closing the gap and still losing on cost.**
+ColBERT-style late interaction stores one vector per token and computes a
+max-similarity score, getting much closer to cross-encoder quality while remaining
+searchable. Storage is 10–100× higher. PLAID-style optimisations and aggressive
+compression have narrowed this; it remains the reason adoption is limited.
+
+**GPU-accelerated indexes are becoming practical.** Building an HNSW graph over a
+billion vectors was a multi-day CPU job; GPU implementations bring it into hours.
+This matters most for the reindexing problem — the binding constraint on model
+upgrades is build time, and reducing it changes how often teams can improve their
+retrieval.
+
+**The security implications are still not standard practice.** Embedding inversion
+has been public since 2023 and most production vector stores are still treated as
+derived data with weaker controls than the source. This will change through
+incident or regulation rather than through papers.
+
+## Open problems
+
+<Steps>
+
+1. **Filtered ANN with guarantees.** Current methods are heuristics that degrade unpredictably at high selectivity. There is no index with provable recall bounds under arbitrary predicates.
+
+2. **Backward-compatible embeddings.** If a new model's space were aligned with the old one, upgrading would not require reindexing. Alignment methods exist and lose enough quality to defeat the point.
+
+3. **Streaming index maintenance.** Graph indexes degrade under sustained insert/delete churn and need periodic full rebuilds. An index that maintains its quality indefinitely under churn is an open problem.
+
+4. **Predicting ANN parameters from data.** `M`, `ef`, `nlist`, `nprobe` are tuned empirically per corpus. Predicting good values from measurable properties like intrinsic dimension and clustering structure would save a great deal of work and does not exist.
+
+5. **Privacy-preserving vector search.** Searching an encrypted index without decryption, or with differential privacy guarantees, is possible in principle and currently far too slow.
+
+</Steps>
+
+## Practical guidance
+
+- **Do the storage arithmetic before choosing anything.** $N \times d \times b$, then add 30–100% for the index. It determines your architecture in one line.
+- **Use int8 unconditionally.** 4× smaller, often faster, sub-1% recall loss. There is no scenario where float32 storage is the right default.
+- **Use binary with rescoring above roughly 10 million vectors.** 32× compression, and the rescoring step recovers most of the accuracy.
+- **Measure recall against brute force on a held-out query set, on a schedule.** A silently degraded index is the most common and most invisible failure in this area.
+- **Expose `ef_search` or `nprobe` at query time.** Different queries deserve different recall/latency points, and library defaults were tuned on someone else's corpus.
+- **Store the model identifier with every vector, and keep the source text.** Without both, migration is impossible rather than merely painful.
+- **Treat the vector store as containing the source text, because it approximately does.** Same access controls, same retention, same deletion path.
+- **Start with pgvector if you are already on Postgres.** Move to a dedicated system when you have measured a specific reason, not in anticipation of one.
+
+## Reading path
+
+Back to [Text Embeddings](/embeddings/text-embeddings/) for how the vectors are
+produced, or [Retrieval](/systems/retrieval/) for the full RAG pipeline these
+indexes sit inside. For why high-dimensional geometry behaves this way, [Latent
+Spaces](/foundations/latent-spaces/). For the serving cost of the embedding model
+itself, [Inference](/systems/inference/) and [Compute
+Budgeting](/hardware/compute-budgeting/).
+
+<Papers />

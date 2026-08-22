@@ -84,6 +84,11 @@ export default defineConfig({
           items: [{ autogenerate: { directory: 'encoders' } }],
         },
         {
+          label: 'Embeddings',
+          collapsed: true,
+          items: [{ autogenerate: { directory: 'embeddings' } }],
+        },
+        {
           label: 'Foundations',
           collapsed: false,
           items: [{ autogenerate: { directory: 'foundations' } }],

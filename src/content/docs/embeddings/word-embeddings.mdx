@@ -1,0 +1,540 @@
+---
+title: Word Embeddings
+description: "word2vec, GloVe and fastText from the distributional hypothesis to the proof that skip-gram is matrix factorisation in disguise — plus what the famous analogy result actually shows, and what it does not."
+sidebar:
+  order: 1
+depth: frontier
+readingTime: 40
+prereqs:
+  - label: "Embeddings — Start Here"
+    slug: "embeddings"
+papers:
+  - title: "Efficient Estimation of Word Representations in Vector Space (word2vec)"
+    authors: "Tomas Mikolov, Kai Chen, Greg Corrado, Jeffrey Dean"
+    year: 2013
+    url: "https://arxiv.org/abs/1301.3781"
+  - title: "Distributed Representations of Words and Phrases and their Compositionality"
+    authors: "Tomas Mikolov, Ilya Sutskever, Kai Chen, Greg Corrado, Jeffrey Dean"
+    year: 2013
+    url: "https://arxiv.org/abs/1310.4546"
+  - title: "GloVe: Global Vectors for Word Representation"
+    authors: "Jeffrey Pennington, Richard Socher, Christopher D. Manning"
+    year: 2014
+    url: "https://aclanthology.org/D14-1162/"
+  - title: "Enriching Word Vectors with Subword Information (fastText)"
+    authors: "Piotr Bojanowski, Edouard Grave, Armand Joulin, Tomas Mikolov"
+    year: 2016
+    url: "https://arxiv.org/abs/1607.04606"
+  - title: "Neural Word Embedding as Implicit Matrix Factorization"
+    authors: "Omer Levy, Yoav Goldberg"
+    year: 2014
+    url: "https://papers.nips.cc/paper_files/paper/2014/hash/b78666971ceae55a8e87efb7cbfd9ad4-Abstract.html"
+  - title: "Improving Distributional Similarity with Lessons Learned from Word Embeddings"
+    authors: "Omer Levy, Yoav Goldberg, Ido Dagan"
+    year: 2015
+    url: "https://aclanthology.org/Q15-1016/"
+  - title: "All-but-the-Top: Simple and Effective Postprocessing for Word Representations"
+    authors: "Jiaqi Mu, Suma Bhat, Pramod Viswanath"
+    year: 2017
+    url: "https://arxiv.org/abs/1702.01417"
+  - title: "Man is to Computer Programmer as Woman is to Homemaker? Debiasing Word Embeddings"
+    authors: "Tolga Bolukbasi, Kai-Wei Chang, James Zou, Venkatesh Saligrama, Adam Kalai"
+    year: 2016
+    url: "https://arxiv.org/abs/1607.06520"
+  - title: "Semantics derived automatically from language corpora contain human-like biases"
+    authors: "Aylin Caliskan, Joanna J. Bryson, Arvind Narayanan"
+    year: 2017
+    url: "https://www.science.org/doi/10.1126/science.aal4230"
+  - title: "Lipstick on a Pig: Debiasing Methods Cover up Systematic Gender Biases in Word Embeddings But do not Remove Them"
+    authors: "Hila Gonen, Yoav Goldberg"
+    year: 2019
+    url: "https://arxiv.org/abs/1903.03862"
+  - title: "Issues in evaluating semantic spaces using word analogies"
+    authors: "Tal Linzen"
+    year: 2016
+    url: "https://arxiv.org/abs/1606.07736"
+  - title: "Fair Is Better than Sensational: Man Is to Doctor as Woman Is to Doctor"
+    authors: "Malvina Nissim, Rik van Noord, Rob van der Goot"
+    year: 2019
+    url: "https://arxiv.org/abs/1905.09866"
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+<Abstract>
+Static word embeddings are largely obsolete as a component and indispensable as an
+education. They are the setting in which the geometry of meaning was first
+understood, where the equivalence between neural training and matrix
+factorisation was proved, and where the field learned — slowly, and partly by
+being embarrassed — how easily a compelling demonstration can overstate what a
+model knows. Everything here recurs in modern embeddings, usually with the same
+failure modes and less clarity about them.
+</Abstract>
+
+<KeyPoints>
+
+- **The distributional hypothesis is the whole foundation.** A word's meaning is approximated by the company it keeps. Every embedding method, including modern ones, is a way of turning that slogan into an optimisation problem.
+- **Skip-gram with negative sampling is implicitly factorising a matrix.** Levy and Goldberg proved that SGNS has an optimum where the dot product equals pointwise mutual information minus $\log k$. The neural framing was a very effective optimisation trick, not a different kind of model.
+- **The famous analogy result is real and substantially oversold.** The standard evaluation excludes the three input words from the answer candidates. Without that exclusion, the nearest neighbour of `king − man + woman` is usually *king*.
+- **Hyperparameters mattered more than algorithms.** Levy, Goldberg and Dagan showed that once you transfer word2vec's design choices to count-based methods, most of the reported gaps close. Much of the 2013–2015 "neural beats count-based" literature was comparing tuned to untuned.
+- **Bias in embeddings is measurable, real, and not removed by the popular debiasing methods.** Gonen and Goldberg showed projection-based debiasing hides the bias from the specific probe while leaving the cluster structure intact.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## One idea, stated in 1954
+
+> You shall know a word by the company it keeps.
+
+That is Firth, and Harris made a similar argument about distributional structure
+in the same decade. The claim is that if two words appear in the same kinds of
+contexts, they mean similar things.
+
+It is obviously incomplete — it cannot distinguish *good* from *bad*, which occur
+in nearly identical contexts — and it is astonishingly productive anyway.
+
+<Aside type="tip" title="Turning the slogan into a procedure">
+Take a large corpus. For every word, count what appears near it.
+
+- *dog*: leash 340, bark 210, walk 180, veterinarian 95, …
+- *cat*: leash 45, purr 200, litter 190, veterinarian 88, …
+- *democracy*: election 410, vote 380, parliament 220, …
+
+Each word is now a vector of counts over a vocabulary. *dog* and *cat* have
+similar vectors; *democracy* does not resemble either. You have an embedding.
+
+Everything after this is fixing three problems with the naive version: the vectors
+are enormous (one dimension per vocabulary word), they are dominated by frequency
+rather than informativeness, and they are almost entirely zeros.
+</Aside>
+
+## Three fixes, in order
+
+<Steps>
+
+1. **Frequency is not information.** *the* appears near everything. Replace raw counts with **pointwise mutual information** — how much more often two words co-occur than chance would predict. Negative values are unreliable in a finite corpus, so clip them: positive PMI, or PPMI.
+
+2. **The matrix is too big.** 100,000 words gives a 100,000² matrix. Factorise it — truncated SVD keeps the top few hundred directions. This is latent semantic analysis, and it predates word2vec by two decades.
+
+3. **Factorising a huge matrix is expensive.** word2vec's contribution: never build the matrix. Stream the corpus and do stochastic gradient updates on a prediction task instead. Same target, vastly cheaper computation.
+
+</Steps>
+
+The third step is what made embeddings ubiquitous, and step 3's relationship to
+step 2 is the theoretical result that ties the field together — proved after
+word2vec was already famous.
+
+## word2vec, informally
+
+Two architectures, described in the 2013 paper.
+
+**Skip-gram**: given a word, predict the words around it. **CBOW**: given the
+surrounding words, predict the middle one.
+
+Skip-gram works better on rare words and became the default. The training signal
+is a prediction task, but **nobody wants the predictions** — the point is the
+weight matrix, whose rows are the embeddings. The task is a pretext, in exactly
+the sense used in [self-supervised learning](/training/self-supervision/).
+
+<Figure
+  lead="Skip-gram: a prediction task nobody cares about, run to produce a byproduct everybody wants."
+  caption="The model reads a centre word, looks up its vector, and scores that vector against candidate context words. Training pushes the centre vector toward the vectors of words that actually appeared nearby and away from randomly sampled words that did not — the negative sampling trick that made word2vec fast. Two details matter more than they look: there are two separate embedding tables, one for centre words and one for context words (the centre table is what you keep), and the negatives are drawn from a modified unigram distribution raised to the power 0.75, which downweights very frequent words. That exponent has no theoretical derivation; it was tuned empirically and it works."
+>
+<svg viewBox="0 0 760 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Skip-gram with negative sampling training step">
+  <defs>
+    <marker id="we-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor" opacity="0.6"/>
+    </marker>
+  </defs>
+
+  <text class="lb" x="30" y="26">Corpus window, size 2</text>
+  <rect class="bx" x="30" y="38" width="86" height="28" rx="3"/>
+  <text class="sm" x="73" y="57" text-anchor="middle">the</text>
+  <rect class="bx" x="120" y="38" width="86" height="28" rx="3"/>
+  <text class="sm" x="163" y="57" text-anchor="middle">quick</text>
+  <rect class="f-purple" x="210" y="38" width="86" height="28" rx="3"/>
+  <text class="on-fill-sm" x="253" y="57" text-anchor="middle">brown</text>
+  <rect class="bx" x="300" y="38" width="86" height="28" rx="3"/>
+  <text class="sm" x="343" y="57" text-anchor="middle">fox</text>
+  <rect class="bx" x="390" y="38" width="86" height="28" rx="3"/>
+  <text class="sm" x="433" y="57" text-anchor="middle">jumps</text>
+  <text class="xs" x="490" y="57">centre word in purple; the rest are positives</text>
+
+  <path class="ar" d="M253,70 L253,98" marker-end="url(#we-a)"/>
+
+  <rect class="f-blue" x="150" y="102" width="206" height="34" rx="4"/>
+  <text class="on-fill-sm" x="253" y="124" text-anchor="middle">centre embedding table  v(brown)</text>
+
+  <path class="ar" d="M253,140 L253,168" marker-end="url(#we-a)"/>
+  <text class="xs" x="262" y="158">300-dim vector</text>
+
+  <rect class="bx" x="90" y="172" width="580" height="86" rx="4"/>
+  <text class="lb" x="104" y="194">score against context embeddings, then push</text>
+
+  <rect class="f-green" x="104" y="204" width="130" height="24" rx="3"/>
+  <text class="on-fill-sm" x="169" y="221" text-anchor="middle">u(quick) — pull closer</text>
+  <rect class="f-green" x="242" y="204" width="130" height="24" rx="3"/>
+  <text class="on-fill-sm" x="307" y="221" text-anchor="middle">u(fox) — pull closer</text>
+  <rect class="f-pink" x="380" y="204" width="130" height="24" rx="3"/>
+  <text class="on-fill-sm" x="445" y="221" text-anchor="middle">u(tariff) — push away</text>
+  <rect class="f-pink" x="518" y="204" width="138" height="24" rx="3"/>
+  <text class="on-fill-sm" x="587" y="221" text-anchor="middle">u(brioche) — push away</text>
+
+  <text class="xs" x="104" y="248">negatives sampled from unigram frequency raised to the 0.75 power · typically k = 5 to 20</text>
+
+  <line class="bx" x1="30" y1="278" x2="730" y2="278" opacity="0.3"/>
+
+  <text class="lb" x="30" y="302">What you keep, and what you throw away</text>
+  <rect class="f-blue" x="30" y="314" width="300" height="30" rx="3"/>
+  <text class="on-fill-sm" x="44" y="334">centre table V — this is "the embeddings"</text>
+  <rect class="f-grey" x="30" y="350" width="300" height="30" rx="3"/>
+  <text class="on-fill-sm" x="44" y="370">context table U — usually discarded</text>
+
+  <text class="xs" x="352" y="330">Discarding U is convention, not necessity. Summing</text>
+  <text class="xs" x="352" y="346">V + U sometimes improves downstream results, and</text>
+  <text class="xs" x="352" y="362">GloVe recommends exactly that. The asymmetry</text>
+  <text class="xs" x="352" y="378">between the two tables is doing real work.</text>
+</svg>
+</Figure>
+
+<Tier level="mechanics" />
+
+## The three algorithms, compared
+
+| | word2vec (SGNS) | GloVe | fastText |
+|---|---|---|---|
+| **Signal** | Local windows, streamed | Global co-occurrence counts | Local windows + character n-grams |
+| **Objective** | Binary classification vs sampled negatives | Weighted least squares on log co-occurrence | Same as SGNS, over subword sums |
+| **Sees the corpus** | Once per epoch, online | Once to build the matrix, then iterates on non-zeros | Once per epoch, online |
+| **Out-of-vocabulary** | Fails — no vector exists | Fails | **Works** — composes from n-grams |
+| **Morphology** | Ignored; *run* and *running* are unrelated tokens | Ignored | Captured by shared n-grams |
+| **Best at** | The default; strong on semantic tasks | Slightly better on some analogy sets | Morphologically rich languages, noisy text, OOV |
+
+<Aside type="note" title="GloVe's actual argument">
+Pennington et al. framed GloVe as fixing a conceptual gap: word2vec looks at local
+windows and never uses global co-occurrence statistics directly, whereas
+count-based methods use global statistics but do poorly on analogy tasks. GloVe
+was proposed as taking both.
+
+The empirical case is weaker than the framing suggests. Levy, Goldberg and Dagan's
+controlled comparison found the differences between GloVe and SGNS were mostly
+attributable to hyperparameters and preprocessing rather than to the global-versus-local
+distinction. GloVe remains a perfectly good method; the theoretical story for why
+it should be better did not survive controlled testing.
+</Aside>
+
+## fastText and the OOV problem
+
+word2vec has a hard failure: a word not in the training vocabulary has no vector.
+Not a bad vector — none. For English news text this is an annoyance. For Finnish,
+Turkish, Hungarian or any agglutinative language, or for user-generated text with
+typos, it is disqualifying.
+
+fastText represents each word as the sum of vectors for its character n-grams,
+typically lengths 3 to 6. *running* becomes `<ru`, `run`, `unn`, `nni`, `nin`,
+`ing`, `ng>` plus the whole-word token. An unseen word still decomposes into
+n-grams that were seen.
+
+Two consequences, one good and one worth watching. Morphology comes for free —
+*run*, *running* and *runner* share most of their n-grams and therefore land near
+each other. And orthographically similar but semantically unrelated words get
+pulled together, which is a genuine cost. This is the same trade-off that
+[subword tokenizers](/foundations/tokenization/) make, and fastText is
+historically the bridge between the two ideas.
+
+## The analogy result, and what it actually shows
+
+The demonstration that made embeddings famous:
+
+$$
+v(\text{king}) - v(\text{man}) + v(\text{woman}) \approx v(\text{queen}).
+$$
+
+It works. It also does considerably less than it is usually taken to do, and the
+gap is instructive.
+
+<Aside type="caution" title="The exclusion that is never mentioned">
+The standard evaluation, in the original code and in nearly every reimplementation,
+**excludes the three input words from the candidate answers**.
+
+Without that exclusion, the nearest neighbour of `king − man + woman` is very often
+*king* itself. The arithmetic moves the vector a little way from *king*, and *king*
+remains the closest point. The result is not "the model computes the analogy" but
+"among all words other than the three you gave it, the closest is *queen*" — a
+much weaker and much less magical claim.
+
+Linzen showed that simple baselines exploiting this — for example, just returning
+the nearest neighbour of the third input word — do surprisingly well on standard
+analogy sets. Nissim, van Noord and van der Goot documented how the same exclusion
+inflates the sensational bias analogies: `man : doctor :: woman : ?` returns
+*nurse* only because *doctor* has been removed from consideration.
+
+None of this means the geometry is fake. Linear structure in embedding spaces is
+real and reappears in modern models as the [linear representation
+hypothesis](/foundations/latent-spaces/). It means the standard demonstration is
+a poor measurement of it, and that a striking demo should prompt the question
+"what was excluded?"
+</Aside>
+
+<Tier level="formal" />
+
+## Skip-gram with negative sampling, formally
+
+For a centre word $w$ and context word $c$, with separate embedding tables giving
+$v_w$ and $u_c$, SGNS maximises
+
+$$
+\ell = \sum_{(w,c) \in D} \left[ \log \sigma(v_w^\top u_c) + k\, \mathbb{E}_{c_N \sim P_n} \log \sigma(-v_w^\top u_{c_N}) \right],
+$$
+
+where $D$ is the multiset of observed word-context pairs, $\sigma$ is the logistic
+function, $k$ is the number of negatives per positive, and $P_n(c) \propto
+f(c)^{0.75}$ is the noise distribution.
+
+The objective is a binary classification: distinguish real co-occurrences from
+sampled fakes. This is [noise-contrastive
+estimation](/architectures/energy-based-models/) in a specific guise, and it is
+why the same mathematics reappears in InfoNCE and in every modern contrastive
+embedding model.
+
+## The result that reframed the field
+
+Levy and Goldberg analysed what SGNS optimises at its global optimum, treating
+$v_w^\top u_c$ as a free parameter for each pair.
+
+Differentiating the per-pair objective and setting it to zero gives, for the
+quantity $x = v_w^\top u_c$:
+
+$$
+v_w^\top u_c = \log\left(\frac{\#(w,c) \cdot |D|}{\#(w)\cdot \#(c)}\right) - \log k = \mathrm{PMI}(w,c) - \log k.
+$$
+
+So **SGNS is implicitly factorising the word-context PMI matrix shifted by
+$\log k$**. The neural network, the sampling, the SGD — all of it is an efficient
+way to approximate a factorisation of a matrix that was already the standard
+object in distributional semantics.
+
+<Aside type="tip" title="Why this mattered, and still does">
+Three things follow.
+
+**Historically:** it dissolved the "neural versus count-based" debate. They were
+the same method with different optimisation. Levy, Goldberg and Dagan then showed
+empirically that transferring word2vec's design choices — dynamic context windows,
+subsampling frequent words, context distribution smoothing — to explicit PPMI-SVD
+closed most of the remaining gap. The lesson was that the reported advantage came
+from hyperparameters, not from the neural framing.
+
+**Methodologically:** it is the clearest example in the field of a result that
+looked like a new kind of model and was a new kind of optimiser. That pattern
+repeats, and it is worth being suspicious in the same way.
+
+**Practically:** the equivalence is exact only at the unconstrained optimum. Real
+SGNS uses a low-dimensional bottleneck, so the factorisation is rank-constrained
+and the correspondence is approximate — which is also where the useful
+generalisation comes from. Levy and Goldberg found that explicit SVD of the shifted
+PPMI matrix matched or beat SGNS on similarity tasks but lost on analogy tasks,
+and the reason for that split is still not fully explained.
+</Aside>
+
+## GloVe's objective
+
+GloVe fits log co-occurrence counts directly:
+
+$$
+J = \sum_{i,j} f(X_{ij}) \left( w_i^\top \tilde{w}_j + b_i + \tilde{b}_j - \log X_{ij} \right)^2,
+$$
+
+with $X_{ij}$ the co-occurrence count, $b$ and $\tilde{b}$ bias terms, and the
+weighting function
+
+$$
+f(x) = \begin{cases} (x/x_{\max})^{\alpha} & x < x_{\max} \\ 1 & \text{otherwise}\end{cases}
+$$
+
+with $x_{\max} = 100$ and $\alpha = 3/4$ in the paper. The weighting does two
+jobs: it prevents very frequent pairs from dominating, and $f(0) = 0$ lets the
+sum skip zero entries entirely, which is what makes the sparse matrix tractable.
+
+Note that $\alpha = 3/4$ is the same exponent as word2vec's noise distribution,
+arrived at independently, and neither paper derives it. Both report that it
+works better than the alternatives they tried.
+
+## Geometry, and the correction that fixes it
+
+Trained word embeddings are not isotropic. Mu, Bhat and Viswanath found two
+robust properties: the vectors have a large non-zero common mean, and the
+variance is dominated by a small number of top principal directions. Both
+inflate the similarity between arbitrary word pairs.
+
+Their post-processing, **all-but-the-top**:
+
+<Steps>
+
+1. Subtract the mean vector from every embedding.
+2. Compute the top $d$ principal components of the centred set, with $d \approx D/100$ for dimension $D$.
+3. Project each embedding off those components.
+
+</Steps>
+
+This consistently improves performance on word similarity and downstream tasks,
+at no training cost. The same anisotropy reappears in contextual embeddings, where
+it is stronger, and the same family of fixes applies — see [Latent
+Spaces](/foundations/latent-spaces/).
+
+## Bias: measurement, and the failure of the popular fix
+
+Caliskan, Bryson and Narayanan adapted the Implicit Association Test to
+embeddings. The **Word Embedding Association Test** measures whether two sets of
+target words ($X$, $Y$) associate differentially with two sets of attribute words
+($A$, $B$):
+
+$$
+s(w, A, B) = \operatorname{mean}_{a \in A}\cos(w,a) - \operatorname{mean}_{b \in B}\cos(w,b),
+$$
+
+with the test statistic $\sum_{x \in X} s(x,A,B) - \sum_{y \in Y} s(y,A,B)$ and a
+permutation test for significance.
+
+Their finding: embeddings trained on ordinary web text reproduce human IAT results
+across the board, including the benign ones (flowers versus insects) and the
+harmful ones (European-American versus African-American names with pleasantness;
+gender with career versus family). The correlation with real-world occupational
+gender statistics was strong. Embeddings are an accurate mirror of the corpus,
+which is precisely the problem.
+
+<Aside type="caution" title="Why projection-based debiasing does not work">
+Bolukbasi et al. proposed identifying a "gender direction" from pairs like
+*he*/*she*, then projecting gender-neutral words off it. Measured by the original
+probe, it works.
+
+Gonen and Goldberg showed the bias is not removed. After debiasing, words that
+were originally gender-biased **still cluster together** — you can still classify a
+word's original bias from its debiased vector with high accuracy, and the nearest
+neighbours of stereotypically gendered professions remain stereotypically gendered.
+The projection removed the specific direction the probe was looking at while
+leaving the underlying structure intact.
+
+The general lesson is worth more than the specific finding: **a debiasing method
+evaluated with the metric used to define the bias will look successful by
+construction.** Any mitigation must be evaluated with a probe that was not used to
+design it. This mistake recurs constantly in current alignment and safety work —
+see [AI Safety](/foundations/ai-safety/).
+</Aside>
+
+<Figure
+  lead="What the geometry gives you, what it does not, and what it silently encodes."
+  caption="Three claims about word embedding geometry, ranked by how well they hold up. Linear structure is real but weaker than the standard demonstration implies, because that demonstration excludes the input words from the answer set. Anisotropy is robust, measurable and correctable. Bias is robust, measurable, and not correctable by the popular projection method — the structure survives the projection that was supposed to remove it. The general pattern: geometric structure in these spaces is real, and every claim about it needs a measurement that was not designed around the claim."
+>
+<svg viewBox="0 0 760 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Three geometric claims about word embeddings and their status">
+  <text class="lb" x="30" y="26">Claim 1 — linear analogy structure</text>
+  <rect class="f-amber" x="30" y="36" width="700" height="88" rx="5" opacity="0.25"/>
+  <circle cx="90" cy="72" r="5"/>
+  <text class="xs" x="76" y="64">man</text>
+  <circle cx="190" cy="72" r="5"/>
+  <text class="xs" x="176" y="64">king</text>
+  <circle cx="90" cy="108" r="5"/>
+  <text class="xs" x="60" y="118">woman</text>
+  <circle cx="190" cy="108" r="5"/>
+  <text class="xs" x="176" y="118">queen</text>
+  <path class="ar dash" d="M92,70 L186,70"/>
+  <path class="ar dash" d="M92,110 L186,110"/>
+  <text class="xs" x="230" y="66">Status: REAL but overstated. The evaluation excludes the</text>
+  <text class="xs" x="230" y="82">three input words. Without exclusion, the nearest point to</text>
+  <text class="xs" x="230" y="98">king − man + woman is usually king. Simple baselines score</text>
+  <text class="xs" x="230" y="114">well on standard analogy sets by exploiting this.</text>
+
+  <text class="lb" x="30" y="152">Claim 2 — the space is isotropic</text>
+  <rect class="f-pink" x="30" y="162" width="700" height="88" rx="5" opacity="0.25"/>
+  <ellipse cx="130" cy="206" rx="80" ry="18" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <circle cx="100" cy="204" r="3"/><circle cx="130" cy="209" r="3"/><circle cx="160" cy="203" r="3"/>
+  <circle cx="115" cy="210" r="3"/><circle cx="175" cy="208" r="3"/><circle cx="88" cy="207" r="3"/>
+  <path class="ar" d="M50,206 L86,206"/>
+  <text class="xs" x="34" y="196">mean</text>
+  <text class="xs" x="230" y="192">Status: FALSE, and correctable. Vectors have a large common</text>
+  <text class="xs" x="230" y="208">mean and a few dominant principal directions, which inflates</text>
+  <text class="xs" x="230" y="224">all pairwise similarities. All-but-the-top — centre, then</text>
+  <text class="xs" x="230" y="240">project off the top ~D/100 components — reliably helps.</text>
+
+  <text class="lb" x="30" y="278">Claim 3 — projection removes bias</text>
+  <rect class="f-pink" x="30" y="288" width="700" height="96" rx="5" opacity="0.25"/>
+  <circle cx="80" cy="318" r="4" class="f-blue"/><circle cx="96" cy="326" r="4" class="f-blue"/>
+  <circle cx="72" cy="334" r="4" class="f-blue"/><circle cx="92" cy="342" r="4" class="f-blue"/>
+  <circle cx="160" cy="318" r="4" class="f-purple"/><circle cx="176" cy="328" r="4" class="f-purple"/>
+  <circle cx="154" cy="336" r="4" class="f-purple"/><circle cx="172" cy="344" r="4" class="f-purple"/>
+  <line class="dash" x1="128" y1="306" x2="128" y2="358"/>
+  <text class="xs" x="60" y="374">clusters persist after debiasing</text>
+  <text class="xs" x="230" y="314">Status: FALSE. The projected-off direction is gone, so the</text>
+  <text class="xs" x="230" y="330">original probe reports success — but originally-biased words</text>
+  <text class="xs" x="230" y="346">still cluster, and the original bias is still recoverable from</text>
+  <text class="xs" x="230" y="362">the "debiased" vectors. A mitigation scored with the metric</text>
+  <text class="xs" x="230" y="378">that defined the problem will always look like it worked.</text>
+</svg>
+</Figure>
+
+<Tier level="frontier" />
+
+## Where this stands, as of 2026
+
+**As a component, static embeddings are mostly retired.** For any task where a
+contextual or sentence-level model is affordable, it wins — the same-vector-for-every-sense
+limitation is fatal for anything requiring disambiguation.
+
+**They remain in production for specific reasons**, and the reasons are good ones:
+they are essentially free at inference (a table lookup), they need no accelerator,
+they are interpretable enough to debug, and they are a strong baseline that a
+neural retrieval system should be required to beat. A large fraction of
+recommender and search systems still use them in the candidate-generation stage,
+where latency budgets are measured in microseconds.
+
+**The analysis is still the field's clearest.** We understand what word2vec
+optimises, in closed form. Nothing comparable exists for a modern text embedding
+model — we know the objective but not what the optimum looks like. That gap is
+worth noticing when reading claims about what modern embeddings "understand".
+
+**The bias findings generalised, and so did the flawed evaluation.** WEAT-style
+analyses transferred straight to contextual and multimodal models. So did the
+methodological error: mitigations evaluated with the metric that defined the
+target. Gonen and Goldberg's critique is one of the most transferable results on
+this site.
+
+## Open problems
+
+<Steps>
+
+1. **Why linear structure emerges at all.** There are partial accounts — PMI factorisation with a low-rank constraint, latent-variable models, a paraphrase-based argument — but no consensus derivation, and the same question is now open for [modern latent spaces](/foundations/latent-spaces/).
+
+2. **The SVD/SGNS split.** Explicit factorisation of the shifted PPMI matrix matches SGNS on similarity but loses on analogies. Something about the SGD trajectory, or the weighting implied by sampling, is doing work that the closed-form factorisation does not, and it has not been isolated.
+
+3. **Polysemy without context.** Multi-sense embeddings were tried extensively and never worked well enough to displace single-vector models before contextual models made the question moot. Whether a fixed-size representation *can* carry multiple senses usefully is unresolved rather than answered.
+
+4. **Bias mitigation that survives an independent probe.** Still open. Every method that reports success has, so far, been evaluated with a probe related to its own construction.
+
+5. **Cross-lingual alignment without supervision.** Unsupervised alignment of monolingual spaces works well for related languages and degrades sharply for distant ones. Why the isomorphism assumption fails is understood qualitatively and not quantitatively.
+
+</Steps>
+
+## Practical guidance
+
+- **Use fastText over word2vec if you use static embeddings at all.** OOV handling is free and morphology helps in nearly every language.
+- **Apply all-but-the-top.** It costs one PCA and reliably improves similarity tasks.
+- **Do not report analogy results without saying whether inputs were excluded.** They are not comparable across the two conventions, and most published numbers use exclusion.
+- **Run WEAT before deploying.** It takes minutes, and knowing the associations your corpus encoded is better than discovering them from a user.
+- **Distrust any debiasing method evaluated with its own defining metric.** Ask for an independent probe; if there is not one, assume the bias is still there.
+- **Keep static embeddings as your retrieval baseline.** If a large neural retriever cannot beat fastText plus BM25 on your data, the problem is your data or your evaluation, not your model.
+
+## Reading path
+
+Next: [Text Embeddings](/embeddings/text-embeddings/) for how the same ideas
+became sentence-level models. For the geometry in contextual models, [Latent
+Spaces](/foundations/latent-spaces/). For the contrastive machinery that
+generalised negative sampling, [Self-Supervised
+Learning](/training/self-supervision/). For where subword n-grams went,
+[Tokenization](/foundations/tokenization/).
+
+<Papers />

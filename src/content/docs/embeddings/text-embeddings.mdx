@@ -1,0 +1,572 @@
+---
+title: Text Embeddings
+description: "How sentence and document embedding models are actually built — dual encoders, contrastive training, hard negatives, temperature, instruction prefixes, Matryoshka truncation, and why MTEB rank does not predict your results."
+sidebar:
+  order: 2
+depth: frontier
+readingTime: 44
+prereqs:
+  - label: "Word Embeddings"
+    slug: "embeddings/word-embeddings"
+  - label: "Transformers"
+    slug: "architectures/transformers"
+papers:
+  - title: "Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks"
+    authors: "Nils Reimers, Iryna Gurevych"
+    year: 2019
+    url: "https://arxiv.org/abs/1908.10084"
+  - title: "Dense Passage Retrieval for Open-Domain Question Answering"
+    authors: "Vladimir Karpukhin et al."
+    year: 2020
+    url: "https://arxiv.org/abs/2004.04906"
+  - title: "SimCSE: Simple Contrastive Learning of Sentence Embeddings"
+    authors: "Tianyu Gao, Xingcheng Yao, Danqi Chen"
+    year: 2021
+    url: "https://arxiv.org/abs/2104.08821"
+  - title: "Unsupervised Dense Information Retrieval with Contrastive Learning (Contriever)"
+    authors: "Gautier Izacard et al."
+    year: 2021
+    url: "https://arxiv.org/abs/2112.09118"
+  - title: "Approximate Nearest Neighbor Negative Contrastive Learning for Dense Text Retrieval (ANCE)"
+    authors: "Lee Xiong et al."
+    year: 2020
+    url: "https://arxiv.org/abs/2007.00808"
+  - title: "Text Embeddings by Weakly-Supervised Contrastive Pre-training (E5)"
+    authors: "Liang Wang et al."
+    year: 2022
+    url: "https://arxiv.org/abs/2212.03533"
+  - title: "C-Pack: Packed Resources For General Chinese Embeddings (BGE)"
+    authors: "Shitao Xiao, Zheng Liu, Peitian Zhang, Niklas Muennighoff"
+    year: 2023
+    url: "https://arxiv.org/abs/2309.07597"
+  - title: "Towards General Text Embeddings with Multi-stage Contrastive Learning (GTE)"
+    authors: "Zehan Li et al."
+    year: 2023
+    url: "https://arxiv.org/abs/2308.03281"
+  - title: "One Embedder, Any Task: Instruction-Finetuned Text Embeddings (INSTRUCTOR)"
+    authors: "Hongjin Su et al."
+    year: 2022
+    url: "https://arxiv.org/abs/2212.09741"
+  - title: "MTEB: Massive Text Embedding Benchmark"
+    authors: "Niklas Muennighoff, Nouamane Tazi, Loïc Magne, Nils Reimers"
+    year: 2022
+    url: "https://arxiv.org/abs/2210.07316"
+  - title: "Matryoshka Representation Learning"
+    authors: "Aditya Kusupati et al."
+    year: 2022
+    url: "https://arxiv.org/abs/2205.13147"
+  - title: "LLM2Vec: Large Language Models Are Secretly Powerful Text Encoders"
+    authors: "Parishad BehnamGhader et al."
+    year: 2024
+    url: "https://arxiv.org/abs/2404.05961"
+  - title: "Improving Text Embeddings with Large Language Models (E5-Mistral)"
+    authors: "Liang Wang et al."
+    year: 2023
+    url: "https://arxiv.org/abs/2401.00368"
+  - title: "Scaling Deep Contrastive Learning Batch Size under Memory Limited Setup (GradCache)"
+    authors: "Luyu Gao, Yunyi Zhang, Jiawei Han, Jamie Callan"
+    year: 2021
+    url: "https://arxiv.org/abs/2101.06983"
+  - title: "Understanding Contrastive Representation Learning through Alignment and Uniformity on the Hypersphere"
+    authors: "Tongzhou Wang, Phillip Isola"
+    year: 2020
+    url: "https://arxiv.org/abs/2005.10242"
+---
+
+import Abstract from '../../../components/Abstract.astro';
+import KeyPoints from '../../../components/KeyPoints.astro';
+import Tier from '../../../components/Tier.astro';
+import Figure from '../../../components/Figure.astro';
+import Papers from '../../../components/Papers.astro';
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+<Abstract>
+A text embedding model is a transformer plus a pooling operation plus, crucially,
+a contrastive objective that decided what "similar" means. The architecture is
+nearly identical across every model on the leaderboard; what differs is the
+training data and the negatives. This page covers how these models are built —
+including the parts that determine your results and are rarely discussed, like
+where the hard negatives came from and whether the model expects an instruction
+prefix.
+</Abstract>
+
+<KeyPoints>
+
+- **A pretrained BERT is a bad sentence embedder out of the box.** Reimers and Gurevych found averaging GloVe vectors outperformed BERT's `[CLS]` token on semantic similarity. The masked-language-modelling objective never asked for a usable sentence vector, so it did not produce one.
+- **Negatives, not positives, determine quality.** Anyone can collect positive pairs. Mining hard negatives — and avoiding false negatives while doing so — is where the engineering and most of the performance difference lives.
+- **Batch size is a hyperparameter with unusual leverage.** In-batch negatives mean a larger batch is a harder and more informative task. This is why GradCache exists and why small-batch reproductions of published results underperform.
+- **Many current models require an instruction prefix and silently degrade without it.** E5 wants `query:` and `passage:`; instruction-tuned models want a task description. Omitting the prefix is a common and invisible bug.
+- **MTEB rank does not predict performance on your data.** It is a genuine improvement over what preceded it and it is heavily optimised against. Evaluate on your own labelled pairs; a few hundred are enough to change your decision.
+
+</KeyPoints>
+
+<Tier level="intuition" />
+
+## Why you cannot just use BERT
+
+The obvious approach: take a pretrained BERT, feed it a sentence, use the `[CLS]`
+vector. This is what most people try first and it works badly.
+
+Reimers and Gurevych measured it: on standard semantic textual similarity
+benchmarks, BERT's `[CLS]` embeddings performed *worse than averaging GloVe
+vectors* — a method with no context modelling at all.
+
+The reason is not mysterious. BERT was trained to predict masked tokens and, in
+the original recipe, next-sentence prediction. Neither objective ever required
+that the `[CLS]` position be a good summary of the sentence for similarity
+purposes. The representation is excellent for fine-tuning and poor as a
+frozen vector, because nothing asked it to be otherwise.
+
+<Aside type="tip" title="The general principle">
+**A model produces a good representation for the thing its objective rewarded, and
+nothing else.** You do not get a similarity space by accident.
+
+This applies at every scale. A large language model's hidden states are not
+automatically good embeddings either — the current LLM-based embedders all
+*fine-tune* for the purpose, and the ones that skip that step underperform much
+smaller dedicated models.
+</Aside>
+
+## The dual encoder
+
+The architecture that solved it is almost embarrassingly simple.
+
+Take two texts. Push each through the same encoder. Pool the token vectors into
+one vector each. Train so that vectors of related texts have high similarity and
+unrelated texts do not.
+
+Because both texts go through the *same* weights, and because their vectors are
+computed independently, you can embed your whole corpus once, offline, and at
+query time embed only the query. That independence is the entire commercial
+value: it is what makes search over a billion documents possible.
+
+<Figure
+  lead="Dual encoder versus cross-encoder: the trade-off that structures the whole field."
+  caption="A dual encoder embeds each text independently, so document vectors can be precomputed and query time is one encoder pass plus a nearest-neighbour lookup. A cross-encoder reads the pair jointly, which lets every query token attend to every document token — reliably more accurate, and requiring a full forward pass per candidate, so it cannot search a corpus. The standard architecture uses both: the dual encoder retrieves a few hundred candidates cheaply, the cross-encoder reranks them expensively. The accuracy gap between them is not a modelling failure to be fixed; it is the price of the independence that makes retrieval tractable."
+>
+<svg viewBox="0 0 760 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Dual encoder versus cross-encoder architecture comparison">
+  <defs>
+    <marker id="te-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor" opacity="0.6"/>
+    </marker>
+  </defs>
+
+  <text class="lb" x="30" y="26">Dual encoder (bi-encoder)</text>
+  <rect class="bx" x="30" y="36" width="330" height="180" rx="5"/>
+
+  <rect class="f-blue" x="50" y="52" width="120" height="26" rx="3"/>
+  <text class="on-fill-sm" x="110" y="70" text-anchor="middle">query</text>
+  <rect class="f-green" x="218" y="52" width="120" height="26" rx="3"/>
+  <text class="on-fill-sm" x="278" y="70" text-anchor="middle">document</text>
+
+  <path class="ar" d="M110,82 L110,102" marker-end="url(#te-a)"/>
+  <path class="ar" d="M278,82 L278,102" marker-end="url(#te-a)"/>
+
+  <rect class="f-purple" x="50" y="106" width="120" height="30" rx="3"/>
+  <text class="on-fill-sm" x="110" y="126" text-anchor="middle">encoder</text>
+  <rect class="f-purple" x="218" y="106" width="120" height="30" rx="3"/>
+  <text class="on-fill-sm" x="278" y="126" text-anchor="middle">encoder (shared)</text>
+
+  <path class="ar" d="M110,140 L110,158" marker-end="url(#te-a)"/>
+  <path class="ar" d="M278,140 L278,158" marker-end="url(#te-a)"/>
+
+  <rect class="bx" x="66" y="162" width="88" height="22" rx="2"/>
+  <text class="xs" x="110" y="177" text-anchor="middle">vector q</text>
+  <rect class="bx" x="234" y="162" width="88" height="22" rx="2"/>
+  <text class="xs" x="278" y="177" text-anchor="middle">vector d</text>
+
+  <text class="sm" x="194" y="204" text-anchor="middle">score = cos(q, d)</text>
+
+  <text class="xs" x="30" y="236">Documents embedded once, offline.</text>
+  <text class="xs" x="30" y="252">Query time: 1 forward pass + ANN lookup.</text>
+  <text class="xs" x="30" y="268">Scales to billions. Lower ceiling on accuracy.</text>
+
+  <text class="lb" x="400" y="26">Cross-encoder</text>
+  <rect class="bx" x="400" y="36" width="330" height="180" rx="5"/>
+
+  <rect class="f-amber" x="430" y="52" width="270" height="26" rx="3"/>
+  <text class="on-fill-sm" x="565" y="70" text-anchor="middle">[CLS] query [SEP] document [SEP]</text>
+
+  <path class="ar" d="M565,82 L565,102" marker-end="url(#te-a)"/>
+
+  <rect class="f-purple" x="430" y="106" width="270" height="52" rx="3"/>
+  <text class="on-fill-sm" x="565" y="128" text-anchor="middle">encoder — full cross-attention</text>
+  <text class="on-fill-sm" x="565" y="148" text-anchor="middle">every query token sees every doc token</text>
+
+  <path class="ar" d="M565,162 L565,178" marker-end="url(#te-a)"/>
+  <rect class="bx" x="500" y="182" width="130" height="24" rx="2"/>
+  <text class="xs" x="565" y="198" text-anchor="middle">relevance score</text>
+
+  <text class="xs" x="400" y="236">Nothing can be precomputed.</text>
+  <text class="xs" x="400" y="252">One forward pass per candidate pair.</text>
+  <text class="xs" x="400" y="268">Cannot search. Higher ceiling on accuracy.</text>
+
+  <line class="bx" x1="30" y1="290" x2="730" y2="290" opacity="0.3"/>
+
+  <text class="lb" x="30" y="314">Standard production architecture: use both</text>
+  <rect class="f-blue" x="30" y="326" width="180" height="30" rx="3"/>
+  <text class="on-fill-sm" x="44" y="346">ANN over 10⁸ docs → 500</text>
+  <path class="ar" d="M214,341 L246,341" marker-end="url(#te-a)"/>
+  <rect class="f-amber" x="250" y="326" width="180" height="30" rx="3"/>
+  <text class="on-fill-sm" x="264" y="346">cross-encoder → top 20</text>
+  <path class="ar" d="M434,341 L466,341" marker-end="url(#te-a)"/>
+  <rect class="f-green" x="470" y="326" width="180" height="30" rx="3"/>
+  <text class="on-fill-sm" x="484" y="346">generator / user</text>
+
+  <text class="xs" x="30" y="382">The dual encoder's recall is a hard ceiling on the whole pipeline — the reranker cannot recover a document that was never retrieved.</text>
+</svg>
+</Figure>
+
+## Pooling: three choices, and they matter
+
+Once the encoder produces one vector per token, you need one vector per text.
+
+- **`[CLS]` / first token.** Uses the position BERT was trained to aggregate at. Works if you fine-tune; poor frozen.
+- **Mean pooling.** Average the token vectors, masking padding. The most common choice for BERT-family embedders, and usually the best of the three without further tuning.
+- **Last token.** The natural choice for decoder-only LLM embedders, since with causal attention only the final position has seen the whole text.
+
+Reimers and Gurevych compared the first two and found mean pooling better. The
+choice is not free and it is not interchangeable across models: **using a pooling
+strategy the model was not trained with silently degrades quality**, often by more
+than the difference between two models you were choosing between.
+
+<Tier level="mechanics" />
+
+## The contrastive objective
+
+Nearly every modern text embedder trains with InfoNCE over in-batch negatives.
+Given a batch of $B$ pairs $(q_i, d_i^{+})$:
+
+$$
+\mathcal{L} = -\frac{1}{B}\sum_{i=1}^{B} \log \frac{\exp(\mathrm{sim}(q_i, d_i^{+})/\tau)}{\sum_{j=1}^{B} \exp(\mathrm{sim}(q_i, d_j)/\tau)},
+$$
+
+where the denominator runs over the correct document and every *other* document in
+the batch, used as a negative.
+
+The trick is that negatives are free. You needed to embed those documents anyway;
+treating them as negatives costs nothing and gives you $B-1$ of them per example.
+
+<Aside type="caution" title="Which is why batch size behaves unusually here">
+Larger batch means more negatives means a harder discrimination task means a
+better-shaped space. This is not the usual "large batches are more efficient"
+story from [optimization](/training/optimization/) — the batch size is changing
+the *objective*, not just the gradient estimate.
+
+The practical consequences are specific:
+
+- Published results at batch 8,192 do not reproduce at batch 64, and the failure looks like a bad model rather than a missing hyperparameter.
+- **GradCache** solves the memory problem: compute all embeddings with gradients disabled, compute the loss and cache the gradients with respect to the embeddings, then recompute each sub-batch's forward pass with gradients to backpropagate. Large effective batch, bounded memory, mathematically identical result.
+- Returns diminish. Beyond a few thousand, random in-batch negatives are nearly all trivially easy, and further gains come from *hard* negatives rather than more random ones.
+</Aside>
+
+## Hard negatives, and the trap in them
+
+A random negative is usually easy: a query about mortgage rates against a
+document about Peruvian cuisine teaches almost nothing after the first few steps.
+Progress requires negatives that are plausible and wrong.
+
+Three sources, in increasing order of both effectiveness and risk:
+
+<Steps>
+
+1. **BM25-mined.** Retrieve lexically similar documents that are not the labelled positive. Cheap, effective, still standard. This is what DPR used.
+
+2. **Model-mined (ANCE-style).** Use the model being trained to retrieve its own top-ranked non-positives, refreshing the index periodically. Negatives track the model's current weaknesses, which is exactly what you want — and it requires re-indexing the corpus during training, which is the engineering cost.
+
+3. **Cross-encoder-filtered.** Mine hard negatives, then score them with a stronger cross-encoder and discard anything it rates as actually relevant. This is the current standard recipe and it exists to address the following problem.
+
+</Steps>
+
+<Aside type="caution" title="False negatives are the failure mode nobody mentions">
+Retrieval datasets are annotated sparsely. MS MARCO labels roughly one relevant
+passage per query out of eight million; many unlabelled passages are also
+relevant.
+
+So when you mine hard negatives by retrieving the most similar non-labelled
+documents, **you preferentially select unlabelled relevant documents**. You are
+then training the model to push apart texts that genuinely belong together. The
+harder your mining, the more false negatives you collect — the technique's
+effectiveness and its failure mode come from the same mechanism.
+
+This is why cross-encoder filtering became standard, and why reported gains from
+"better hard negative mining" should be read with the question: did they filter,
+and how?
+</Aside>
+
+## The lineage
+
+| Model | Year | The contribution |
+|---|---|---|
+| **SBERT** | 2019 | Siamese fine-tuning of BERT on NLI. Established that a dedicated objective was necessary and sufficient. |
+| **DPR** | 2020 | Dual encoder for open-domain QA with BM25 hard negatives; beat BM25 on retrieval, which was not a given. |
+| **ANCE** | 2020 | Negatives mined from the model's own current index, refreshed during training. |
+| **SimCSE** | 2021 | Dropout as the only augmentation: encode the same sentence twice with different dropout masks; those are your positives. Unsupervised and startlingly effective. |
+| **Contriever** | 2021 | Unsupervised pretraining via independent cropping of documents, with a momentum queue for negatives. Strong zero-shot transfer. |
+| **E5** | 2022 | Large-scale weakly-supervised contrastive pretraining on mined web pairs, then supervised fine-tuning. Introduced the `query:` / `passage:` prefixes. |
+| **GTE** | 2023 | Multi-stage contrastive training over a large diverse mixture; strong results at small model sizes. |
+| **BGE / C-Pack** | 2023 | A full recipe plus data released together, and the model that made high-quality open embedders the default. |
+| **INSTRUCTOR** | 2022 | Instruction-conditioned embeddings: prepend a task description and get a different space from the same weights. |
+| **E5-Mistral** | 2023 | Synthetic training data generated by an LLM, plus an LLM backbone. |
+| **LLM2Vec** | 2024 | Converts a decoder-only LLM into an encoder: enable bidirectional attention, adapt with masked next-token prediction, then contrastively fine-tune. |
+
+<Aside type="note" title="What SimCSE actually showed">
+Encode the same sentence twice through a network with dropout enabled. Two
+different dropout masks give two different vectors. Treat them as a positive
+pair.
+
+That is the entire unsupervised method, and it beat far more elaborate
+augmentation schemes. The reason is instructive: word deletion or synonym
+substitution changes the *input*, and therefore risks changing the meaning.
+Dropout perturbs the *computation* while leaving the input identical, so the
+positive pair is guaranteed to be semantically identical. Wang and Isola's
+alignment/uniformity framing explains the result — dropout gives near-perfect
+alignment for free, so the objective can spend its capacity on uniformity.
+</Aside>
+
+## Instruction prefixes
+
+Several current models expect the text to be prefixed, and behave measurably worse
+without it.
+
+- **E5 family:** `query: ...` for queries, `passage: ...` for documents. Both required, and using the same prefix for both damages asymmetric retrieval.
+- **BGE:** an instruction on the query side only, model-card specific.
+- **INSTRUCTOR and successors:** a free-text task description, e.g. `Represent the scientific paper abstract for retrieval:`.
+
+The mechanism is straightforward: the prefix is in-context conditioning, and the
+model was trained to use it. Symmetric tasks (paraphrase, deduplication) want the
+same prefix on both sides; asymmetric tasks (a short query against a long
+passage) want different ones, because the two are different kinds of text
+occupying different regions of the space.
+
+<Aside type="tip" title="The most common silent bug in embedding pipelines">
+Omitting the prefix does not error. It does not warn. It produces slightly worse
+vectors, and if you embedded your corpus with the prefix and your queries without
+it — or vice versa — you have a systematic mismatch that shows up as mediocre
+recall with no obvious cause.
+
+Check the model card. Then check that your indexing job and your query path use
+the same convention, because they are usually different code paths written at
+different times.
+</Aside>
+
+<Tier level="formal" />
+
+## Temperature, and what it does to the gradient
+
+The temperature $\tau$ in InfoNCE is not a minor knob. Write the softmax weight of
+negative $j$ for anchor $i$:
+
+$$
+p_{ij} = \frac{\exp(s_{ij}/\tau)}{\sum_k \exp(s_{ik}/\tau)}.
+$$
+
+The gradient of the loss with respect to the similarity $s_{ij}$ is proportional
+to $p_{ij}/\tau$ for negatives. Two regimes:
+
+- **Small $\tau$** (0.01–0.05): the softmax concentrates on the hardest negatives, so the gradient is dominated by the few nearest wrong answers. The space separates aggressively. Risk: with false negatives present, you are aggressively separating things that belong together.
+- **Large $\tau$** (0.1–1.0): weights spread out, all negatives contribute, the space is more tolerant of semantic structure among negatives and less sharply discriminative.
+
+This is the **uniformity–tolerance trade-off**. Most published text embedders use
+$\tau$ between 0.01 and 0.05, and the value interacts strongly with the hardness
+of your negatives — changing your mining strategy without retuning $\tau$ is a
+common way to lose the gains you just engineered.
+
+## Alignment and uniformity
+
+Wang and Isola decompose the contrastive objective into two measurable quantities.
+For positive pairs $(x, y) \sim p_{\text{pos}}$ on the unit sphere:
+
+$$
+\mathcal{L}_{\text{align}} = \mathbb{E}\left[\|f(x) - f(y)\|_2^{\alpha}\right], \qquad
+\mathcal{L}_{\text{uniform}} = \log \mathbb{E}\left[e^{-t\|f(x)-f(y)\|_2^{2}}\right],
+$$
+
+the second over independently drawn points. InfoNCE optimises both: the numerator
+pulls positives together (alignment), the denominator pushes everything apart
+(uniformity).
+
+Both are computable on a trained model with a few hundred pairs, and the diagnosis
+is immediate:
+
+- **Poor alignment, good uniformity** — the space is well spread but positives are not close. You need better positive pairs, or more training.
+- **Good alignment, poor uniformity** — everything is collapsing into a narrow cone. You need more or harder negatives, or a lower temperature.
+
+This is a far more useful diagnostic than a benchmark score, because it tells you
+which lever to pull. See [Self-Supervised
+Learning](/training/self-supervision/) for the full treatment.
+
+## Matryoshka representation learning
+
+Standard embeddings are all-or-nothing: truncating a 1536-dimensional vector to
+256 dimensions destroys it, because information is spread arbitrarily across
+coordinates.
+
+Kusupati et al. fix this by training with the loss applied at multiple nested
+prefixes simultaneously:
+
+$$
+\mathcal{L}_{\text{MRL}} = \sum_{m \in \mathcal{M}} c_m \cdot \mathcal{L}\left(f(x)_{1:m}\right),
+$$
+
+with $\mathcal{M}$ a set of dimensions such as `{64, 128, 256, 512, 1024, 1536}`.
+Each prefix must be a usable embedding on its own, which forces the model to place
+the most important information in the earliest coordinates.
+
+The payoff is operational and large. One model, and at query time you choose the
+dimension: search cheaply at 64 dimensions to get candidates, rerank with the full
+vector. Storage drops proportionally with almost no retraining. Several major
+embedding APIs now expose this as a truncation parameter, and it composes with
+quantization — see [Vector Search](/embeddings/vector-search/).
+
+<Figure
+  lead="Four levers, and what each one actually costs."
+  caption="The design decisions that determine embedding quality, ordered by how much leverage they have. The top two — the training objective and the negatives — dominate, and are the two least often examined when people compare models. Batch size has unusual leverage here because in-batch negatives make it part of the objective rather than just the gradient estimator. Dimension is the one people tune first and it matters least, up to the point where it starts costing recall. The right-hand column is the honest cost of each lever, because none of them are free."
+>
+<svg viewBox="0 0 760 380" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Four levers of text embedding quality ranked by leverage">
+  <rect class="f-grey" x="30" y="34" width="700" height="24" rx="3"/>
+  <text class="on-fill-sm" x="44" y="51">Lever</text>
+  <text class="on-fill-sm" x="240" y="51">What it controls</text>
+  <text class="on-fill-sm" x="500" y="51">What it costs</text>
+
+  <rect class="f-purple" x="30" y="64" width="190" height="66" rx="4"/>
+  <text class="on-fill-sm" x="44" y="88">1 · Training objective</text>
+  <text class="on-fill-sm" x="44" y="108">highest leverage</text>
+  <text class="on-fill-sm" x="44" y="124">and least examined</text>
+  <text class="xs" x="240" y="86">What "similar" means. QA-trained and</text>
+  <text class="xs" x="240" y="102">paraphrase-trained models give different</text>
+  <text class="xs" x="240" y="118">rankings on the same corpus.</text>
+  <text class="xs" x="500" y="102">You cannot change it</text>
+  <text class="xs" x="500" y="118">without retraining.</text>
+
+  <rect class="f-blue" x="30" y="136" width="190" height="66" rx="4"/>
+  <text class="on-fill-sm" x="44" y="160">2 · Negatives</text>
+  <text class="on-fill-sm" x="44" y="180">where the</text>
+  <text class="on-fill-sm" x="44" y="196">engineering is</text>
+  <text class="xs" x="240" y="158">How finely the model discriminates.</text>
+  <text class="xs" x="240" y="174">Random negatives plateau early; hard</text>
+  <text class="xs" x="240" y="190">negatives are what moves the number.</text>
+  <text class="xs" x="500" y="166">False negatives scale</text>
+  <text class="xs" x="500" y="182">with hardness. Filter</text>
+  <text class="xs" x="500" y="198">with a cross-encoder.</text>
+
+  <rect class="f-green" x="30" y="208" width="190" height="66" rx="4"/>
+  <text class="on-fill-sm" x="44" y="232">3 · Batch size</text>
+  <text class="on-fill-sm" x="44" y="252">part of the objective,</text>
+  <text class="on-fill-sm" x="44" y="268">not just the gradient</text>
+  <text class="xs" x="240" y="230">Number of in-batch negatives, hence</text>
+  <text class="xs" x="240" y="246">task difficulty. Small-batch reproductions</text>
+  <text class="xs" x="240" y="262">of published results underperform.</text>
+  <text class="xs" x="500" y="238">Memory — solved by</text>
+  <text class="xs" x="500" y="254">GradCache. Diminishing</text>
+  <text class="xs" x="500" y="270">past a few thousand.</text>
+
+  <rect class="f-amber" x="30" y="280" width="190" height="66" rx="4"/>
+  <text class="on-fill-sm" x="44" y="304">4 · Dimension</text>
+  <text class="on-fill-sm" x="44" y="324">tuned first,</text>
+  <text class="on-fill-sm" x="44" y="340">matters least</text>
+  <text class="xs" x="240" y="302">Storage and search cost. Quality gains</text>
+  <text class="xs" x="240" y="318">flatten well before 1024 dims on most</text>
+  <text class="xs" x="240" y="334">corpora; the curve is worth measuring.</text>
+  <text class="xs" x="500" y="310">Matryoshka lets you</text>
+  <text class="xs" x="500" y="326">choose at query time</text>
+  <text class="xs" x="500" y="342">instead of at training.</text>
+</svg>
+</Figure>
+
+## MTEB, and how to read a leaderboard
+
+MTEB aggregates 50-plus datasets across eight task types — retrieval,
+classification, clustering, reranking, pair classification, semantic textual
+similarity, summarisation and bitext mining — and it substantially improved the
+field by making models comparable on more than one narrow benchmark.
+
+It is also, at this point, heavily optimised against. Read a leaderboard with
+these in mind:
+
+- **The aggregate hides the distribution.** Retrieval and STS reward different geometries. A model that is excellent on average may be mediocre at the one task you have.
+- **Training-set overlap is widespread.** Many models train on data derived from MTEB's constituent datasets. This is not always disclosed and is difficult to verify.
+- **Model size is not in the ranking.** A 7B embedder beating a 110M one is not surprising and may be irrelevant if you need 10ms latency.
+- **Sequence length caps are often unstated.** A model rated for 512 tokens silently truncates your 2,000-token documents, and MTEB will not tell you.
+- **The gaps at the top are small and the variance is not reported.** Differences of half a point are not reliable evidence about your corpus.
+
+<Aside type="tip" title="What to do instead, concretely">
+Assemble 100–300 query-document pairs from your own data — an afternoon's work, or
+generate candidates with an LLM and verify them by hand. Measure recall@10 and
+MRR for three or four candidate models, with the correct prefixes and pooling.
+
+This will change your choice more often than not, and it also gives you the
+regression test you will need when you swap models later. Nobody regrets building
+this; plenty of teams regret not having it.
+</Aside>
+
+<Tier level="frontier" />
+
+## Where this stands, as of 2026
+
+**LLM-based embedders lead the benchmarks and are frequently the wrong choice.**
+A 7B embedder produces better vectors than a 110M one, at roughly 60× the
+inference cost. For a corpus you embed once and query often, the encoding cost may
+be irrelevant; for one you re-embed weekly, it dominates. The right comparison is
+quality per dollar at your actual refresh rate, and it often favours the small
+model.
+
+**Instruction conditioning is becoming the default interface.** One model, many
+spaces, selected by a prefix. This is elegant, and it makes the "which space am I
+in" question — already the source of most embedding bugs — a runtime property
+rather than a deployment-time one.
+
+**Long-context embeddings remain unsolved in a specific way.** Models now accept
+8k tokens, but compressing 8,000 tokens into one vector loses more than it keeps,
+and evaluations on long documents show far smaller gains than the context-length
+increase suggests. Chunking with good boundaries still beats long-context
+single-vector embedding on most real corpora, which is an uncomfortable result
+that the field has not fully absorbed.
+
+**Multi-vector methods are the credible alternative and have not won.** ColBERT-style
+late interaction — one vector per token, with a max-similarity operator — gets much
+closer to cross-encoder accuracy while remaining searchable. The storage cost is
+one to two orders of magnitude higher, and that has kept adoption limited despite
+consistently strong results.
+
+**The evaluation problem is getting worse, not better.** As models train on
+increasingly broad mixtures, the boundary between training and evaluation data
+erodes. There is currently no reliable way to establish that a given model has not
+seen a given benchmark.
+
+## Open problems
+
+<Steps>
+
+1. **What a single vector can represent.** A 1024-dimensional vector for a 2,000-word document is a severe bottleneck, and there is no theory saying what must be lost. The empirical answer — that chunking beats long-context embedding — suggests the loss is substantial.
+
+2. **False negatives at scale.** Sparse annotation makes hard-negative mining partly self-poisoning. Cross-encoder filtering helps and is itself imperfect and expensive.
+
+3. **Composing similarity.** "Similar topic but different sentiment", or "same method, different domain" are natural requests that single-vector cosine cannot express. Instruction conditioning gestures at this; it does not solve it.
+
+4. **Domain transfer.** Models trained on web text degrade sharply on legal, medical and code corpora. How much in-domain data is needed to recover, and whether adaptation can be done without catastrophic forgetting of general ability, is unsettled.
+
+5. **Updating without reindexing.** Any change to the model requires re-embedding the entire corpus. For large corpora this is the binding practical constraint on model improvement, and backward-compatible embedding is an active but immature research area.
+
+</Steps>
+
+## Practical guidance
+
+- **Read the model card before anything else.** Prefix convention, pooling strategy, maximum sequence length, and whether the model expects normalised vectors. Getting any of these wrong costs more than the difference between the models you were comparing.
+- **Build a small in-domain evaluation set.** 100–300 pairs. This is the single highest-value hour in an embedding project.
+- **Start with a small model.** 110M-parameter embedders are strong. Move up only when your own evaluation shows the gap is real on your data.
+- **Measure the dimension–recall curve rather than assuming.** Matryoshka models make this a one-line experiment, and the answer is usually lower than you expected.
+- **Chunk deliberately.** Chunk boundaries change results more than model choice on long documents. Respect structure — sections, paragraphs — rather than fixed token counts.
+- **Version your embeddings.** Store the model name and version alongside every vector. The alternative is a corpus of vectors from three different models and no way to tell which is which.
+- **Add a reranker before you upgrade your embedder.** A cross-encoder over the top 100 usually buys more than moving up the leaderboard, and it is far cheaper to deploy.
+
+## Reading path
+
+Next: [Vector Search and Production
+Embeddings](/embeddings/vector-search/) for indexing, compression and the
+operational failure modes. For the retrieval system these feed,
+[Retrieval](/systems/retrieval/). For the contrastive theory in full,
+[Self-Supervised Learning](/training/self-supervision/). For the geometry of the
+resulting spaces, [Latent Spaces](/foundations/latent-spaces/).
+
+<Papers />

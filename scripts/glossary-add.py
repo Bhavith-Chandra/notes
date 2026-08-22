@@ -479,6 +479,87 @@ costs about $6ND$ FLOPs: 2 for the forward pass, 4 for the backward. Breaks down
 at long context, for mixture-of-experts, and below about 1B parameters. See
 [Compute Budgeting](/hardware/compute-budgeting/).
 
+**ANN (approximate nearest neighbour)** — index structures that trade exact
+correctness for speed, since exact high-dimensional search has no known algorithm
+beating a linear scan. HNSW and IVF-PQ are the two dominant families. See [Vector
+Search](/embeddings/vector-search/).
+
+**Binary quantization** — storing one bit per dimension (the sign), giving 32×
+compression and turning similarity into a popcount. Recall is recovered by
+rescoring a shortlist against full-precision vectors. See [Vector
+Search](/embeddings/vector-search/).
+
+**Cross-encoder** — scores a query and document jointly in one forward pass, so
+every query token attends to every document token. More accurate than a dual
+encoder and unable to search, since nothing can be precomputed. Used to rerank.
+See [Text Embeddings](/embeddings/text-embeddings/).
+
+**Distributional hypothesis** — the claim that a word's meaning is approximated by
+the contexts it appears in. Incomplete — it cannot separate *good* from *bad* —
+and the foundation of every embedding method nonetheless. See [Word
+Embeddings](/embeddings/word-embeddings/).
+
+**Dual encoder (bi-encoder)** — embeds query and document independently through
+shared weights, so the corpus can be embedded offline. That independence is what
+makes retrieval over billions of documents possible, and it is also the source of
+the accuracy gap against cross-encoders. See [Text
+Embeddings](/embeddings/text-embeddings/).
+
+**Hard negative** — a negative example that is plausible and wrong, mined by BM25,
+by the model itself, or from a stronger model's rankings. What moves retrieval
+quality once random negatives have plateaued — and the mechanism that makes it
+work is the same one that collects false negatives. See [Text
+Embeddings](/embeddings/text-embeddings/).
+
+**HNSW** — a multi-layer proximity graph searched by greedy descent from a sparse
+top layer to a dense bottom one. Fast, and its graph costs roughly as much memory
+again as the vectors. See [Vector Search](/embeddings/vector-search/).
+
+**Hubness** — the high-dimensional phenomenon where a few points appear in a
+disproportionate share of nearest-neighbour lists. An under-diagnosed cause of the
+same irrelevant document surfacing across unrelated queries. See [Vector
+Search](/embeddings/vector-search/).
+
+**In-batch negatives** — using the other documents in a training batch as negatives
+for each query, which makes them free. It also makes batch size part of the
+objective rather than just the gradient estimator. See [Text
+Embeddings](/embeddings/text-embeddings/).
+
+**IVF-PQ** — partitions the space by k-means, searches the nearest few cells, and
+scans product-quantized codes with precomputed distance tables. Compact, and
+slower to a given recall than HNSW. See [Vector
+Search](/embeddings/vector-search/).
+
+**Matryoshka representation** — trained with the loss applied at several nested
+prefix dimensions, so a truncated vector is still usable. Lets you pick the
+dimension at query time instead of at training time. See [Text
+Embeddings](/embeddings/text-embeddings/).
+
+**MTEB** — the Massive Text Embedding Benchmark, aggregating 50-plus datasets
+across eight task types. A real improvement on what preceded it and now heavily
+optimised against; rank does not predict performance on your corpus. See [Text
+Embeddings](/embeddings/text-embeddings/).
+
+**PMI (pointwise mutual information)** — how much more often two words co-occur
+than independence would predict. The quantity that skip-gram with negative
+sampling turns out to be implicitly factorising. See [Word
+Embeddings](/embeddings/word-embeddings/).
+
+**Product quantization** — splits a vector into subvectors and replaces each with
+a k-means centroid index, giving byte-per-subvector storage and distance
+computation by table lookup rather than arithmetic. See [Vector
+Search](/embeddings/vector-search/).
+
+**SGNS (skip-gram with negative sampling)** — word2vec's default objective:
+distinguish real word-context pairs from sampled fakes. Levy and Goldberg proved
+its optimum satisfies $v_w^\top u_c = \mathrm{PMI}(w,c) - \log k$. See [Word
+Embeddings](/embeddings/word-embeddings/).
+
+**WEAT (Word Embedding Association Test)** — adapts the Implicit Association Test
+to embeddings, measuring differential association between target and attribute
+word sets. Found human-like biases, including harmful ones, in embeddings trained
+on ordinary web text. See [Word Embeddings](/embeddings/word-embeddings/).
+
 """
 
 
